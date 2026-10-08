@@ -21,6 +21,9 @@ jobs:
       - name: Dependencies
         run: |
           sudo apt-get update
+          # la imagen de GitHub trae libunwind-14-dev, que choca con libunwind-dev
+          # (dependencia de libgstreamer1.0-dev)
+          sudo apt-get remove -y libunwind-14-dev || true
           sudo apt-get install -y --no-install-recommends \
             libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev pkg-config
 
