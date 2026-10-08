@@ -1,0 +1,1181 @@
+<!doctype html>
+<!-- NDIICAM — panel web. Copyright (C) 2026 Pablo Holguín. GPL-3.0-or-later. -->
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>NDIICAM</title>
+<style>
+  :root {
+    --fondo: #f4f5f7; --panel: #ffffff; --borde: #e3e6ea; --texto: #16191d;
+    --suave: #626a75; --acento: #2563eb; --acento-t: #ffffff;
+    --ok: #15803d; --ok-f: #dcfce7; --aviso: #b45309; --aviso-f: #fef3c7;
+    --mal: #b91c1c; --mal-f: #fee2e2; --pista: #e8ebef; --sombra: 0 1px 2px rgba(0,0,0,.05);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --fondo: #0e1013; --panel: #171a1f; --borde: #262b32; --texto: #e8eaed;
+      --suave: #98a1ad; --acento: #4f8cff; --acento-t: #0b1220;
+      --ok: #4ade80; --ok-f: #11291a; --aviso: #fbbf24; --aviso-f: #2d230c;
+      --mal: #f87171; --mal-f: #301416; --pista: #252a31; --sombra: none;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--fondo); color: var(--texto);
+    font: 15px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Ubuntu, sans-serif;
+    -webkit-font-smoothing: antialiased; }
+  .envoltura { max-width: 980px; margin: 0 auto; padding: 16px 16px 48px; }
+  header { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; flex-wrap: wrap; }
+  .marca { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 17px; letter-spacing: .02em; }
+  .marca small { color: var(--suave); font-weight: 500; font-size: 13px; letter-spacing: 0; }
+  .logo { width: 30px; height: 30px; border-radius: 8px; background: var(--acento);
+    display: grid; place-items: center; color: var(--acento-t); }
+  .cabecera-dcha { margin-left: auto; display: flex; gap: 8px; align-items: center; }
+  .idioma { display: inline-flex; border: 1px solid var(--borde); border-radius: 8px; overflow: hidden; }
+  .idioma button { border: 0; background: none; color: var(--suave); font: inherit; font-size: 12.5px;
+    font-weight: 650; padding: 4px 9px; cursor: pointer; }
+  .idioma button.activo { background: var(--pista); color: var(--texto); }
+  .pastilla { display: inline-flex; align-items: center; gap: 7px; padding: 4px 11px;
+    border-radius: 999px; font-size: 13px; font-weight: 600; background: var(--pista); color: var(--suave); }
+  .pastilla::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
+  .pastilla.ok { background: var(--ok-f); color: var(--ok); }
+  .pastilla.aviso { background: var(--aviso-f); color: var(--aviso); }
+  .pastilla.mal { background: var(--mal-f); color: var(--mal); }
+  .pastilla.vivo::before { animation: latido 1.6s ease-in-out infinite; }
+  @keyframes latido { 50% { opacity: .35; } }
+  .tarjeta { background: var(--panel); border: 1px solid var(--borde); border-radius: 14px;
+    padding: 16px; box-shadow: var(--sombra); }
+  .tarjeta h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .06em;
+    color: var(--suave); margin: 0 0 12px; font-weight: 650; }
+  .tarjeta h3 { font-size: 16px; margin: 0; font-weight: 650; }
+  .rejilla { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); margin-top: 12px; }
+  .heroe { display: grid; gap: 16px; grid-template-columns: 1fr auto; align-items: center; }
+  .heroe .estado { font-size: 28px; font-weight: 700; letter-spacing: -.01em; }
+  .heroe .sub { color: var(--suave); margin-top: 2px; word-break: break-word; }
+  .cifras { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; grid-column: 1 / -1; }
+  .cifra { background: var(--fondo); border-radius: 10px; padding: 10px 12px; min-width: 0; }
+  .cifra b { display: block; font-size: 20px; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .cifra span { color: var(--suave); font-size: 12.5px; }
+  .graficas { display: flex; gap: 12px; }
+  .grafica { text-align: right; font-size: 12px; color: var(--suave); }
+  .grafica svg { display: block; width: 130px; height: 38px; }
+  dl { display: grid; grid-template-columns: auto 1fr; gap: 7px 14px; margin: 0; }
+  dt { color: var(--suave); }
+  dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; word-break: break-word; }
+  .barra { height: 6px; border-radius: 3px; background: var(--pista); overflow: hidden; margin: 6px 0 2px; }
+  .barra i { display: block; height: 100%; width: 0; border-radius: 3px; background: var(--acento); transition: width .5s; }
+  .barra.ok i { background: var(--ok); } .barra.aviso i { background: var(--aviso); } .barra.mal i { background: var(--mal); }
+  .linea-barra { margin-bottom: 10px; }
+  .linea-barra .rotulo { display: flex; justify-content: space-between; gap: 8px; font-size: 13.5px; }
+  .linea-barra .rotulo span:first-child { color: var(--suave); }
+  .aviso-ap { border-color: var(--acento); margin-bottom: 12px; }
+  .aviso-ap p { margin: 4px 0 0; color: var(--suave); }
+  .seccion { margin-top: 12px; }
+  label { display: block; font-size: 13.5px; color: var(--suave); margin: 0 0 6px; }
+  .ayuda { font-size: 12.5px; color: var(--suave); margin-top: 5px; }
+  input[type=text], input[type=password], input[type=number], select { width: 100%; padding: 10px 12px; font: inherit; color: var(--texto);
+    background: var(--fondo); border: 1px solid var(--borde); border-radius: 10px; outline: none; }
+  input:focus, select:focus { border-color: var(--acento); }
+  input:disabled, select:disabled { opacity: .5; }
+  .segmentado { display: inline-flex; flex-wrap: wrap; background: var(--fondo); border: 1px solid var(--borde); border-radius: 10px; padding: 3px; }
+  .segmentado button { border: 0; background: none; color: var(--texto); font: inherit; font-weight: 600;
+    padding: 7px 14px; border-radius: 7px; cursor: pointer; }
+  .segmentado button.activo { background: var(--acento); color: var(--acento-t); }
+  .segmentado button:disabled { opacity: .35; cursor: not-allowed; }
+  .campos { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
+  .botones { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 14px; align-items: center; }
+  .boton { border: 1px solid var(--borde); background: var(--panel); color: var(--texto); font: inherit;
+    font-weight: 600; padding: 9px 14px; border-radius: 10px; cursor: pointer; text-decoration: none; display: inline-block; }
+  .boton.principal { background: var(--acento); border-color: var(--acento); color: var(--acento-t); }
+  .boton.peligro { color: var(--mal); }
+  .boton:disabled { opacity: .5; cursor: progress; }
+  .lista { list-style: none; margin: 0; padding: 0; }
+  .lista li { display: flex; align-items: center; gap: 10px; padding: 10px 0; border-top: 1px solid var(--borde); }
+  .lista li:first-child { border-top: 0; }
+  .lista .nombre { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .lista .meta { color: var(--suave); font-size: 12.5px; }
+  .red-boton { all: unset; display: flex; align-items: center; gap: 10px; width: 100%; cursor: pointer; }
+  .senal { display: inline-flex; align-items: flex-end; gap: 2px; height: 14px; }
+  .senal i { width: 3px; background: var(--pista); border-radius: 1px; }
+  .senal i.on { background: var(--texto); }
+  .formulario-red { display: flex; gap: 8px; padding: 0 0 10px; }
+  .formulario-red input { flex: 1; }
+  .mensaje { margin-top: 10px; padding: 10px 12px; border-radius: 10px; font-size: 14px; }
+  .mensaje.ok { background: var(--ok-f); color: var(--ok); }
+  .mensaje.mal { background: var(--mal-f); color: var(--mal); }
+  .mensaje.info { background: var(--pista); color: var(--texto); }
+  .eventos li { font-size: 13.5px; }
+  .eventos time { color: var(--suave); font-variant-numeric: tabular-nums; min-width: 64px; }
+  .vacio { color: var(--suave); font-size: 14px; padding: 6px 0; }
+  .oculto { display: none !important; }
+  .desconectado { position: fixed; left: 16px; right: 16px; bottom: 16px; max-width: 520px; margin: 0 auto;
+    background: var(--mal); color: #fff; padding: 12px 16px; border-radius: 12px; font-weight: 600; text-align: center; }
+  footer { margin-top: 20px; color: var(--suave); font-size: 12.5px; text-align: center; }
+  .fuente { margin-top: 12px; }
+  .fuente-cab { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; }
+  .fuente-cab .sub { color: var(--suave); font-size: 13px; }
+  .fuente-cab .pastilla { margin-left: auto; }
+  .fuente-cuerpo { display: grid; gap: 16px; grid-template-columns: 1fr 1fr; }
+  .conmutador { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; font-weight: 600; }
+  .conmutador input { appearance: none; width: 38px; height: 22px; border-radius: 11px; background: var(--pista); position: relative; margin: 0; cursor: pointer; transition: background .2s; }
+  .conmutador input::after { content: ""; position: absolute; top: 3px; left: 3px; width: 16px; height: 16px; border-radius: 50%; background: #fff; transition: left .2s; box-shadow: 0 1px 2px rgba(0,0,0,.3); }
+  .conmutador input:checked { background: var(--ok); }
+  .conmutador input:checked::after { left: 19px; }
+  .punto { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--pista); margin-right: 6px; }
+  .punto.ok { background: var(--ok); } .punto.mal { background: var(--mal); } .punto.aviso { background: var(--aviso); }
+  @media (max-width: 640px) {
+    .heroe { grid-template-columns: 1fr; }
+    .graficas { justify-content: space-between; }
+    .grafica { text-align: left; }
+    .cifras { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .heroe .estado { font-size: 24px; }
+    .fuente-cuerpo { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+<div class="envoltura">
+  <header>
+    <div class="marca">
+      <div class="logo" aria-hidden="true">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 10l5-3v10l-5-3z"/><rect x="3" y="6" width="12" height="12" rx="2"/></svg>
+      </div>
+      <div>NDIICAM <small id="equipo"></small></div>
+    </div>
+    <div class="cabecera-dcha">
+      <span class="pastilla" id="pastilla">…</span>
+      <div class="idioma"><button data-lang="es">ES</button><button data-lang="en">EN</button></div>
+    </div>
+  </header>
+
+  <section class="tarjeta aviso-ap oculto" id="avisoAp">
+    <strong data-t="ap_banner_t"></strong>
+    <p data-t="ap_banner_p"></p>
+  </section>
+
+  <section class="tarjeta heroe">
+    <div>
+      <div class="estado" id="estado">—</div>
+      <div class="sub" id="estadoSub">—</div>
+    </div>
+    <div class="graficas">
+      <div class="grafica"><svg id="grafTx" viewBox="0 0 130 38" preserveAspectRatio="none"></svg><span data-t="traffic"></span></div>
+      <div class="grafica"><svg id="grafCpu" viewBox="0 0 130 38" preserveAspectRatio="none"></svg><span data-t="cpu_pct"></span></div>
+      <div class="grafica" id="bloqueGrafW"><svg id="grafW" viewBox="0 0 130 38" preserveAspectRatio="none"></svg><span data-t="power_w"></span></div>
+    </div>
+    <div class="cifras">
+      <div class="cifra"><b id="cFuentes">—</b><span data-t="sources"></span></div>
+      <div class="cifra"><b id="cRecep">—</b><span data-t="receivers"></span></div>
+      <div class="cifra"><b id="cTx">—</b><span data-t="mbit_out"></span></div>
+      <div class="cifra"><b id="cCpu">—</b><span data-t="cpu"></span></div>
+    </div>
+  </section>
+
+  <div id="fuentes"></div>
+
+  <section class="tarjeta seccion" id="secHdmi">
+    <div class="fuente-cab">
+      <div><h3 data-t="hdmi_title"></h3><div class="sub" id="hdmiSub"></div></div>
+      <label class="conmutador" style="margin-left:auto"><input type="checkbox" id="hdmiActiva"><span data-t="hdmi_on"></span></label>
+    </div>
+    <div class="campos">
+      <div id="bloqueHdmiFuente">
+        <label for="hdmiFuente" data-t="hdmi_camera"></label>
+        <select id="hdmiFuente"></select>
+      </div>
+      <div><label data-t="hdmi_state"></label><div id="hdmiEstado">—</div></div>
+      <div>
+        <label for="hdmiConsola" data-t="hdmi_screen_res"></label>
+        <select id="hdmiConsola">
+          <option value="nativa" data-t="hdmi_res_native"></option>
+          <option value="1080p">1920×1080</option>
+          <option value="720p">1280×720</option>
+        </select>
+        <div class="ayuda" data-t="hdmi_res_help"></div>
+      </div>
+    </div>
+    <div class="mensaje aviso oculto" id="hdmiReinicio" style="background:var(--aviso-f);color:var(--aviso)">
+      <span data-t="hdmi_reboot_needed"></span>
+      <button class="boton" id="btHdmiReboot" style="margin-left:8px" data-t="reboot_now"></button>
+    </div>
+    <div class="ayuda" data-t="hdmi_help" style="margin-top:10px"></div>
+    <div class="mensaje oculto" id="msgHdmi"></div>
+  </section>
+
+  <div class="rejilla">
+    <section class="tarjeta">
+      <h2 data-t="network"></h2>
+      <div class="linea-barra">
+        <div class="rotulo"><span id="redTitulo"></span><span id="redSenal">—</span></div>
+        <div class="barra" id="barraSenal"><i></i></div>
+      </div>
+      <div class="linea-barra">
+        <div class="rotulo"><span data-t="link_use"></span><span id="redUso">—</span></div>
+        <div class="barra" id="barraUso"><i></i></div>
+      </div>
+      <dl>
+        <dt data-t="connection"></dt><dd id="redModo">—</dd>
+        <dt data-t="band"></dt><dd id="redBanda">—</dd>
+        <dt data-t="link_speed"></dt><dd id="redEnlace">—</dd>
+        <dt data-t="ip"></dt><dd id="redIp">—</dd>
+        <dt data-t="transport"></dt><dd id="ndiTransporte">—</dd>
+      </dl>
+    </section>
+
+    <section class="tarjeta">
+      <h2 data-t="device"></h2>
+      <div class="linea-barra">
+        <div class="rotulo"><span data-t="cpu"></span><span id="eqCpu">—</span></div>
+        <div class="barra" id="barraCpu"><i></i></div>
+      </div>
+      <div class="linea-barra">
+        <div class="rotulo"><span data-t="memory"></span><span id="eqRam">—</span></div>
+        <div class="barra" id="barraRam"><i></i></div>
+      </div>
+      <dl>
+        <dt data-t="power"></dt><dd id="eqPotencia">—</dd>
+        <dt data-t="temperature"></dt><dd id="eqTemp">—</dd>
+        <dt data-t="uptime"></dt><dd id="eqUptime">—</dd>
+      </dl>
+    </section>
+
+    <section class="tarjeta">
+      <h2 data-t="updates"></h2>
+      <dl>
+        <dt data-t="installed_version"></dt><dd id="actActual">—</dd>
+        <dt data-t="latest_version"></dt><dd id="actUltima">—</dd>
+        <dt data-t="checked"></dt><dd id="actComprobado">—</dd>
+      </dl>
+      <div class="botones">
+        <button class="boton" id="btComprobar" data-t="check_updates"></button>
+        <button class="boton principal oculto" id="btActualizar"></button>
+        <a class="boton oculto" id="actNotas" target="_blank" rel="noopener" data-t="release_notes"></a>
+      </div>
+      <div class="mensaje oculto" id="msgAct"></div>
+    </section>
+  </div>
+
+  <section class="tarjeta seccion" id="secWifi">
+    <h2 data-t="wifi_networks"></h2>
+    <label data-t="saved_help"></label>
+    <ul class="lista" id="wifiGuardadas"></ul>
+    <div class="botones" style="margin-top:6px">
+      <button class="boton" id="btBuscar" data-t="scan"></button>
+    </div>
+    <div class="ayuda oculto" id="ayudaCache" data-t="scan_cached"></div>
+    <ul class="lista oculto" id="wifiVistas" style="margin-top:10px"></ul>
+    <div class="mensaje oculto" id="msgWifi"></div>
+  </section>
+
+  <section class="tarjeta seccion" id="secIp">
+    <h2 data-t="ip_address"></h2>
+    <div class="ayuda" id="ipPerfil" style="margin:0 0 12px"></div>
+    <div class="segmentado" id="segIp">
+      <button type="button" data-v="auto" data-t="ip_auto"></button>
+      <button type="button" data-v="manual" data-t="ip_manual"></button>
+    </div>
+    <div class="campos" style="margin-top:14px">
+      <div><label for="ipDir" data-t="ip_addr"></label><input type="text" id="ipDir" inputmode="decimal" placeholder="192.168.1.50"></div>
+      <div><label for="ipPref" data-t="ip_prefix"></label><input type="number" id="ipPref" min="8" max="30" placeholder="24"></div>
+      <div><label for="ipGw" data-t="ip_gateway"></label><input type="text" id="ipGw" inputmode="decimal" placeholder="192.168.1.1"></div>
+      <div><label for="ipDns" data-t="ip_dns"></label><input type="text" id="ipDns" placeholder="192.168.1.1, 1.1.1.1"></div>
+    </div>
+    <div class="botones">
+      <button class="boton principal" id="btIp" data-t="apply"></button>
+    </div>
+    <div class="mensaje oculto" id="msgIp"></div>
+  </section>
+
+  <section class="tarjeta seccion">
+    <h2 data-t="device_settings"></h2>
+    <div class="campos">
+      <div>
+        <label for="inEquipo" data-t="device_name"></label>
+        <input type="text" id="inEquipo" maxlength="32" autocomplete="off" spellcheck="false">
+        <div class="ayuda" data-t="device_name_help"></div>
+      </div>
+      <div>
+        <label data-t="transport"></label>
+        <div class="segmentado" id="segTransp">
+          <button type="button" data-v="tcp">TCP</button>
+          <button type="button" data-v="udp">UDP</button>
+        </div>
+        <div class="ayuda" data-t="transport_help"></div>
+      </div>
+      <div>
+        <label for="inApSsid" data-t="ap_name"></label>
+        <input type="text" id="inApSsid" maxlength="32" autocomplete="off" spellcheck="false">
+      </div>
+      <div>
+        <label for="inApClave" data-t="ap_password"></label>
+        <input type="text" id="inApClave" maxlength="63" autocomplete="off" spellcheck="false">
+      </div>
+      <div>
+        <label for="inPais" data-t="country"></label>
+        <input type="text" id="inPais" maxlength="2" autocomplete="off" spellcheck="false">
+      </div>
+      <div>
+        <label for="inClavePanel" data-t="panel_password"></label>
+        <input type="password" id="inClavePanel" maxlength="64" autocomplete="new-password">
+        <div class="ayuda" id="ayudaClavePanel"></div>
+        <button type="button" class="boton peligro oculto" id="btQuitarClave" style="margin-top:8px" data-t="remove_password"></button>
+      </div>
+    </div>
+    <div class="botones">
+      <button class="boton principal" id="btGuardarEquipo" data-t="save"></button>
+    </div>
+    <div class="mensaje oculto" id="msgEquipo"></div>
+
+    <h2 style="margin-top:20px" data-t="backup"></h2>
+    <div class="botones" style="margin-top:0">
+      <a class="boton" href="/api/respaldo" download data-t="download_backup"></a>
+      <button class="boton" id="btRestaurar" data-t="restore_backup"></button>
+      <input type="file" id="archivoRespaldo" accept="application/json,.json" class="oculto">
+      <button class="boton peligro" id="btFabrica" data-t="factory_reset"></button>
+    </div>
+    <div class="ayuda" data-t="backup_help"></div>
+    <div class="mensaje oculto" id="msgRespaldo"></div>
+
+    <h2 style="margin-top:20px" data-t="setup_wifi"></h2>
+    <div class="ayuda" id="apEstado" style="margin:0 0 10px"></div>
+    <div class="botones" style="margin-top:0">
+      <button class="boton" id="btAp"></button>
+      <button class="boton peligro" id="btReboot" data-t="reboot"></button>
+    </div>
+  </section>
+
+  <section class="tarjeta seccion">
+    <h2 data-t="activity"></h2>
+    <ul class="lista eventos" id="eventos"></ul>
+  </section>
+
+  <footer>NDIICAM <span id="version"></span> · GPL-3.0 · NDI® is a registered trademark of Vizrt NDI AB</footer>
+</div>
+<div class="desconectado oculto" id="desconectado" data-t="disconnected"></div>
+
+<script>
+"use strict";
+// ---------------------------------------------------------------- textos
+const T = {
+  es: {
+    hdmi_title: "Salida HDMI", hdmi_on: "Mostrar", hdmi_camera: "Cámara en pantalla", hdmi_state: "Estado",
+    hdmi_help: "Muestra la imagen de una cámara en el monitor conectado al equipo, para encuadrar. No consume CPU. Activarla o cambiar de cámara corta su NDI unos 2 s.",
+    hdmi_no_monitor: "No hay ningún monitor conectado", hdmi_monitor: (p) => `Monitor en ${p.conector} (${p.modo || "?"})`,
+    hdmi_showing: (n) => `Mostrando ${n}`, hdmi_off_state: "Apagada", hdmi_waiting: "Esperando a la cámara…",
+    hdmi_failed: "La salida falló: la emisión sigue sin ella. Desactívala y vuelve a activarla para reintentar.",
+    hdmi_auto: "Automática (la primera activa)",
+    hdmi_screen_res: "Resolución de la pantalla", hdmi_res_native: "Nativa del monitor",
+    hdmi_res_help: "Ponla igual que la de la cámara para verla a pantalla completa sin gastar CPU. Se aplica al reiniciar el equipo.",
+    hdmi_reboot_needed: "Hay que reiniciar el equipo para aplicar la resolución de la pantalla.", reboot_now: "Reiniciar ahora",
+    ap_banner_t: "Estás en la WiFi de configuración",
+    ap_banner_p: "Elige abajo la red WiFi a la que debe conectarse el equipo.",
+    traffic: "tráfico Mbit/s", cpu_pct: "CPU %", power_w: "procesador W",
+    power: "Consumo del procesador", power_value: (p, c) => `${p.toFixed(1)} W` + (c != null ? ` (núcleos ${c.toFixed(1)} W)` : ""), sources: "Fuentes", receivers: "Receptores",
+    mbit_out: "Mbit/s saliendo", cpu: "Procesador", network: "Red", link_use: "Uso de la conexión",
+    connection: "Conexión", band: "Banda", link_speed: "Velocidad del enlace", ip: "Dirección IP",
+    transport: "Transporte NDI", device: "Equipo", memory: "Memoria", temperature: "Temperatura",
+    uptime: "Encendido desde hace", updates: "Actualizaciones", installed_version: "Versión instalada",
+    latest_version: "Última versión", checked: "Comprobado", check_updates: "Buscar actualización",
+    checking: "Buscando…", install_update: (v) => `Instalar ${v}`, release_notes: "Novedades",
+    up_to_date: "Tienes la última versión.", updating: "Actualizando… el servicio se reinicia solo y el panel vuelve en uno o dos minutos.",
+    never: "Nunca", ago: (s) => `hace ${s}`,
+    update_errors: { sin_versiones: "Aún no hay versiones publicadas.", sin_internet: "Sin acceso a internet." },
+    wifi_networks: "Redes WiFi",
+    saved_help: "Guardadas: el equipo se conecta a la de mayor prioridad que tenga a su alcance",
+    scan: "Buscar redes", scanning: "Buscando…",
+    scan_cached: "La tarjeta WiFi está haciendo de punto de acceso: esta es la lista de antes de activarlo.",
+    ip_address: "Dirección IP", ip_auto: "Automática (DHCP)", ip_manual: "Fija",
+    ip_profile: (p, d) => `Se aplica a la conexión «${p}» (${d}).`, ip_none: "Sin conexión con ruta a internet: no hay nada que configurar.",
+    ip_addr: "Dirección", ip_prefix: "Prefijo (bits de máscara)", ip_gateway: "Puerta de enlace", ip_dns: "DNS (separados por comas)",
+    apply: "Aplicar",
+    confirm_ip_manual: (ip) => `El equipo pasará a la IP fija ${ip}. Si este panel deja de responder, ábrelo en http://${ip}/ o por el nombre .local.\n\nSi con la nueva dirección no hay conexión, se vuelve sola a la anterior en unos 20 s. ¿Aplicar?`,
+    confirm_ip_auto: "El equipo pedirá la dirección por DHCP: puede cambiar. Si este panel deja de responder, ábrelo por el nombre .local. ¿Aplicar?",
+    ip_applying: "Aplicando… comprobando la conexión con la nueva dirección (hasta 30 s).",
+    ip_ok: (c) => `Listo. El equipo responde en http://${c.direccion}/ (y en http://${c.equipo}.local).`,
+    ip_errors: { sin_conexion: "Con esa configuración no había conexión: se ha vuelto a la anterior.", generico: "No se pudo aplicar: se ha vuelto a la anterior." },
+    device_settings: "Equipo", device_name: "Nombre del equipo",
+    device_name_help: "También es el prefijo de las fuentes NDI y la dirección <nombre>.local. Cambiarlo reinicia el servicio.",
+    transport_help: "TCP es lo más compatible. UDP es el modo por defecto de NDI 6. Cambiarlo reinicia el servicio.",
+    ap_name: "Nombre de la WiFi de configuración", ap_password: "Clave de la WiFi de configuración",
+    country: "País (código de 2 letras)", panel_password: "Contraseña del panel",
+    panel_pw_on: "Activa. Escribe una nueva para cambiarla.", remove_password: "Quitar contraseña",
+    panel_pw_off: "Sin contraseña: cualquiera en tu red puede abrir este panel.",
+    save: "Guardar cambios", backup: "Copia de seguridad", download_backup: "Descargar copia",
+    restore_backup: "Restaurar copia", factory_reset: "Valores de fábrica",
+    backup_help: "La copia incluye los ajustes, las redes WiFi guardadas con sus claves y el nombre del equipo: guárdala en un sitio seguro.",
+    confirm_restore: (f) => `Se restaurará la copia del ${f}. Se añadirán sus redes WiFi, se aplicarán sus ajustes y el servicio se reiniciará. ¿Continuar?`,
+    restoring: "Restaurando… el servicio se reinicia y el panel vuelve en unos segundos.",
+    bad_backup: "Ese archivo no es una copia de NDIICAM.",
+    confirm_factory: "Se borrarán TODOS los ajustes y TODAS las redes WiFi guardadas. El equipo se quedará sin red y activará la WiFi de configuración.\n\nEscribe FABRICA para confirmar:",
+    factory_done: "Restableciendo… el equipo se quedará sin red y activará la WiFi de configuración en un minuto.",
+    setup_wifi: "WiFi de configuración", reboot: "Reiniciar equipo", activity: "Actividad",
+    disconnected: "Sin conexión con el equipo. Reintentando…",
+    st_emitiendo: "Emitiendo", st_iniciando: "Iniciando", st_sin_camara: "Sin cámara", st_error: "Error", st_desactivada: "Desactivada",
+    sub_sin_camara: "Conecta una cámara USB: la emisión empieza sola.",
+    sub_emitiendo: (n, lista) => (n === 1 ? "1 fuente: " : `${n} fuentes: `) + lista.join(" · "),
+    sub_desactivada: "Todas las fuentes están desactivadas.",
+    source_stream: "Emitir", ndi_name: "Nombre NDI", resolution: "Resolución", framerate: "Fotogramas por segundo",
+    audio: "Audio", audio_auto: "Automático (micrófono de la cámara)", audio_off: "Sin audio",
+    audio_none: "La cámara no tiene micrófono", audio_failed: "El audio falló: emitiendo sin él",
+    audio_on: "Activo", audio_off_state: "Desactivado", audio_waiting: "Esperando…",
+    ndi_name_net: "Nombre en la red", mode: "Modo", cam_fps: "fps cámara / enviados", cam_stream: "Flujo de la cámara",
+    dropped: "Descartados", receivers_conn: "Receptores", streaming_for: "Emitiendo desde hace",
+    none: "Ninguno", in_last_2s: "en 2 s", nobody_now: "ninguno ahora mismo",
+    restart_stream: "Reiniciar", saved_ok: "Guardado. La fuente se reinicia con los nuevos ajustes.",
+    saved_restart: "Guardado. El servicio se está reiniciando: el panel vuelve en unos segundos.",
+    saved_simple: "Guardado.", restarting_stream: "Reiniciando la fuente…",
+    connected: "Conectada", cable: "Cable", wifi_signal: "Señal WiFi", no_connection: "Sin conexión",
+    of: "de", no_network: "Sin red", channel: "canal", cores: "núcleos",
+    forget: "Olvidar", connect: "Conectar", password: "Contraseña", open: "abierta",
+    in_use: "conectada", no_networks: "No se ve ninguna red", none_f: "Ninguna",
+    ap_active: (a) => `Activa (${a.modo === "simultaneo" ? "junto a la WiFi" : "sola"}): «${a.ssid}», clave «${a.clave}» · ${a.clientes} conectado(s)`,
+    ap_idle: "Inactiva: se activa sola si no hay ninguna red conocida",
+    ap_no_wifi: "Este equipo no tiene WiFi", ap_on: "Activar WiFi de configuración", ap_off: "Desactivar WiFi de configuración",
+    confirm_ap: "Se activará durante 10 minutos la WiFi de configuración, además de la conexión actual. ¿Seguir?",
+    confirm_reboot: "¿Reiniciar el equipo? La emisión se cortará cerca de un minuto.",
+    confirm_forget: (s, act) => `¿Olvidar la red «${s}»?` + (act ? "\n\nEs la red que usa ahora: el equipo se desconectará de ella." : ""),
+    confirm_connect: (s) => `¿Conectar el equipo a «${s}»?\n\nSi es una red distinta a la tuya, perderás este panel: búscalo luego desde esa red.`,
+    connecting: (s) => `Conectando a «${s}»… puede tardar hasta 45 s.`,
+    wifi_ok: (c) => `Conectado a «${c.ssid}» con la IP ${c.ip}. Desde esa red, abre http://${c.equipo}.local`,
+    errors: {
+      nombre_ndi_invalido: "Nombre NDI no válido: letras, números, espacios, puntos o guiones (máx. 48).",
+      resolucion_invalida: "Resolución no válida.", fps_invalido: "Fotogramas por segundo no válidos.",
+      camara_invalida: "Esa cámara ya no está conectada.", audio_invalido: "Ese dispositivo de audio ya no está.",
+      transporte_invalido: "Transporte no válido.",
+      ssid_invalido: "Nombre de red no válido (1 a 32 caracteres).",
+      clave_wifi_invalida: "La clave WiFi tiene entre 8 y 63 caracteres.",
+      pais_invalido: "El país es un código de 2 letras, como ES, MX o US.",
+      clave_panel_corta: "La contraseña del panel necesita al menos 4 caracteres.",
+      nombre_equipo_invalido: "Nombre de equipo no válido: letras, números y guiones, sin espacios.",
+      conexion_en_curso: "Ya hay una conexión en curso.",
+      ap_no_simultaneo: "Esta tarjeta WiFi no puede ser punto de acceso y cliente a la vez: se activará sola cuando no haya red.",
+      ip_invalida: "Dirección, prefijo, puerta de enlace o DNS no válidos.",
+      gateway_invalido: "La puerta de enlace tiene que estar en la misma red que la dirección.",
+      cambio_ip_en_curso: "Ya hay un cambio de IP en curso.",
+      actualizacion_en_curso: "Ya se está actualizando.", sin_actualizacion: "No hay ninguna actualización que instalar.",
+      respaldo_invalido: "Ese archivo no es una copia de NDIICAM.", confirmacion: "Confirmación incorrecta.",
+      modo_invalido: "Resolución no válida.", sin_grub: "Este sistema no usa GRUB: no se puede cambiar la resolución de arranque.",
+      no_encontrado: "No encontrado.",
+    },
+    wifi_reasons: {
+      clave: "Contraseña incorrecta.", no_encontrada: "No se encuentra la red: puede estar fuera de alcance.",
+      necesita_clave: "Esta red necesita contraseña.", perfil: "No se pudo crear el perfil de la red.",
+      generico: "No se pudo conectar: contraseña incorrecta o red fuera de alcance.",
+    },
+    stream_errors: { arranque: "No se pudo arrancar la emisión.", eos: "La cámara cerró el flujo.", sin_imagen: "La cámara no entregaba imagen.", proceso: "El proceso de la fuente terminó." },
+    fields: { activa: "emitir", ndi_nombre: "nombre NDI", resolucion: "resolución", fps: "fps", audio: "audio",
+      transporte: "transporte", ap_ssid: "nombre de la WiFi de configuración", ap_clave: "clave de la WiFi de configuración",
+      pais: "país", clave_panel: "contraseña del panel", hdmi: "salida HDMI", hdmi_fuente: "cámara en HDMI", hdmi_consola: "resolución de la pantalla" },
+    ev: {
+      inicio: (d) => `NDIICAM ${d.version} arrancado`,
+      cam_detectada: (d) => `Cámara detectada: ${d.fuente}`, cam_desconectada: (d) => `Cámara desconectada: ${d.fuente}`,
+      emitiendo: (d) => `${d.fuente}: emitiendo «${d.nombre}» a ${d.modo} (${d.formato}${d.audio ? " + audio" : ""})`,
+      error_emision: (d) => `${d.fuente}: error de emisión: ${d.detalle}`,
+      sin_imagen: (d) => `${d.fuente}: no entrega imagen; reiniciando la emisión`,
+      audio_fallo: (d) => `${d.fuente}: el audio falló (${d.detalle}); emitiendo sin audio`,
+      aplicando: (d) => `${d.fuente}: aplicando cambios`, fallo_interno: (d) => `Fallo interno: ${d.detalle}`,
+      hdmi_fallo: (d) => `${d.fuente}: la salida HDMI falló (${d.detalle}); emitiendo sin ella`,
+      ajustes_fuente: (d) => `${d.fuente}: ajustes cambiados: ` + d.campos.map((c) => T.es.fields[c] || c).join(", "),
+      ap_activa: (d) => `WiFi de configuración activa: «${d.ssid}»`, ap_caida: () => "La WiFi de configuración se cayó; reiniciándola",
+      ap_off_red: () => "Red disponible: WiFi de configuración desactivada",
+      ap_sin_simultaneo: () => "La tarjeta no admite AP y cliente a la vez: se usará en modo alterno",
+      ap_fallo: () => "No se pudo activar la WiFi de configuración", ap_manual_on: () => "WiFi de configuración activada a mano (10 min)",
+      ap_manual_off: () => "WiFi de configuración desactivada a mano",
+      wifi_ok: (d) => `Conectado a «${d.ssid}» (IP ${d.ip})`,
+      wifi_error: (d) => `WiFi «${d.ssid}»: ${T.es.wifi_reasons[d.motivo] || d.motivo}`,
+      red_olvidada: (d) => `Red olvidada: ${d.ssid}`, reinicio_equipo: () => "Reinicio del equipo solicitado",
+      nombre_equipo: (d) => `Nuevo nombre del equipo: ${d.nombre}`,
+      ajustes: (d) => "Ajustes cambiados: " + d.campos.map((c) => T.es.fields[c] || c).join(", "),
+      ip_cambiada: (d) => `IP de «${d.perfil}» ${d.metodo === "manual" ? "fijada en" : "por DHCP:"} ${d.direccion}`,
+      ip_revertida: (d) => `Sin conexión con la nueva IP en «${d.perfil}»: restaurada la anterior`,
+      actualizacion_disponible: (d) => `Hay una actualización: ${d.version}`,
+      actualizando: (d) => `Instalando la actualización ${d.version}…`,
+      actualizado: (d) => `Actualizado de ${d.de} a ${d.a}`,
+      actualizacion_sin_cambio: (d) => `La actualización no cambió la versión (${d.version}); revisa /var/lib/ndiicam/actualizacion.log`,
+      actualizacion_error: (d) => `No se pudo lanzar la actualización: ${d.detalle}`,
+      respaldo_restaurado: (d) => `Copia del ${d.fecha} restaurada (${d.wifi} redes WiFi añadidas)`,
+      fabrica: () => "Valores de fábrica restablecidos",
+    },
+  },
+  en: {
+    hdmi_title: "HDMI output", hdmi_on: "Show", hdmi_camera: "Camera on screen", hdmi_state: "Status",
+    hdmi_help: "Shows one camera on the monitor plugged into the device, for framing. It uses no CPU. Turning it on or switching camera interrupts that camera's NDI for about 2 s.",
+    hdmi_no_monitor: "No monitor connected", hdmi_monitor: (p) => `Monitor on ${p.conector} (${p.modo || "?"})`,
+    hdmi_showing: (n) => `Showing ${n}`, hdmi_off_state: "Off", hdmi_waiting: "Waiting for the camera…",
+    hdmi_failed: "The output failed: streaming continues without it. Turn it off and on again to retry.",
+    hdmi_auto: "Automatic (first active one)",
+    hdmi_screen_res: "Screen resolution", hdmi_res_native: "Monitor's native",
+    hdmi_res_help: "Set it to the camera's resolution to see it full screen with no CPU cost. Applied when the device restarts.",
+    hdmi_reboot_needed: "Restart the device to apply the screen resolution.", reboot_now: "Restart now",
+    ap_banner_t: "You are on the setup WiFi",
+    ap_banner_p: "Choose below the WiFi network this device should join.",
+    traffic: "traffic Mbit/s", cpu_pct: "CPU %", power_w: "processor W",
+    power: "Processor power", power_value: (p, c) => `${p.toFixed(1)} W` + (c != null ? ` (cores ${c.toFixed(1)} W)` : ""), sources: "Sources", receivers: "Receivers",
+    mbit_out: "Mbit/s out", cpu: "CPU", network: "Network", link_use: "Link usage",
+    connection: "Connection", band: "Band", link_speed: "Link speed", ip: "IP address",
+    transport: "NDI transport", device: "Device", memory: "Memory", temperature: "Temperature",
+    uptime: "Up for", updates: "Updates", installed_version: "Installed version",
+    latest_version: "Latest version", checked: "Checked", check_updates: "Check for updates",
+    checking: "Checking…", install_update: (v) => `Install ${v}`, release_notes: "Release notes",
+    up_to_date: "You have the latest version.", updating: "Updating… the service restarts by itself and the panel is back in a minute or two.",
+    never: "Never", ago: (s) => `${s} ago`,
+    update_errors: { sin_versiones: "No releases published yet.", sin_internet: "No internet access." },
+    wifi_networks: "WiFi networks",
+    saved_help: "Saved: the device joins the highest-priority one in range",
+    scan: "Scan for networks", scanning: "Scanning…",
+    scan_cached: "The WiFi card is acting as an access point: this is the list from before it started.",
+    ip_address: "IP address", ip_auto: "Automatic (DHCP)", ip_manual: "Static",
+    ip_profile: (p, d) => `Applies to the connection "${p}" (${d}).`, ip_none: "No connection with a route to the internet: nothing to configure.",
+    ip_addr: "Address", ip_prefix: "Prefix (mask bits)", ip_gateway: "Gateway", ip_dns: "DNS (comma separated)",
+    apply: "Apply",
+    confirm_ip_manual: (ip) => `The device will switch to the static IP ${ip}. If this panel stops responding, open http://${ip}/ or the .local name.\n\nIf the new address has no connectivity, the previous one is restored after ~20 s. Apply?`,
+    confirm_ip_auto: "The device will request its address over DHCP: it may change. If this panel stops responding, open it via the .local name. Apply?",
+    ip_applying: "Applying… checking connectivity with the new address (up to 30 s).",
+    ip_ok: (c) => `Done. The device answers at http://${c.direccion}/ (and http://${c.equipo}.local).`,
+    ip_errors: { sin_conexion: "That configuration had no connectivity: the previous one was restored.", generico: "Could not apply: the previous one was restored." },
+    device_settings: "Device", device_name: "Device name",
+    device_name_help: "Also the NDI source prefix and the <name>.local address. Changing it restarts the service.",
+    transport_help: "TCP is the most compatible. UDP is the NDI 6 default. Changing it restarts the service.",
+    ap_name: "Setup WiFi name", ap_password: "Setup WiFi password",
+    country: "Country (2-letter code)", panel_password: "Panel password",
+    panel_pw_on: "Enabled. Type a new one to change it.", remove_password: "Remove password",
+    panel_pw_off: "No password: anyone on your network can open this panel.",
+    save: "Save changes", backup: "Backup", download_backup: "Download backup",
+    restore_backup: "Restore backup", factory_reset: "Factory reset",
+    backup_help: "The backup includes the settings, the saved WiFi networks with their passwords and the device name: keep it somewhere safe.",
+    confirm_restore: (f) => `The backup from ${f} will be restored. Its WiFi networks will be added, its settings applied and the service restarted. Continue?`,
+    restoring: "Restoring… the service restarts and the panel is back in a few seconds.",
+    bad_backup: "That file is not an NDIICAM backup.",
+    confirm_factory: "ALL settings and ALL saved WiFi networks will be erased. The device will lose its network and turn on the setup WiFi.\n\nType FABRICA to confirm:",
+    factory_done: "Resetting… the device will lose its network and turn on the setup WiFi within a minute.",
+    setup_wifi: "Setup WiFi", reboot: "Reboot device", activity: "Activity",
+    disconnected: "Lost connection to the device. Retrying…",
+    st_emitiendo: "Streaming", st_iniciando: "Starting", st_sin_camara: "No camera", st_error: "Error", st_desactivada: "Disabled",
+    sub_sin_camara: "Plug in a USB camera: streaming starts by itself.",
+    sub_emitiendo: (n, lista) => (n === 1 ? "1 source: " : `${n} sources: `) + lista.join(" · "),
+    sub_desactivada: "All sources are disabled.",
+    source_stream: "Stream", ndi_name: "NDI name", resolution: "Resolution", framerate: "Frames per second",
+    audio: "Audio", audio_auto: "Automatic (camera microphone)", audio_off: "No audio",
+    audio_none: "The camera has no microphone", audio_failed: "Audio failed: streaming without it",
+    audio_on: "On", audio_off_state: "Off", audio_waiting: "Waiting…",
+    ndi_name_net: "Name on the network", mode: "Mode", cam_fps: "fps camera / sent", cam_stream: "Camera stream",
+    dropped: "Dropped", receivers_conn: "Receivers", streaming_for: "Streaming for",
+    none: "None", in_last_2s: "in 2 s", nobody_now: "none right now",
+    restart_stream: "Restart", saved_ok: "Saved. The source restarts with the new settings.",
+    saved_restart: "Saved. The service is restarting: the panel will be back in a few seconds.",
+    saved_simple: "Saved.", restarting_stream: "Restarting the source…",
+    connected: "Connected", cable: "Cable", wifi_signal: "WiFi signal", no_connection: "No connection",
+    of: "of", no_network: "No network", channel: "channel", cores: "cores",
+    forget: "Forget", connect: "Connect", password: "Password", open: "open",
+    in_use: "connected", no_networks: "No networks in range", none_f: "None",
+    ap_active: (a) => `On (${a.modo === "simultaneo" ? "alongside WiFi" : "alone"}): "${a.ssid}", password "${a.clave}" · ${a.clientes} connected`,
+    ap_idle: "Off: turns on by itself when no known network is available",
+    ap_no_wifi: "This device has no WiFi", ap_on: "Turn on setup WiFi", ap_off: "Turn off setup WiFi",
+    confirm_ap: "The setup WiFi will be on for 10 minutes, alongside the current connection. Continue?",
+    confirm_reboot: "Reboot the device? Streaming will stop for about a minute.",
+    confirm_forget: (s, act) => `Forget the network "${s}"?` + (act ? "\n\nIt is the network in use: the device will disconnect from it." : ""),
+    confirm_connect: (s) => `Connect the device to "${s}"?\n\nIf it is a different network from yours, you will lose this panel: find it again from that network.`,
+    connecting: (s) => `Connecting to "${s}"… it can take up to 45 s.`,
+    wifi_ok: (c) => `Connected to "${c.ssid}" with IP ${c.ip}. From that network, open http://${c.equipo}.local`,
+    errors: {
+      nombre_ndi_invalido: "Invalid NDI name: letters, numbers, spaces, dots or dashes (max 48).",
+      resolucion_invalida: "Invalid resolution.", fps_invalido: "Invalid frame rate.",
+      camara_invalida: "That camera is no longer connected.", audio_invalido: "That audio device is gone.",
+      transporte_invalido: "Invalid transport.",
+      ssid_invalido: "Invalid network name (1 to 32 characters).",
+      clave_wifi_invalida: "WiFi passwords are 8 to 63 characters long.",
+      pais_invalido: "The country is a 2-letter code, such as US, GB or ES.",
+      clave_panel_corta: "The panel password needs at least 4 characters.",
+      nombre_equipo_invalido: "Invalid device name: letters, numbers and dashes, no spaces.",
+      conexion_en_curso: "A connection is already in progress.",
+      ap_no_simultaneo: "This WiFi card cannot be an access point and a client at once: it will turn on by itself when there is no network.",
+      ip_invalida: "Invalid address, prefix, gateway or DNS.",
+      gateway_invalido: "The gateway must be on the same network as the address.",
+      cambio_ip_en_curso: "An IP change is already in progress.",
+      actualizacion_en_curso: "Already updating.", sin_actualizacion: "There is no update to install.",
+      respaldo_invalido: "That file is not an NDIICAM backup.", confirmacion: "Wrong confirmation.",
+      modo_invalido: "Invalid resolution.", sin_grub: "This system does not use GRUB: the boot resolution cannot be changed.",
+      no_encontrado: "Not found.",
+    },
+    wifi_reasons: {
+      clave: "Wrong password.", no_encontrada: "Network not found: it may be out of range.",
+      necesita_clave: "This network needs a password.", perfil: "Could not create the network profile.",
+      generico: "Could not connect: wrong password or network out of range.",
+    },
+    stream_errors: { arranque: "Could not start the stream.", eos: "The camera closed the stream.", sin_imagen: "The camera stopped sending frames.", proceso: "The source process ended." },
+    fields: { activa: "stream", ndi_nombre: "NDI name", resolucion: "resolution", fps: "fps", audio: "audio",
+      transporte: "transport", ap_ssid: "setup WiFi name", ap_clave: "setup WiFi password",
+      pais: "country", clave_panel: "panel password", hdmi: "HDMI output", hdmi_fuente: "HDMI camera", hdmi_consola: "screen resolution" },
+    ev: {
+      inicio: (d) => `NDIICAM ${d.version} started`,
+      cam_detectada: (d) => `Camera detected: ${d.fuente}`, cam_desconectada: (d) => `Camera disconnected: ${d.fuente}`,
+      emitiendo: (d) => `${d.fuente}: streaming "${d.nombre}" at ${d.modo} (${d.formato}${d.audio ? " + audio" : ""})`,
+      error_emision: (d) => `${d.fuente}: stream error: ${d.detalle}`,
+      sin_imagen: (d) => `${d.fuente}: no frames; restarting the stream`,
+      audio_fallo: (d) => `${d.fuente}: audio failed (${d.detalle}); streaming without audio`,
+      aplicando: (d) => `${d.fuente}: applying changes`, fallo_interno: (d) => `Internal error: ${d.detalle}`,
+      hdmi_fallo: (d) => `${d.fuente}: HDMI output failed (${d.detalle}); streaming without it`,
+      ajustes_fuente: (d) => `${d.fuente}: settings changed: ` + d.campos.map((c) => T.en.fields[c] || c).join(", "),
+      ap_activa: (d) => `Setup WiFi on: "${d.ssid}"`, ap_caida: () => "The setup WiFi stopped; restarting it",
+      ap_off_red: () => "Network available: setup WiFi turned off",
+      ap_sin_simultaneo: () => "The card cannot do AP and client at once: using alternating mode",
+      ap_fallo: () => "Could not start the setup WiFi", ap_manual_on: () => "Setup WiFi turned on manually (10 min)",
+      ap_manual_off: () => "Setup WiFi turned off manually",
+      wifi_ok: (d) => `Connected to "${d.ssid}" (IP ${d.ip})`,
+      wifi_error: (d) => `WiFi "${d.ssid}": ${T.en.wifi_reasons[d.motivo] || d.motivo}`,
+      red_olvidada: (d) => `Network forgotten: ${d.ssid}`, reinicio_equipo: () => "Device reboot requested",
+      nombre_equipo: (d) => `New device name: ${d.nombre}`,
+      ajustes: (d) => "Settings changed: " + d.campos.map((c) => T.en.fields[c] || c).join(", "),
+      ip_cambiada: (d) => `IP of "${d.perfil}" ${d.metodo === "manual" ? "set to" : "via DHCP:"} ${d.direccion}`,
+      ip_revertida: (d) => `No connectivity with the new IP on "${d.perfil}": previous one restored`,
+      actualizacion_disponible: (d) => `Update available: ${d.version}`,
+      actualizando: (d) => `Installing update ${d.version}…`,
+      actualizado: (d) => `Updated from ${d.de} to ${d.a}`,
+      actualizacion_sin_cambio: (d) => `The update did not change the version (${d.version}); see /var/lib/ndiicam/actualizacion.log`,
+      actualizacion_error: (d) => `Could not launch the update: ${d.detalle}`,
+      respaldo_restaurado: (d) => `Backup from ${d.fecha} restored (${d.wifi} WiFi networks added)`,
+      fabrica: () => "Factory settings restored",
+    },
+  },
+};
+
+let lang = "es";
+try { lang = localStorage.getItem("ndiicam-lang") || ""; } catch (_) { lang = ""; }
+if (!T[lang]) lang = (navigator.language || "en").toLowerCase().startsWith("es") ? "es" : "en";
+const t = (k) => T[lang][k] ?? k;
+
+function aplicarIdioma() {
+  document.documentElement.lang = lang;
+  document.querySelectorAll("[data-t]").forEach((el) => { el.textContent = t(el.dataset.t); });
+  document.querySelectorAll(".idioma button").forEach((b) => b.classList.toggle("activo", b.dataset.lang === lang));
+  tarjetas.forEach((c) => c.raiz.remove()); tarjetas.clear();
+  if (ultimo) pintar(ultimo);
+  cargarWifi(false);
+}
+document.querySelectorAll(".idioma button").forEach((b) => b.addEventListener("click", () => {
+  lang = b.dataset.lang;
+  try { localStorage.setItem("ndiicam-lang", lang); } catch (_) { /* sin almacenamiento */ }
+  aplicarIdioma();
+}));
+
+// ------------------------------------------------------------- utilidades
+const $ = (id) => document.getElementById(id);
+const historial = { tx: [], cpu: [], w: [] };
+let ultimo = null, sondeoWifi = null, sondeoIp = null;
+const editado = new Set();          // campos que el usuario está cambiando
+const elegido = {};                 // valores de selectores sin guardar, por clave
+const tarjetas = new Map();         // id de cámara -> elementos de su tarjeta
+
+function poner(id, texto) { const el = typeof id === "string" ? $(id) : id; el.textContent = texto ?? "—"; }
+function barra(id, pct, clase) {
+  const b = $(id); b.className = "barra " + (clase || "");
+  b.firstElementChild.style.width = Math.max(0, Math.min(100, pct || 0)) + "%";
+}
+function duracion(seg) {
+  if (seg == null) return "—";
+  seg = Math.floor(seg);
+  const d = Math.floor(seg / 86400), h = Math.floor(seg % 86400 / 3600), m = Math.floor(seg % 3600 / 60);
+  if (d) return `${d} d ${h} h`;
+  if (h) return `${h} h ${m} min`;
+  if (m) return `${m} min`;
+  return `${seg} s`;
+}
+function hora(ts) {
+  return new Date(ts * 1000).toLocaleTimeString(lang, { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+}
+function banda(b) { return b === "5" ? "5 GHz" : lang === "es" ? "2,4 GHz" : "2.4 GHz"; }
+function grafica(id, datos, max) {
+  const svg = $(id), n = 60, w = 130, h = 38;
+  max = Math.max(max, ...datos, 1);
+  const pts = datos.map((v, i) => `${(w * (n - datos.length + i) / (n - 1)).toFixed(1)},${(h - 2 - (h - 4) * v / max).toFixed(1)}`);
+  svg.innerHTML = pts.length > 1
+    ? `<polyline points="${pts.join(" ")}" fill="none" stroke="var(--acento)" stroke-width="2" stroke-linejoin="round" vector-effect="non-scaling-stroke"/>`
+    : "";
+}
+function senalSvg(pct) {
+  const s = document.createElement("span"); s.className = "senal";
+  [25, 50, 75, 100].forEach((umbral, i) => {
+    const b = document.createElement("i"); b.style.height = (4 + i * 3) + "px";
+    if (pct >= umbral - 12) b.className = "on";
+    s.appendChild(b);
+  });
+  return s;
+}
+function mensaje(el, texto, clase) {
+  const m = typeof el === "string" ? $(el) : el;
+  if (!texto) { m.className = "mensaje oculto"; return; }
+  m.className = "mensaje " + clase; m.textContent = texto;
+}
+function textoError(codigo) { return T[lang].errors[codigo] || codigo; }
+function vacio(ul, texto) {
+  const li = document.createElement("li"); li.className = "vacio"; li.textContent = texto; ul.appendChild(li);
+}
+async function api(ruta, datos) {
+  const op = datos === undefined ? {} :
+    { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(datos) };
+  const r = await fetch(ruta, op);
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(textoError(j.error || "HTTP " + r.status));
+  return j;
+}
+function el(tag, attrs, ...hijos) {
+  const e = document.createElement(tag);
+  for (const k in attrs || {}) {
+    if (k === "class") e.className = attrs[k];
+    else if (k === "text") e.textContent = attrs[k];
+    else if (k.startsWith("on")) e.addEventListener(k.slice(2), attrs[k]);
+    else e.setAttribute(k, attrs[k]);
+  }
+  hijos.forEach((h) => h != null && e.append(h));
+  return e;
+}
+function segmentadoEn(cont, valores, actual, deshabilitados, alElegir) {
+  if (valores) {
+    cont.replaceChildren(...valores.map((v) => el("button", { type: "button", "data-v": String(v), text: String(v),
+      onclick: () => alElegir(v) })));
+  }
+  cont.querySelectorAll("button").forEach((b) => {
+    b.classList.toggle("activo", b.dataset.v === String(actual));
+    b.disabled = (deshabilitados || []).includes(b.dataset.v);
+  });
+}
+function rellenar(input, valor, clave) {
+  if (!editado.has(clave) && document.activeElement !== input) input.value = valor ?? "";
+}
+
+// ----------------------------------------------------------------- fuentes
+const CLASES = { emitiendo: "ok", iniciando: "aviso", sin_camara: "aviso", error: "mal", desactivada: "" };
+
+function crearTarjeta(f) {
+  const id = f.id, k = (campo) => `${id}|${campo}`;
+  const c = { id };
+  c.pastilla = el("span", { class: "pastilla" });
+  c.conmutador = el("input", { type: "checkbox", onchange: () => {
+    api("/api/fuente", { id, activa: c.conmutador.checked }).catch((err) => mensaje(c.msg, err.message, "mal"));
+  } });
+  c.raiz = el("section", { class: "tarjeta fuente" },
+    el("div", { class: "fuente-cab" },
+      el("div", null, el("h3", { text: f.camara }), c.sub = el("div", { class: "sub" })),
+      c.pastilla),
+    el("div", { class: "fuente-cuerpo" },
+      el("dl", null,
+        el("dt", { text: t("ndi_name_net") }), c.ndi = el("dd"),
+        el("dt", { text: t("mode") }), c.modo = el("dd"),
+        el("dt", { text: t("cam_fps") }), c.fps = el("dd"),
+        el("dt", { text: t("cam_stream") }), c.mbps = el("dd"),
+        el("dt", { text: t("dropped") }), c.desc = el("dd"),
+        el("dt", { text: t("audio") }), c.audio = el("dd"),
+        el("dt", { text: t("receivers_conn") }), c.recep = el("dd"),
+        el("dt", { text: t("streaming_for") }), c.desde = el("dd")),
+      el("div", null,
+        el("label", { class: "conmutador", style: "margin-bottom:12px" }, c.conmutador, el("span", { text: t("source_stream") })),
+        el("label", { text: t("ndi_name") }),
+        c.nombre = el("input", { type: "text", maxlength: "48", autocomplete: "off", spellcheck: "false",
+          oninput: () => editado.add(k("nombre")) }),
+        el("label", { text: t("resolution"), style: "margin-top:12px" }),
+        c.segRes = el("div", { class: "segmentado" }),
+        el("label", { text: t("framerate"), style: "margin-top:12px" }),
+        c.segFps = el("div", { class: "segmentado" }),
+        el("label", { text: t("audio"), style: "margin-top:12px" }),
+        c.selAudio = el("select", { onchange: () => editado.add(k("audio")) }),
+        el("div", { class: "botones" },
+          el("button", { class: "boton principal", text: t("save"), onclick: async (ev) => {
+            const datos = { id, ndi_nombre: c.nombre.value.trim() };
+            if (elegido[k("res")]) datos.resolucion = elegido[k("res")];
+            if (elegido[k("fps")]) datos.fps = Number(elegido[k("fps")]);
+            if (editado.has(k("audio"))) datos.audio = c.selAudio.value;
+            ev.target.disabled = true;
+            try {
+              await api("/api/fuente", datos);
+              ["nombre", "audio"].forEach((x) => editado.delete(k(x)));
+              delete elegido[k("res")]; delete elegido[k("fps")];
+              mensaje(c.msg, t("saved_ok"), "ok");
+            } catch (err) { mensaje(c.msg, err.message, "mal"); }
+            ev.target.disabled = false;
+            setTimeout(() => mensaje(c.msg), 6000);
+          } }),
+          el("button", { class: "boton", text: t("restart_stream"), onclick: async () => {
+            await api("/api/fuente/reiniciar", { id }).catch(() => {});
+            mensaje(c.msg, t("restarting_stream"), "info"); setTimeout(() => mensaje(c.msg), 4000);
+          } })),
+        c.msg = el("div", { class: "mensaje oculto" }))));
+  segmentadoEn(c.segRes, ["720p", "1080p"], null, [], (v) => { elegido[k("res")] = v; pintar(ultimo); });
+  return c;
+}
+
+function pintarFuente(c, f, e) {
+  const id = f.id, k = (campo) => `${id}|${campo}`, aj = f.ajustes;
+  c.pastilla.className = "pastilla " + (CLASES[f.estado] || "") + (f.estado === "emitiendo" ? " vivo" : "");
+  poner(c.pastilla, t("st_" + f.estado));
+  poner(c.sub, f.estado === "error" ? (T[lang].stream_errors[f.error] || f.error) : f.dispositivo);
+  poner(c.ndi, f.nombre_ndi);
+  poner(c.modo, f.modo ? `${f.modo.replace(" @", " · ")} · ${f.formato}` : "—");
+  const activo = f.estado === "emitiendo";
+  poner(c.fps, activo ? `${f.fps_camara.toFixed(1)} / ${f.fps_enviados.toFixed(1)}` : "—");
+  poner(c.mbps, activo ? `${f.mbps_camara.toFixed(1)} Mbit/s` : "—");
+  poner(c.desc, activo ? (f.descartes ? `${f.descartes} ${t("in_last_2s")}` : t("none")) : "—");
+  let audio = "—";
+  if (aj.audio === "off") audio = t("audio_off_state");
+  else if (f.audio.fallido) audio = t("audio_failed");
+  else if (f.audio.dispositivo) audio = (f.audio.activo ? t("audio_on") : t("audio_waiting")) + " · " + f.audio.dispositivo;
+  else if (aj.audio === "auto" && !f.audio.disponible) audio = t("audio_none");
+  poner(c.audio, audio);
+  poner(c.recep, f.receptores.length ? f.receptores.map((r) => r.nombre || r.ip).join(", ") : t("nobody_now"));
+  poner(c.desde, f.desde ? duracion(Date.now() / 1000 - f.desde) : "—");
+  // ajustes, sin pisar lo que se está editando
+  if (document.activeElement !== c.conmutador) c.conmutador.checked = aj.activa;
+  rellenar(c.nombre, aj.ndi_nombre, k("nombre"));
+  const noAdmite = Object.keys(f.admite).filter((r) => !f.admite[r]);
+  segmentadoEn(c.segRes, null, elegido[k("res")] || aj.resolucion, noAdmite);
+  const fpsLista = f.fps_disponibles.length ? f.fps_disponibles : [aj.fps];
+  segmentadoEn(c.segFps, fpsLista, elegido[k("fps")] || aj.fps, [], (v) => { elegido[k("fps")] = v; pintar(ultimo); });
+  if (!editado.has(k("audio")) && document.activeElement !== c.selAudio) {
+    c.selAudio.replaceChildren(new Option(t("audio_auto"), "auto"), new Option(t("audio_off"), "off"),
+      ...(e.audio_dispositivos || []).map((a) => new Option(a.nombre, a.id)));
+    c.selAudio.value = aj.audio;
+    if (c.selAudio.value !== aj.audio) c.selAudio.value = "auto";
+  }
+}
+
+function pintarFuentes(e) {
+  const cont = $("fuentes"), fuentes = e.fuentes || [];
+  const ids = new Set(fuentes.map((f) => f.id));
+  tarjetas.forEach((c, id) => { if (!ids.has(id)) { c.raiz.remove(); tarjetas.delete(id); } });
+  fuentes.forEach((f) => {
+    let c = tarjetas.get(f.id);
+    if (!c) { c = crearTarjeta(f); tarjetas.set(f.id, c); cont.appendChild(c.raiz); }
+    pintarFuente(c, f, e);
+  });
+  let vac = cont.querySelector(".vacio-fuentes");
+  if (!fuentes.length && !vac) {
+    cont.appendChild(el("section", { class: "tarjeta fuente vacio-fuentes" }, el("div", { class: "vacio", text: t("sub_sin_camara") })));
+  } else if (fuentes.length && vac) vac.remove();
+}
+
+function pintarHdmi(e) {
+  const h = e.hdmi || {}, fuentes = e.fuentes || [];
+  const monitor = (h.pantallas || []).find((p) => p.conectado);
+  poner("hdmiSub", monitor ? T[lang].hdmi_monitor(monitor) : t("hdmi_no_monitor"));
+  if (document.activeElement !== $("hdmiActiva")) $("hdmiActiva").checked = !!h.activa;
+  $("bloqueHdmiFuente").classList.toggle("oculto", fuentes.length < 2);
+  if (document.activeElement !== $("hdmiFuente")) {
+    $("hdmiFuente").replaceChildren(new Option(t("hdmi_auto"), "auto"), ...fuentes.map((f) => new Option(f.camara, f.id)));
+    $("hdmiFuente").value = h.fuente || "auto";
+    if (!$("hdmiFuente").value) $("hdmiFuente").value = "auto";
+  }
+  const fuente = fuentes.find((f) => f.id === h.mostrando);
+  let estado = t("hdmi_off_state");
+  if (fuentes.some((f) => f.hdmi_fallido)) estado = t("hdmi_failed");
+  else if (h.activa && !monitor) estado = t("hdmi_no_monitor");
+  else if (h.activa && fuente) estado = fuente.hdmi && fuente.estado === "emitiendo" ? T[lang].hdmi_showing(fuente.camara) : t("hdmi_waiting");
+  else if (h.activa) estado = t("hdmi_waiting");
+  poner("hdmiEstado", estado);
+  if (document.activeElement !== $("hdmiConsola")) $("hdmiConsola").value = h.consola || "nativa";
+  $("hdmiReinicio").classList.toggle("oculto", !h.reinicio_pendiente);
+}
+
+// ----------------------------------------------------------------- pintar
+function pintar(e) {
+  ultimo = e;
+  const em = e.emision || {}, red = e.red || {}, eq = e.equipo || {}, cfg = e.config || {}, fuentes = e.fuentes || [];
+  const texto = t("st_" + em.estado);
+  $("pastilla").className = "pastilla " + (CLASES[em.estado] || "") + (em.estado === "emitiendo" ? " vivo" : "");
+  poner("pastilla", texto);
+  poner("equipo", eq.nombre ? eq.nombre.toUpperCase() : "");
+  poner("version", e.version ? "v" + e.version : "");
+  poner("estado", texto);
+  let sub = "";
+  if (em.estado === "sin_camara") sub = t("sub_sin_camara");
+  else if (em.estado === "desactivada") sub = t("sub_desactivada");
+  else sub = T[lang].sub_emitiendo(fuentes.filter((f) => f.ajustes.activa).length,
+    fuentes.filter((f) => f.nombre_ndi).map((f) => f.nombre_ndi));
+  poner("estadoSub", sub);
+  poner("cFuentes", `${em.emitiendo ?? 0} / ${fuentes.length}`);
+  poner("cRecep", String(em.receptores ?? 0));
+  poner("cTx", red.tx_mbps != null ? red.tx_mbps.toFixed(1) : "—");
+  poner("cCpu", eq.cpu != null ? eq.cpu + "%" : "—");
+
+  historial.tx.push(red.tx_mbps || 0); historial.cpu.push(eq.cpu || 0); historial.w.push(eq.potencia_w || 0);
+  for (const k in historial) if (historial[k].length > 60) historial[k].shift();
+  grafica("grafTx", historial.tx, 20); grafica("grafCpu", historial.cpu, 100); grafica("grafW", historial.w, 2);
+  $("bloqueGrafW").classList.toggle("oculto", eq.potencia_w == null);
+
+  pintarFuentes(e);
+  pintarHdmi(e);
+
+  // red
+  const w = red.wifi;
+  if (red.modo === "ethernet") {
+    poner("redTitulo", t("cable"));
+    poner("redSenal", red.ethernet.velocidad ? red.ethernet.velocidad + " Mbit/s" : t("connected"));
+    barra("barraSenal", 100, "ok");
+  } else if (w) {
+    poner("redTitulo", t("wifi_signal"));
+    poner("redSenal", `${w.senal_pct}% · ${w.senal_dbm} dBm`);
+    barra("barraSenal", w.senal_pct, w.senal_pct >= 60 ? "ok" : w.senal_pct >= 35 ? "aviso" : "mal");
+  } else {
+    poner("redTitulo", t("wifi_signal")); poner("redSenal", t("no_connection")); barra("barraSenal", 0, "mal");
+  }
+  if (red.capacidad_mbps) {
+    const uso = 100 * red.tx_mbps / red.capacidad_mbps;
+    poner("redUso", `${red.tx_mbps.toFixed(0)} ${t("of")} ~${red.capacidad_mbps} Mbit/s`);
+    barra("barraUso", uso, uso < 50 ? "ok" : uso < 80 ? "aviso" : "mal");
+  } else { poner("redUso", "—"); barra("barraUso", 0); }
+  poner("redModo", red.modo === "ethernet" ? t("cable") : red.modo === "wifi" ? `WiFi «${w.ssid}»` : t("no_network"));
+  poner("redBanda", red.modo === "wifi" ? `${banda(w.banda)} · ${t("channel")} ${w.canal}` : "—");
+  poner("redEnlace", red.modo === "wifi" && w.tx_mbit ? `${w.tx_mbit} Mbit/s` :
+    red.modo === "ethernet" && red.ethernet.velocidad ? `${red.ethernet.velocidad} Mbit/s` : "—");
+  poner("redIp", red.modo === "ethernet" ? red.ethernet.ip : w ? w.ip : "—");
+  poner("ndiTransporte", (cfg.transporte || "").toUpperCase());
+
+  // equipo
+  poner("eqCpu", `${eq.cpu}% · ${eq.nucleos} ${t("cores")}`);
+  barra("barraCpu", eq.cpu, eq.cpu < 70 ? "ok" : eq.cpu < 90 ? "aviso" : "mal");
+  poner("eqRam", eq.ram_pct + "%"); barra("barraRam", eq.ram_pct, eq.ram_pct < 80 ? "ok" : "aviso");
+  poner("eqPotencia", eq.potencia_w != null ? T[lang].power_value(eq.potencia_w, eq.potencia_nucleos_w) : "—");
+  poner("eqTemp", eq.temp != null ? eq.temp + " °C" : "—");
+  poner("eqUptime", duracion(eq.uptime));
+
+  // actualización
+  const a = e.actualizacion || {};
+  poner("actActual", a.actual ? "v" + a.actual : "—");
+  poner("actUltima", a.ultima || (a.error ? (T[lang].update_errors[a.error] || a.error) : "—"));
+  poner("actComprobado", a.comprobado ? T[lang].ago(duracion(Date.now() / 1000 - a.comprobado)) : t("never"));
+  $("btActualizar").classList.toggle("oculto", !a.disponible || a.en_curso);
+  poner("btActualizar", a.ultima ? T[lang].install_update(a.ultima) : "");
+  $("actNotas").classList.toggle("oculto", !a.url);
+  if (a.url) $("actNotas").href = a.url;
+  if (a.en_curso) mensaje("msgAct", t("updating"), "info");
+
+  // IP
+  const ip = red.ip;
+  $("secIp").querySelectorAll("input, #segIp button, #btIp").forEach((x) => { x.disabled = !ip; });
+  if (ip) {
+    poner("ipPerfil", T[lang].ip_profile(ip.perfil, ip.dispositivo));
+    const metodo = elegido.ip_metodo || ip.metodo;
+    segmentadoEn($("segIp"), null, metodo, []);
+    const origen = ip.metodo === "manual" ? ip : ip.en_uso;
+    rellenar($("ipDir"), origen.direccion, "ipDir"); rellenar($("ipPref"), origen.prefijo, "ipPref");
+    rellenar($("ipGw"), origen.gateway, "ipGw"); rellenar($("ipDns"), (origen.dns || []).join(", "), "ipDns");
+    ["ipDir", "ipPref", "ipGw", "ipDns"].forEach((x) => { $(x).disabled = metodo !== "manual"; });
+  } else poner("ipPerfil", t("ip_none"));
+
+  // ajustes del equipo
+  rellenar($("inEquipo"), eq.nombre, "inEquipo");
+  segmentadoEn($("segTransp"), null, elegido.transporte || cfg.transporte, []);
+  rellenar($("inApSsid"), cfg.ap_ssid, "inApSsid");
+  rellenar($("inApClave"), cfg.ap_clave, "inApClave");
+  rellenar($("inPais"), cfg.pais, "inPais");
+  poner("ayudaClavePanel", cfg.clave_panel ? t("panel_pw_on") : t("panel_pw_off"));
+  $("btQuitarClave").classList.toggle("oculto", !cfg.clave_panel);
+
+  // WiFi de configuración
+  const ap = red.ap || {};
+  poner("apEstado", !red.tiene_wifi ? t("ap_no_wifi") : ap.activo ? T[lang].ap_active(ap) : t("ap_idle"));
+  $("btAp").classList.toggle("oculto", !red.tiene_wifi);
+  poner("btAp", ap.forzado_hasta ? t("ap_off") : t("ap_on"));
+  $("btAp").dataset.activar = ap.forzado_hasta ? "" : "1";
+  $("secWifi").classList.toggle("oculto", !red.tiene_wifi);
+  $("avisoAp").classList.toggle("oculto", !e.desde_ap);
+  // desde la WiFi de configuración, lo primero es elegir red
+  if (e.desde_ap && $("avisoAp").nextElementSibling !== $("secWifi")) $("avisoAp").after($("secWifi"));
+
+  // actividad
+  const ev = $("eventos"); ev.replaceChildren();
+  (e.eventos || []).slice(0, 15).forEach((x) => {
+    const f = T[lang].ev[x.c];
+    ev.appendChild(el("li", null, el("time", { text: hora(x.t) }),
+      el("span", { class: "nombre", style: "white-space:normal", text: f ? f(x.d || {}) : x.c })));
+  });
+}
+
+async function refrescar() {
+  try {
+    pintar(await api("/api/estado"));
+    $("desconectado").classList.add("oculto");
+  } catch (_) {
+    $("desconectado").classList.remove("oculto");
+  }
+  setTimeout(refrescar, 2000);
+}
+
+// --------------------------------------------------------- ajustes equipo
+["inEquipo", "inApSsid", "inApClave", "inPais", "inClavePanel", "ipDir", "ipPref", "ipGw", "ipDns"].forEach((id) =>
+  $(id).addEventListener("input", () => editado.add(id)));
+$("segTransp").querySelectorAll("button").forEach((b) => b.addEventListener("click", () => { elegido.transporte = b.dataset.v; pintar(ultimo); }));
+$("segIp").querySelectorAll("button").forEach((b) => b.addEventListener("click", () => { elegido.ip_metodo = b.dataset.v; pintar(ultimo); }));
+
+async function guardar(boton, msg, datos, campos) {
+  boton.disabled = true;
+  try {
+    const r = await api("/api/config", datos);
+    campos.forEach((c) => editado.delete(c));
+    delete elegido.transporte;
+    mensaje(msg, r.reinicio ? t("saved_restart") : t("saved_simple"), "ok");
+  } catch (err) { mensaje(msg, err.message, "mal"); }
+  boton.disabled = false;
+  setTimeout(() => mensaje(msg), 7000);
+}
+$("btGuardarEquipo").addEventListener("click", () => {
+  const datos = {};
+  if (editado.has("inEquipo")) datos.nombre_equipo = $("inEquipo").value.trim();
+  if (elegido.transporte) datos.transporte = elegido.transporte;
+  if (editado.has("inApSsid")) datos.ap_ssid = $("inApSsid").value.trim();
+  if (editado.has("inApClave")) datos.ap_clave = $("inApClave").value;
+  if (editado.has("inPais")) datos.pais = $("inPais").value.trim();
+  if (editado.has("inClavePanel") && $("inClavePanel").value.trim()) datos.clave_panel = $("inClavePanel").value.trim();
+  $("inClavePanel").value = "";
+  guardar($("btGuardarEquipo"), "msgEquipo", datos, ["inEquipo", "inApSsid", "inApClave", "inPais", "inClavePanel"]);
+});
+$("btQuitarClave").addEventListener("click", () =>
+  guardar($("btQuitarClave"), "msgEquipo", { clave_panel: "" }, ["inClavePanel"]));
+
+// -------------------------------------------------------------------- HDMI
+async function guardarHdmi(datos) {
+  try { await api("/api/config", datos); } catch (err) { mensaje("msgHdmi", err.message, "mal"); }
+}
+$("hdmiActiva").addEventListener("change", () => guardarHdmi({ hdmi: $("hdmiActiva").checked }));
+$("hdmiFuente").addEventListener("change", () => guardarHdmi({ hdmi_fuente: $("hdmiFuente").value }));
+$("hdmiConsola").addEventListener("change", () => guardarHdmi({ hdmi_consola: $("hdmiConsola").value }));
+$("btHdmiReboot").addEventListener("click", async () => {
+  if (!confirm(t("confirm_reboot"))) return;
+  await api("/api/sistema/reiniciar", {}).catch(() => {});
+});
+
+// ---------------------------------------------------------------------- IP
+$("btIp").addEventListener("click", async () => {
+  const metodo = elegido.ip_metodo || (ultimo && ultimo.red.ip && ultimo.red.ip.metodo) || "auto";
+  const datos = { metodo };
+  if (metodo === "manual") {
+    Object.assign(datos, { direccion: $("ipDir").value.trim(), prefijo: Number($("ipPref").value || 24),
+      gateway: $("ipGw").value.trim(), dns: $("ipDns").value });
+    if (!confirm(T[lang].confirm_ip_manual(datos.direccion))) return;
+  } else if (!confirm(t("confirm_ip_auto"))) return;
+  try {
+    await api("/api/red/ip", datos);
+    ["ipDir", "ipPref", "ipGw", "ipDns"].forEach((x) => editado.delete(x)); delete elegido.ip_metodo;
+    mensaje("msgIp", t("ip_applying"), "info");
+    clearInterval(sondeoIp);
+    sondeoIp = setInterval(async () => {
+      try {
+        const ip = (await api("/api/estado")).red.ip, c = ip && ip.cambio;
+        if (!c || c.estado === "aplicando") return;
+        clearInterval(sondeoIp);
+        mensaje("msgIp", c.estado === "ok" ? T[lang].ip_ok(c) : (T[lang].ip_errors[c.motivo] || c.motivo), c.estado === "ok" ? "ok" : "mal");
+      } catch (_) { /* el equipo puede estar cambiando de dirección */ }
+    }, 2000);
+  } catch (err) { mensaje("msgIp", err.message, "mal"); }
+});
+
+// ----------------------------------------------------------- actualización
+$("btComprobar").addEventListener("click", async () => {
+  $("btComprobar").disabled = true; poner("btComprobar", t("checking"));
+  try {
+    const a = await api("/api/actualizacion?comprobar=1");
+    if (a.error) mensaje("msgAct", T[lang].update_errors[a.error] || a.error, "mal");
+    else mensaje("msgAct", a.disponible ? "" : t("up_to_date"), "ok");
+    if (ultimo) { ultimo.actualizacion = a; pintar(ultimo); }
+  } catch (err) { mensaje("msgAct", err.message, "mal"); }
+  $("btComprobar").disabled = false; poner("btComprobar", t("check_updates"));
+  setTimeout(() => { if (!(ultimo && ultimo.actualizacion.en_curso)) mensaje("msgAct"); }, 8000);
+});
+$("btActualizar").addEventListener("click", async () => {
+  try { await api("/api/actualizacion/instalar", {}); mensaje("msgAct", t("updating"), "info"); }
+  catch (err) { mensaje("msgAct", err.message, "mal"); }
+});
+
+// ------------------------------------------------------------------ WiFi
+function itemGuardada(g) {
+  return el("li", null,
+    el("span", { class: "nombre", text: g.ssid }),
+    el("span", { class: "meta", text: g.activa ? t("connected") : "" }),
+    el("button", { class: "boton peligro", text: t("forget"), onclick: async () => {
+      if (!confirm(T[lang].confirm_forget(g.ssid, g.activa))) return;
+      try { await api("/api/wifi/olvidar", { id: g.id, ssid: g.ssid }); cargarWifi(false); }
+      catch (err) { mensaje("msgWifi", err.message, "mal"); }
+    } }));
+}
+function itemVista(r) {
+  const clave = el("input", { type: "password", placeholder: t("password"), autocomplete: "off" });
+  if (!r.seguridad) clave.classList.add("oculto");
+  const form = el("form", { class: "formulario-red oculto", onsubmit: async (ev) => {
+    ev.preventDefault();
+    if (ultimo && ultimo.red.modo === "wifi" && !ultimo.desde_ap && !confirm(T[lang].confirm_connect(r.ssid))) return;
+    try {
+      await api("/api/wifi/conectar", { ssid: r.ssid, clave: clave.value });
+      mensaje("msgWifi", T[lang].connecting(r.ssid), "info");
+      seguirConexion();
+    } catch (err) { mensaje("msgWifi", err.message, "mal"); }
+  } }, clave, el("button", { class: "boton principal", text: t("connect") }));
+  const fila = el("button", { class: "red-boton", onclick: () => { form.classList.toggle("oculto"); clave.focus(); } },
+    senalSvg(r.senal), el("span", { class: "nombre", text: r.ssid }),
+    el("span", { class: "meta", text: `${banda(r.banda)} · ${r.seguridad || t("open")}${r.activa ? " · " + t("in_use") : ""}` }));
+  return el("li", { style: "flex-direction:column;align-items:stretch" }, fila, form);
+}
+async function cargarWifi(buscar) {
+  if (buscar) { $("btBuscar").disabled = true; poner("btBuscar", t("scanning")); }
+  try {
+    const d = await api("/api/wifi/redes" + (buscar ? "?buscar=1" : ""));
+    const g = $("wifiGuardadas"); g.replaceChildren();
+    if (!d.guardadas.length) vacio(g, t("none_f"));
+    d.guardadas.forEach((x) => g.appendChild(itemGuardada(x)));
+    if (buscar || !$("wifiVistas").classList.contains("oculto")) {
+      const v = $("wifiVistas"); v.replaceChildren(); v.classList.remove("oculto");
+      if (!d.redes.length) vacio(v, t("no_networks"));
+      d.redes.forEach((x) => v.appendChild(itemVista(x)));
+    }
+    const exclusivo = ultimo && ultimo.red.ap && ultimo.red.ap.activo && ultimo.red.ap.modo === "exclusivo";
+    $("ayudaCache").classList.toggle("oculto", !exclusivo);
+  } catch (err) { mensaje("msgWifi", err.message, "mal"); }
+  $("btBuscar").disabled = false; poner("btBuscar", t("scan"));
+}
+function seguirConexion() {
+  clearInterval(sondeoWifi);
+  sondeoWifi = setInterval(async () => {
+    try {
+      const c = (await api("/api/estado")).conexion_wifi;
+      if (!c || c.estado === "conectando") return;
+      clearInterval(sondeoWifi);
+      mensaje("msgWifi", c.estado === "ok" ? T[lang].wifi_ok(c) : (T[lang].wifi_reasons[c.motivo] || c.motivo),
+        c.estado === "ok" ? "ok" : "mal");
+      cargarWifi(false);
+    } catch (_) { /* el equipo puede estar cambiando de red */ }
+  }, 1500);
+}
+$("btBuscar").addEventListener("click", () => cargarWifi(true));
+
+// --------------------------------------------------------------- respaldo
+$("btRestaurar").addEventListener("click", () => $("archivoRespaldo").click());
+$("archivoRespaldo").addEventListener("change", async () => {
+  const f = $("archivoRespaldo").files[0]; $("archivoRespaldo").value = "";
+  if (!f) return;
+  let d;
+  try { d = JSON.parse(await f.text()); } catch (_) { return mensaje("msgRespaldo", t("bad_backup"), "mal"); }
+  if (!d || typeof d !== "object" || !("config" in d)) return mensaje("msgRespaldo", t("bad_backup"), "mal");
+  if (!confirm(T[lang].confirm_restore(d.fecha || "?"))) return;
+  try { await api("/api/respaldo", d); mensaje("msgRespaldo", t("restoring"), "info"); }
+  catch (err) { mensaje("msgRespaldo", err.message, "mal"); }
+});
+$("btFabrica").addEventListener("click", async () => {
+  const r = prompt(t("confirm_factory"));
+  if (r !== "FABRICA") return;
+  try { await api("/api/fabrica", { confirmar: "FABRICA" }); mensaje("msgRespaldo", t("factory_done"), "info"); }
+  catch (err) { mensaje("msgRespaldo", err.message, "mal"); }
+});
+
+// ---------------------------------------------------------------- equipo
+$("btAp").addEventListener("click", async () => {
+  const activar = $("btAp").dataset.activar === "1";
+  if (activar && !confirm(t("confirm_ap"))) return;
+  try { await api("/api/ap", { activar }); } catch (err) { mensaje("msgEquipo", err.message, "mal"); }
+});
+$("btReboot").addEventListener("click", async () => {
+  if (!confirm(t("confirm_reboot"))) return;
+  await api("/api/sistema/reiniciar", {}).catch(() => {});
+});
+
+aplicarIdioma();
+refrescar();
+</script>
+</body>
+</html>

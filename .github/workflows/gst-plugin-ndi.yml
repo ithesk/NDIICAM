@@ -1,0 +1,53 @@
+# Compila el plugin NDI de GStreamer (gst-plugins-rs, MPL-2.0) y lo publica en
+# la release, para que el instalador no tenga que compilarlo en el equipo.
+# Se compila en Ubuntu 22.04: el binario sirve en 22.04, 24.04 y Debian 12+.
+name: GStreamer NDI plugin
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+env:
+  GST_RS_TAG: "0.12.11"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev pkg-config
+
+      - name: Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Build gst-plugin-ndi
+        run: |
+          git clone --depth 1 --branch "$GST_RS_TAG" \
+            https://gitlab.freedesktop.org/gstreamer/gst-plugins-rs.git
+          cd gst-plugins-rs
+          cargo build --release --locked -p gst-plugin-ndi
+          cp target/release/libgstndi.so ../libgstndi-x86_64.so
+          cd ..
+          sha256sum libgstndi-x86_64.so > libgstndi-x86_64.so.sha256
+          cat libgstndi-x86_64.so.sha256
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: libgstndi-x86_64
+          path: libgstndi-x86_64.so*
+
+      - name: Attach to release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            libgstndi-x86_64.so
+            libgstndi-x86_64.so.sha256

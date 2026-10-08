@@ -1,0 +1,19 @@
+# NDIICAM — servicio principal: emisor NDI, panel web y WiFi de configuración.
+[Unit]
+Description=NDIICAM: NDI camera, web panel and setup WiFi
+After=NetworkManager.service avahi-daemon.service
+Wants=NetworkManager.service avahi-daemon.service
+# reintentar sin límite
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+# el NDI SDK no mira $HOME sino la carpeta de root en /etc/passwd: su
+# configuración (transporte) se le indica con NDI_CONFIG_DIR
+Environment=HOME=/var/lib/ndiicam NDI_CONFIG_DIR=/var/lib/ndiicam/.ndi PYTHONUNBUFFERED=1
+ExecStart=/usr/bin/python3 /opt/ndiicam/ndiicam.py
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target
