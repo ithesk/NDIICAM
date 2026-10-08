@@ -125,8 +125,9 @@
   .punto.ok { background: var(--ok); } .punto.mal { background: var(--mal); } .punto.aviso { background: var(--aviso); }
   @media (max-width: 640px) {
     .heroe { grid-template-columns: 1fr; }
-    .graficas { justify-content: space-between; }
-    .grafica { text-align: left; }
+    .graficas { justify-content: space-between; gap: 10px; }
+    .grafica { text-align: left; flex: 1; min-width: 0; }
+    .grafica svg { width: 100%; }
     .cifras { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     .heroe .estado { font-size: 24px; }
     .fuente-cuerpo { grid-template-columns: 1fr; }
