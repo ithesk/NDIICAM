@@ -8,6 +8,25 @@ Plug a USB camera into a small PC and it shows up as an NDI source on your netwo
 in OBS, vMix, NDI Studio Monitor or any NDI receiver. Everything is managed from a web
 panel: no terminal needed after installation.
 
+## Screenshots
+
+![NDIICAM web panel: two cameras streaming over NDI, HDMI framing output, network and device status](docs/screenshots/panel-en.png)
+
+<table>
+  <tr>
+    <td width="68%"><img src="docs/screenshots/panel-dark-en.png" alt="Panel in dark mode"></td>
+    <td width="32%"><img src="docs/screenshots/setup-wifi-en.png" alt="Setup WiFi captive portal on a phone"></td>
+  </tr>
+  <tr>
+    <td align="center">Dark mode follows the system theme</td>
+    <td align="center">Setup WiFi on a phone</td>
+  </tr>
+</table>
+
+<sub>Screenshots use demo data (<code>docs/screenshots/demo.py</code>).</sub>
+
+## Features
+
 - **Streams every UVC camera plugged in as its own NDI source** (MJPEG or YUYV) at 720p or 1080p,
   up to 60 fps, **with the camera's microphone** as NDI audio when it has one.
 - **Web panel** at `http://<device>.local`: live status, frame rate, bitrate, connected

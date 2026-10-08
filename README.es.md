@@ -8,6 +8,25 @@ Conectas una cámara USB a un PC pequeño y aparece como fuente NDI en tu red: e
 vMix, NDI Studio Monitor o cualquier receptor NDI. Todo se gestiona desde un panel web:
 tras la instalación no hace falta la terminal.
 
+## Capturas
+
+![Panel web de NDIICAM: dos cámaras emitiendo por NDI, salida HDMI de encuadre, estado de la red y del equipo](docs/screenshots/panel-es.png)
+
+<table>
+  <tr>
+    <td width="68%"><img src="docs/screenshots/panel-dark-es.png" alt="Panel en tema oscuro"></td>
+    <td width="32%"><img src="docs/screenshots/setup-wifi-es.png" alt="Portal de la WiFi de configuración en un móvil"></td>
+  </tr>
+  <tr>
+    <td align="center">El tema oscuro sigue al del sistema</td>
+    <td align="center">WiFi de configuración desde el móvil</td>
+  </tr>
+</table>
+
+<sub>Las capturas usan datos de demostración (<code>docs/screenshots/demo.py</code>).</sub>
+
+## Funciones
+
 - **Emite cada cámara UVC conectada como fuente NDI propia** (MJPEG o YUYV) a 720p o 1080p,
   hasta 60 fps, **con el micrófono de la cámara** como audio NDI si lo tiene.
 - **Panel web** en `http://<equipo>.local`: estado en vivo, fps, tasa de datos, receptores
