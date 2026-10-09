@@ -45,6 +45,9 @@ gestiona desde un panel web: tras la instalación no hace falta la terminal.
   audio. Si la fuente se va, se reconecta solo. Un Atom pequeño no da para emitir y recibir a la
   vez, así que es un modo o el otro.
 - **IP fija, copia de seguridad, valores de fábrica y actualización con un clic** desde el panel.
+- **Decodificación JPEG adaptativa**: si la imagen de la cámara se vuelve demasiado detallada para
+  un núcleo (noche, público, follaje), la decodificación se reparte sola en más hilos y los 1080p30
+  se mantienen.
 - **Ligero**: un único servicio en Python sobre GStreamer, sin frameworks web ni base de datos.
 
 ## Requisitos
@@ -133,9 +136,21 @@ Salen de montarlo en hardware real y explican algunos valores por defecto:
   NDI corren en hilos distintos con colas que descartan. En un solo hilo, un Atom solo llega
   a ~22 fps a 1080p; repartido, mantiene 30 fps. Si la CPU se queda atrás, se descartan
   fotogramas viejos en vez de acumular retraso.
-- **Sin VAAPI.** En Intel Cherry Trail la iGPU decodifica JPEG, pero los fotogramas
-  decodificados no se pueden bajar a memoria (fallan todos), y la codificación SpeedHQ de
-  NDI es solo por CPU. NDI|HX con H.264 por hardware exigiría el NDI Advanced SDK.
+- **Sin GPU, medido de tres formas.** En Intel Cherry Trail (driver i965) `vaapijpegdec` va a
+  30-60 fps con un 10-40% de CPU, pero todos los fotogramas salen negros: las superficies decodificadas
+  no se pueden leer desde memoria. El driver no expone procesado de vídeo (VPP), así que tampoco hay
+  escalado ni conversión por GPU. OpenGL ES funciona sin pantalla (EGL/GBM) y escala 720p→1080p a
+  memoria con un 24% de CPU, pero al alimentar `kmssink` desde ahí cae a 11 fps. La codificación
+  SpeedHQ de NDI es solo por CPU en cualquier caso; NDI|HX con H.264 por hardware exigiría el NDI
+  Advanced SDK.
+- **La decodificación JPEG es el cuello de botella del emisor.** `jpegdec` va en un solo hilo: un
+  fotograma real de cámara a 1080p30 (~210 KB) cuesta el 68% de un núcleo, y uno muy detallado más
+  del 100%, con lo que cae a ~21 fps mientras los demás núcleos no hacen nada. La conversión de color
+  es barata (10-16%) y mandar I420 al NDI en vez de UYVY no ahorra nada (el SDK convierte por dentro).
+  Con `decodificadores` en automático, el servicio arranca con uno y, cuando la cámara entrega más
+  fotogramas de los que salen por NDI, reinicia la fuente repartiendo los fotogramas por turnos entre
+  2-3 decodificadores, reordenados después. Escalado medido: 1 → 21,8 fps, 2 → 40,5, 3 → 59,3 fps con
+  fotogramas pesados; +10% de CPU cuando no hace falta.
 - **La salida HDMI va directa a un plano de vídeo de la GPU** (`kmssink`, UYVY): no gasta CPU.
   Algunos planos no escalan (Intel Cherry Trail): para verla a pantalla completa, pon en el panel la
   resolución de la pantalla igual a la de la cámara. Escribe `video=` en
@@ -164,6 +179,7 @@ Salen de montarlo en hardware real y explican algunos valores por defecto:
 | Aparece la fuente pero sin imagen | Pon el transporte en TCP desde el panel |
 | Tirones por WiFi | Barra de uso del enlace en el panel; 5 GHz; 720p; mejor por cable |
 | El modo receptor va lento | La fuente no tiene la resolución de la pantalla o trae transparencia: mándala a la resolución de la pantalla (en OBS, salida principal de DistroAV) |
+| Los fps de cámara superan a los fps NDI en una cámara MJPEG | La decodificación no da abasto; el servicio añade hilos solo (evento "la decodificación no da abasto"). A mano, en *Equipo → Decodificación JPEG* |
 | El panel no abre | `systemctl status ndiicam`; otro programa en el puerto 80 |
 | Registros | `journalctl -u ndiicam -f`; el del cambio de red en `/var/lib/ndiicam/red.log` |
 

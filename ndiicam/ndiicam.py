@@ -47,7 +47,7 @@ from urllib.parse import parse_qs, urlparse
 
 import yaml
 
-VERSION = "0.2.0"
+VERSION = "0.3.0"
 REPO = "ithesk/NDIICAM"
 CONFIG = "/etc/ndiicam/config.json"
 DATOS = "/var/lib/ndiicam"          # el servicio apunta NDI_CONFIG_DIR a DATOS/.ndi
@@ -70,7 +70,11 @@ POR_DEFECTO = {"ndi_nombre": "NDIICAM", "resolucion": "1080p", "fps": 30, "audio
                "fuentes": {}, "transporte": "tcp", "ap_ssid": "",
                "ap_clave": "ndiicam-setup", "pais": "", "clave_panel": "",
                "hdmi": False, "hdmi_fuente": "auto", "hdmi_consola": "nativa",
-               "modo": "emisor", "rx_fuente": ""}
+               "modo": "emisor", "rx_fuente": "", "decodificadores": "auto"}
+# decodificadores JPEG por fuente: jpegdec va en un solo hilo y con imágenes muy
+# detalladas no llega a 30 fps a 1080p. En "auto" se arranca con uno y se reparte
+# en más cuando la emisión se queda por detrás de la cámara
+MAX_DECODIFICADORES = max(1, min(3, (os.cpu_count() or 2) - 1))
 GRUB_NDIICAM = "/etc/default/grub.d/90-ndiicam.cfg"
 # resolución de la pantalla al arrancar: la de la cámara para verla a pantalla completa
 MODOS_CONSOLA = {"nativa": None, "1080p": "1920x1080@60", "720p": "1280x720@60"}
@@ -440,6 +444,8 @@ class Fuente:
         self.sin_flujo = None
         self.forzar_reinicio = False
         self.audio_fallido = None   # dispositivo de audio que hizo caer el pipeline
+        self.hilos = 1              # decodificadores JPEG en modo automático
+        self.retrasos = 0           # mediciones seguidas con la emisión por detrás de la cámara
         self.hdmi_fallido = False   # el HDMI hizo caer el pipeline: seguir sin él
         self.c = {"cam": 0, "bytes": 0, "out": 0, "desc": 0, "aud": 0}
         self.prev = None
@@ -520,6 +526,16 @@ class Fuente:
                           "audio_activo": c["aud"] > p["aud"]}
             if fps_out > 0.5:
                 self.sin_flujo = None
+                # la cámara entrega más de lo que sale y hay núcleos libres: la
+                # decodificación no da abasto; repartirla en un hilo más
+                fps_cam = self.stats["fps_camara"]
+                self.retrasos = self.retrasos + 1 if fps_cam >= 20 and fps_cam - fps_out >= 3 else 0
+                if (self.retrasos >= 3 and self.obj.get("fmt") == "MJPG"
+                        and self.obj.get("decodificadores", 1) == self.hilos
+                        and self.hilos < MAX_DECODIFICADORES):
+                    self.hilos += 1
+                    self.retrasos = 0
+                    evento("decodificacion_paralela", fuente=self.cam["nombre"], hilos=self.hilos)
                 if self.estado != "emitiendo":
                     self.estado, self.desde = "emitiendo", t
                     evento("emitiendo", fuente=self.cam["nombre"], nombre=self.obj["nombre"],
@@ -716,8 +732,15 @@ class Fuentes:
         fmt = "MJPG" if any(m[2] == fps and m[3] == "MJPG" for m in mismos) else "YUYV"
         return {"dev": f.cam["dev"], "ancho": ancho, "alto": alto, "fps": fps, "fmt": fmt,
                 "nombre": aj["ndi_nombre"], "audio": self.audio_para(f, aj["audio"]),
+                "decodificadores": self.decodificadores(f, fmt),
                 "hdmi": self.hdmi_conector if f.cam["id"] == self.hdmi_para
                 and not f.hdmi_fallido else None}
+
+    def decodificadores(self, f, fmt):
+        if fmt != "MJPG":
+            return 1
+        ajuste = self.config.get()["decodificadores"]
+        return f.hilos if ajuste == "auto" else int(ajuste)
 
     def audio_para(self, f, ajuste):
         if ajuste == "off":
@@ -1488,6 +1511,7 @@ def construir_estado(tx_mbps, cpu_pct, potencia):
             "nombre_ndi": f"{host.upper()} ({obj['nombre']})" if obj else None,
             "modo": f"{obj['ancho']}×{obj['alto']} @{obj['fps']}" if obj else None,
             "formato": obj.get("fmt"),
+            "hilos": f.c.get("hilos", 1) if en_marcha else None,
             "fps_camara": f.stats["fps_camara"] if en_marcha else 0,
             "fps_enviados": f.stats["fps_enviados"] if en_marcha else 0,
             "mbps_camara": f.stats["mbps_camara"] if en_marcha else 0,
@@ -1676,7 +1700,7 @@ class Panel(BaseHTTPRequestHandler):
             self._json({**ESTADO, "config": {
                 "transporte": cfg["transporte"], "ap_ssid": cfg["ap_ssid"],
                 "ap_clave": cfg["ap_clave"], "pais": cfg["pais"],
-                "clave_panel": bool(cfg["clave_panel"])},
+                "clave_panel": bool(cfg["clave_panel"]), "decodificadores": cfg["decodificadores"]},
                 "desde_ap": self._desde_ap(), "eventos": list(EVENTOS)[:40],
                 "conexion_wifi": RED.conexion})
         elif url.path == "/api/wifi/redes":
@@ -1803,6 +1827,11 @@ class Panel(BaseHTTPRequestHandler):
             if d["modo"] not in MODOS:
                 return self._error("modo_invalido")
             cambios["modo"] = d["modo"]
+        if "decodificadores" in d:
+            v = str(d["decodificadores"])
+            if v != "auto" and v not in {str(i) for i in range(1, 5)}:
+                return self._error("modo_invalido")
+            cambios["decodificadores"] = v if v == "auto" else int(v)
         if "rx_fuente" in d:
             # una fuente de la red: vale aunque ahora no se vea (se reintenta)
             v = str(d["rx_fuente"])
@@ -1857,6 +1886,9 @@ class Panel(BaseHTTPRequestHandler):
         if {"hdmi", "hdmi_fuente"} & cambios.keys():
             for f in FUENTES.lista():
                 f.hdmi_fallido = False      # volver a intentarlo con el ajuste nuevo
+        if "decodificadores" in cambios:
+            for f in FUENTES.lista():
+                f.hilos, f.retrasos = 1, 0  # el automático vuelve a empezar desde uno
         if "transporte" in cambios:
             configurar_ndi(cambios["transporte"])
             reiniciar = True    # el SDK solo lee su configuración al arrancar

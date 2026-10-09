@@ -340,6 +340,14 @@
         <div class="ayuda" data-t="transport_help"></div>
       </div>
       <div>
+        <label for="selDeco" data-t="deco_label"></label>
+        <select id="selDeco">
+          <option value="auto" data-t="deco_auto"></option>
+          <option value="1">1</option><option value="2">2</option><option value="3">3</option>
+        </select>
+        <div class="ayuda" data-t="deco_help"></div>
+      </div>
+      <div>
         <label for="inApSsid" data-t="ap_name"></label>
         <input type="text" id="inApSsid" maxlength="32" autocomplete="off" spellcheck="false">
       </div>
@@ -446,6 +454,8 @@ const T = {
     device_settings: "Equipo", device_name: "Nombre del equipo",
     device_name_help: "También es el prefijo de las fuentes NDI y la dirección <nombre>.local. Cambiarlo reinicia el servicio.",
     transport_help: "TCP es lo más compatible. UDP es el modo por defecto de NDI 6. Cambiarlo reinicia el servicio.",
+    deco_label: "Decodificación JPEG", deco_auto: "Automática", deco_hilos: (n) => `${n} hilos`,
+    deco_help: "Hilos que descomprimen el vídeo de la cámara. En automático se usa uno y se añaden más si la emisión se queda por detrás de la cámara (imágenes con mucho detalle: noche, público, follaje).",
     ap_name: "Nombre de la WiFi de configuración", ap_password: "Clave de la WiFi de configuración",
     country: "País (código de 2 letras)", panel_password: "Contraseña del panel",
     panel_pw_on: "Activa. Escribe una nueva para cambiarla.", remove_password: "Quitar contraseña",
@@ -516,7 +526,7 @@ const T = {
     stream_errors: { arranque: "No se pudo arrancar la emisión.", eos: "La cámara cerró el flujo.", sin_imagen: "La cámara no entregaba imagen.", proceso: "El proceso de la fuente terminó." },
     fields: { activa: "emitir", ndi_nombre: "nombre NDI", resolucion: "resolución", fps: "fps", audio: "audio",
       transporte: "transporte", ap_ssid: "nombre de la WiFi de configuración", ap_clave: "clave de la WiFi de configuración",
-      pais: "país", clave_panel: "contraseña del panel", hdmi: "salida HDMI", hdmi_fuente: "cámara en HDMI", rx_fuente: "fuente del receptor", hdmi_consola: "resolución de la pantalla" },
+      pais: "país", clave_panel: "contraseña del panel", hdmi: "salida HDMI", hdmi_fuente: "cámara en HDMI", rx_fuente: "fuente del receptor", hdmi_consola: "resolución de la pantalla", decodificadores: "decodificación JPEG" },
     ev: {
       inicio: (d) => `NDIICAM ${d.version} arrancado`,
       cam_detectada: (d) => `Cámara detectada: ${d.fuente}`, cam_desconectada: (d) => `Cámara desconectada: ${d.fuente}`,
@@ -524,6 +534,7 @@ const T = {
       error_emision: (d) => `${d.fuente}: error de emisión: ${d.detalle}`,
       sin_imagen: (d) => `${d.fuente}: no entrega imagen; reiniciando la emisión`,
       audio_fallo: (d) => `${d.fuente}: el audio falló (${d.detalle}); emitiendo sin audio`,
+      decodificacion_paralela: (d) => `${d.fuente}: la decodificación no da abasto; repartida en ${d.hilos} hilos`,
       aplicando: (d) => `${d.fuente}: aplicando cambios`, fallo_interno: (d) => `Fallo interno: ${d.detalle}`,
       hdmi_fallo: (d) => `${d.fuente}: la salida HDMI falló (${d.detalle}); emitiendo sin ella`,
       modo: (d) => d.modo === "receptor" ? "Modo receptor: cámaras en pausa" : "Modo emisor",
@@ -605,6 +616,8 @@ const T = {
     device_settings: "Device", device_name: "Device name",
     device_name_help: "Also the NDI source prefix and the <name>.local address. Changing it restarts the service.",
     transport_help: "TCP is the most compatible. UDP is the NDI 6 default. Changing it restarts the service.",
+    deco_label: "JPEG decoding", deco_auto: "Automatic", deco_hilos: (n) => `${n} threads`,
+    deco_help: "Threads that decompress the camera's video. Automatic uses one and adds more if the stream falls behind the camera (very detailed pictures: night, crowds, foliage).",
     ap_name: "Setup WiFi name", ap_password: "Setup WiFi password",
     country: "Country (2-letter code)", panel_password: "Panel password",
     panel_pw_on: "Enabled. Type a new one to change it.", remove_password: "Remove password",
@@ -675,7 +688,7 @@ const T = {
     stream_errors: { arranque: "Could not start the stream.", eos: "The camera closed the stream.", sin_imagen: "The camera stopped sending frames.", proceso: "The source process ended." },
     fields: { activa: "stream", ndi_nombre: "NDI name", resolucion: "resolution", fps: "fps", audio: "audio",
       transporte: "transport", ap_ssid: "setup WiFi name", ap_clave: "setup WiFi password",
-      pais: "country", clave_panel: "panel password", hdmi: "HDMI output", hdmi_fuente: "HDMI camera", rx_fuente: "receiver source", hdmi_consola: "screen resolution" },
+      pais: "country", clave_panel: "panel password", hdmi: "HDMI output", hdmi_fuente: "HDMI camera", rx_fuente: "receiver source", hdmi_consola: "screen resolution", decodificadores: "JPEG decoding" },
     ev: {
       inicio: (d) => `NDIICAM ${d.version} started`,
       cam_detectada: (d) => `Camera detected: ${d.fuente}`, cam_desconectada: (d) => `Camera disconnected: ${d.fuente}`,
@@ -683,6 +696,7 @@ const T = {
       error_emision: (d) => `${d.fuente}: stream error: ${d.detalle}`,
       sin_imagen: (d) => `${d.fuente}: no frames; restarting the stream`,
       audio_fallo: (d) => `${d.fuente}: audio failed (${d.detalle}); streaming without audio`,
+      decodificacion_paralela: (d) => `${d.fuente}: decoding cannot keep up; split across ${d.hilos} threads`,
       aplicando: (d) => `${d.fuente}: applying changes`, fallo_interno: (d) => `Internal error: ${d.detalle}`,
       hdmi_fallo: (d) => `${d.fuente}: HDMI output failed (${d.detalle}); streaming without it`,
       modo: (d) => d.modo === "receptor" ? "Receiver mode: cameras paused" : "Sender mode",
@@ -885,7 +899,7 @@ function pintarFuente(c, f, e) {
   poner(c.pastilla, t("st_" + f.estado));
   poner(c.sub, f.estado === "error" ? (T[lang].stream_errors[f.error] || f.error) : f.dispositivo);
   poner(c.ndi, f.nombre_ndi);
-  poner(c.modo, f.modo ? `${f.modo.replace(" @", " · ")} · ${f.formato}` : "—");
+  poner(c.modo, f.modo ? `${f.modo.replace(" @", " · ")} · ${f.formato}` + (f.hilos > 1 ? ` · ${T[lang].deco_hilos(f.hilos)}` : "") : "—");
   const activo = f.estado === "emitiendo";
   poner(c.fps, activo ? `${f.fps_camara.toFixed(1)} / ${f.fps_enviados.toFixed(1)}` : "—");
   poner(c.mbps, activo ? `${f.mbps_camara.toFixed(1)} Mbit/s` : "—");
@@ -1090,6 +1104,7 @@ function pintar(e) {
   rellenar($("inApSsid"), cfg.ap_ssid, "inApSsid");
   rellenar($("inApClave"), cfg.ap_clave, "inApClave");
   rellenar($("inPais"), cfg.pais, "inPais");
+  rellenar($("selDeco"), String(cfg.decodificadores ?? "auto"), "selDeco");
   poner("ayudaClavePanel", cfg.clave_panel ? t("panel_pw_on") : t("panel_pw_off"));
   $("btQuitarClave").classList.toggle("oculto", !cfg.clave_panel);
 
@@ -1126,6 +1141,7 @@ async function refrescar() {
 // --------------------------------------------------------- ajustes equipo
 ["inEquipo", "inApSsid", "inApClave", "inPais", "inClavePanel", "ipDir", "ipPref", "ipGw", "ipDns"].forEach((id) =>
   $(id).addEventListener("input", () => editado.add(id)));
+$("selDeco").addEventListener("change", () => editado.add("selDeco"));
 $("segTransp").querySelectorAll("button").forEach((b) => b.addEventListener("click", () => { elegido.transporte = b.dataset.v; pintar(ultimo); }));
 $("segIp").querySelectorAll("button").forEach((b) => b.addEventListener("click", () => { elegido.ip_metodo = b.dataset.v; pintar(ultimo); }));
 
@@ -1147,9 +1163,10 @@ $("btGuardarEquipo").addEventListener("click", () => {
   if (editado.has("inApSsid")) datos.ap_ssid = $("inApSsid").value.trim();
   if (editado.has("inApClave")) datos.ap_clave = $("inApClave").value;
   if (editado.has("inPais")) datos.pais = $("inPais").value.trim();
+  if (editado.has("selDeco")) datos.decodificadores = $("selDeco").value;
   if (editado.has("inClavePanel") && $("inClavePanel").value.trim()) datos.clave_panel = $("inClavePanel").value.trim();
   $("inClavePanel").value = "";
-  guardar($("btGuardarEquipo"), "msgEquipo", datos, ["inEquipo", "inApSsid", "inApClave", "inPais", "inClavePanel"]);
+  guardar($("btGuardarEquipo"), "msgEquipo", datos, ["inEquipo", "inApSsid", "inApClave", "inPais", "inClavePanel", "selDeco"]);
 });
 $("btQuitarClave").addEventListener("click", () =>
   guardar($("btQuitarClave"), "msgEquipo", { clave_panel: "" }, ["inClavePanel"]));

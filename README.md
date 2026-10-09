@@ -45,6 +45,8 @@ sound. Everything is managed from a web panel: no terminal needed after installa
   its audio. It reconnects by itself if the source goes away. A small Atom cannot send and receive
   at the same time, so it is one mode or the other.
 - **Static IP, backup/restore, factory reset and one-click updates** from the panel.
+- **Adaptive JPEG decoding**: if the camera's pictures get too detailed for one core (night,
+  crowds, foliage), decoding is split across more threads by itself, so 1080p30 holds.
 - **Light**: one Python service on top of GStreamer, no web frameworks, no database.
 
 ## Requirements
@@ -133,9 +135,19 @@ These come from building it on real hardware, and explain some of the defaults:
   separate threads through leaky queues. In a single thread, an Atom only reaches ~22 fps
   at 1080p; split, it holds 30 fps. If the CPU falls behind, old frames are dropped instead
   of building latency.
-- **No VAAPI.** On Intel Cherry Trail the iGPU decodes JPEG, but the decoded frames cannot
-  be mapped back to system memory (every frame fails), and NDI's SpeedHQ encoding is CPU-only
-  anyway. NDI|HX with hardware H.264 would need the NDI Advanced SDK.
+- **No GPU, measured three ways.** On Intel Cherry Trail (i965 driver) `vaapijpegdec` runs at
+  30-60 fps using 10-40% CPU, but every frame comes out black: the decoded surfaces cannot be read
+  back to system memory. The driver exposes no video processing (VPP), so there is no GPU scaling or
+  color conversion either. OpenGL ES works headless (EGL/GBM) and scales 720p→1080p at 24% CPU into
+  memory, but feeding `kmssink` from it drops to 11 fps. NDI's SpeedHQ encoding is CPU-only anyway;
+  NDI|HX with hardware H.264 would need the NDI Advanced SDK.
+- **JPEG decoding is the sender's bottleneck.** `jpegdec` is single-threaded: a real 1080p30 camera
+  frame (~210 KB) takes 68% of one core, a very detailed one more than 100%, which drops to ~21 fps
+  while the other cores sit idle. Color conversion is cheap (10-16%) and feeding NDI I420 instead of
+  UYVY saves nothing (the SDK converts internally). With `decodificadores` on automatic, the service
+  starts with one decoder and, when the camera delivers more frames than NDI sends, restarts the
+  source with frames split across 2-3 decoders in round robin, reordered afterwards. Measured scaling:
+  1 → 21.8 fps, 2 → 40.5, 3 → 59.3 fps on heavy frames; +10% CPU when it is not needed.
 - **HDMI output goes straight to a GPU video plane** (`kmssink`, UYVY), so it costs no CPU. Some
   planes cannot scale (Intel Cherry Trail): to see it full screen, set the screen resolution to
   the camera's in the panel. It writes `video=` to `/etc/default/grub.d/90-ndiicam.cfg` and needs a
@@ -163,6 +175,7 @@ These come from building it on real hardware, and explain some of the defaults:
 | Source listed, no video | Set transport to TCP in the panel |
 | Stutter over WiFi | Link usage bar in the panel; 5 GHz; use 720p; prefer Ethernet |
 | Receiver mode is slow | The source does not match the screen or has transparency: send it at the screen resolution (in OBS, DistroAV main output) |
+| Camera fps higher than NDI fps on an MJPEG camera | Decoding cannot keep up; the service adds decoder threads by itself (event "decoding cannot keep up"). Fix it by hand in *Device → JPEG decoding* |
 | Panel unreachable | `systemctl status ndiicam`; something else on port 80 |
 | Logs | `journalctl -u ndiicam -f`; network migration log in `/var/lib/ndiicam/red.log` |
 
