@@ -1419,9 +1419,10 @@ def conexiones_por_pid():
     return res
 
 
-def bytes_tx():
+def bytes_red(sentido):
+    """Bytes enviados ("tx") o recibidos ("rx") por las interfaces de red."""
     total = 0
-    for ruta in glob.glob("/sys/class/net/*/statistics/tx_bytes"):
+    for ruta in glob.glob(f"/sys/class/net/*/statistics/{sentido}_bytes"):
         if ruta.split("/")[4] not in ("lo", AP_IF):
             total += int(leer(ruta, "0"))
     return total
@@ -1461,7 +1462,8 @@ def medidor():
     prev = None
     while True:
         try:
-            t, tx, cpu, rapl = time.time(), bytes_tx(), tiempos_cpu(), energia_rapl()
+            t, cpu, rapl = time.time(), tiempos_cpu(), energia_rapl()
+            tx, rx = bytes_red("tx"), bytes_red("rx")
             for f in FUENTES.lista():
                 f.medir(t)
             FUENTES.receptor.medir(t)
@@ -1469,10 +1471,10 @@ def medidor():
                 dt = t - prev["t"]
                 potencia = {k: vatios(v, prev["rapl"].get(k), dt) for k, v in rapl.items()}
                 ESTADO.update(construir_estado(
-                    (tx - prev["tx"]) * 8 / dt / 1e6,
+                    (tx - prev["tx"]) * 8 / dt / 1e6, (rx - prev["rx"]) * 8 / dt / 1e6,
                     100 * (1 - (cpu[1] - prev["cpu"][1]) / max(1, cpu[0] - prev["cpu"][0])),
                     potencia))
-            prev = {"t": t, "tx": tx, "cpu": cpu, "rapl": rapl}
+            prev = {"t": t, "tx": tx, "rx": rx, "cpu": cpu, "rapl": rapl}
         except Exception as ex:
             evento("fallo_interno", detalle=str(ex))
         time.sleep(2)
@@ -1491,7 +1493,7 @@ def estado_receptor():
             "audio_fallido": rx.audio_fallido is not None}
 
 
-def construir_estado(tx_mbps, cpu_pct, potencia):
+def construir_estado(tx_mbps, rx_mbps, cpu_pct, potencia):
     host = socket.gethostname()
     cfg = CONF.get()
     conexiones = conexiones_por_pid()
@@ -1565,8 +1567,10 @@ def construir_estado(tx_mbps, cpu_pct, potencia):
     if eth_ok:
         modo, capacidad = "ethernet", 0.9 * (eth_info["velocidad"] or 100)
     elif wifi:
-        # en WiFi, lo útil para TCP ronda la mitad de la velocidad del enlace
-        modo, capacidad = "wifi", 0.5 * (wifi["tx_mbit"] or 0)
+        # en WiFi, lo útil para TCP ronda la mitad de la velocidad del enlace, en el
+        # sentido que importa: de subida al emitir, de bajada al recibir
+        enlace = wifi["rx_mbit"] if receptor else wifi["tx_mbit"]
+        modo, capacidad = "wifi", 0.5 * (enlace or 0)
     else:
         modo, capacidad = "sin_red", None
     mem = dict(re.findall(r"^(\w+):\s+(\d+)", leer("/proc/meminfo"), re.M))
@@ -1596,7 +1600,10 @@ def construir_estado(tx_mbps, cpu_pct, potencia):
                     "receptores": total_rx},
         "red": {"modo": modo, "wifi": wifi, "ethernet": eth_info,
                 "tiene_wifi": bool(RED.wifi),
-                "tx_mbps": round(tx_mbps, 1),
+                "tx_mbps": round(tx_mbps, 1), "rx_mbps": round(rx_mbps, 1),
+                # el tráfico que importa: el que sale al emitir, el que entra al recibir
+                "trafico_mbps": round(rx_mbps if receptor else tx_mbps, 1),
+                "sentido": "entrada" if receptor else "salida",
                 "capacidad_mbps": round(capacidad) if capacidad else None,
                 "ip": RED.ip_config(),
                 "ap": {"activo": RED.ap_activo, "modo": RED.modo_ap,

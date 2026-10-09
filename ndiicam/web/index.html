@@ -175,7 +175,7 @@
     <div class="cifras">
       <div class="cifra"><b id="cFuentes">—</b><span id="cFuentesT" data-t="sources"></span></div>
       <div class="cifra"><b id="cRecep">—</b><span id="cRecepT" data-t="receivers"></span></div>
-      <div class="cifra"><b id="cTx">—</b><span data-t="mbit_out"></span></div>
+      <div class="cifra"><b id="cTx">—</b><span id="cTxT" data-t="mbit_out"></span></div>
       <div class="cifra"><b id="cCpu">—</b><span data-t="cpu"></span></div>
     </div>
   </section>
@@ -429,7 +429,7 @@ const T = {
     ap_banner_p: "Elige abajo la red WiFi a la que debe conectarse el equipo.",
     traffic: "tráfico Mbit/s", cpu_pct: "CPU %", power_w: "procesador W",
     power: "Consumo del procesador", power_value: (p, c) => `${p.toFixed(1)} W` + (c != null ? ` (núcleos ${c.toFixed(1)} W)` : ""), sources: "Fuentes", receivers: "Receptores",
-    mbit_out: "Mbit/s saliendo", cpu: "Procesador", network: "Red", link_use: "Uso de la conexión",
+    mbit_out: "Mbit/s saliendo", mbit_in: "Mbit/s entrando", cpu: "Procesador", network: "Red", link_use: "Uso de la conexión",
     connection: "Conexión", band: "Banda", link_speed: "Velocidad del enlace", ip: "Dirección IP",
     transport: "Transporte NDI", device: "Equipo", memory: "Memoria", temperature: "Temperatura",
     uptime: "Encendido desde hace", updates: "Actualizaciones", installed_version: "Versión instalada",
@@ -591,7 +591,7 @@ const T = {
     ap_banner_p: "Choose below the WiFi network this device should join.",
     traffic: "traffic Mbit/s", cpu_pct: "CPU %", power_w: "processor W",
     power: "Processor power", power_value: (p, c) => `${p.toFixed(1)} W` + (c != null ? ` (cores ${c.toFixed(1)} W)` : ""), sources: "Sources", receivers: "Receivers",
-    mbit_out: "Mbit/s out", cpu: "CPU", network: "Network", link_use: "Link usage",
+    mbit_out: "Mbit/s out", mbit_in: "Mbit/s in", cpu: "CPU", network: "Network", link_use: "Link usage",
     connection: "Connection", band: "Band", link_speed: "Link speed", ip: "IP address",
     transport: "NDI transport", device: "Device", memory: "Memory", temperature: "Temperature",
     uptime: "Up for", updates: "Updates", installed_version: "Installed version",
@@ -1029,10 +1029,12 @@ function pintar(e) {
     poner("cFuentes", `${em.emitiendo ?? 0} / ${fuentes.length}`); poner("cFuentesT", t("sources"));
     poner("cRecep", String(em.receptores ?? 0)); poner("cRecepT", t("receivers"));
   }
-  poner("cTx", red.tx_mbps != null ? red.tx_mbps.toFixed(1) : "—");
+  const trafico = red.trafico_mbps ?? red.tx_mbps;
+  poner("cTx", trafico != null ? trafico.toFixed(1) : "—");
+  poner("cTxT", t(red.sentido === "entrada" ? "mbit_in" : "mbit_out"));
   poner("cCpu", eq.cpu != null ? eq.cpu + "%" : "—");
 
-  historial.tx.push(red.tx_mbps || 0); historial.cpu.push(eq.cpu || 0); historial.w.push(eq.potencia_w || 0);
+  historial.tx.push(trafico || 0); historial.cpu.push(eq.cpu || 0); historial.w.push(eq.potencia_w || 0);
   for (const k in historial) if (historial[k].length > 60) historial[k].shift();
   grafica("grafTx", historial.tx, 20); grafica("grafCpu", historial.cpu, 100); grafica("grafW", historial.w, 2);
   $("bloqueGrafW").classList.toggle("oculto", eq.potencia_w == null);
@@ -1055,8 +1057,8 @@ function pintar(e) {
     poner("redTitulo", t("wifi_signal")); poner("redSenal", t("no_connection")); barra("barraSenal", 0, "mal");
   }
   if (red.capacidad_mbps) {
-    const uso = 100 * red.tx_mbps / red.capacidad_mbps;
-    poner("redUso", `${red.tx_mbps.toFixed(0)} ${t("of")} ~${red.capacidad_mbps} Mbit/s`);
+    const uso = 100 * trafico / red.capacidad_mbps;
+    poner("redUso", `${trafico.toFixed(0)} ${t("of")} ~${red.capacidad_mbps} Mbit/s`);
     barra("barraUso", uso, uso < 50 ? "ok" : uso < 80 ? "aviso" : "mal");
   } else { poner("redUso", "—"); barra("barraUso", 0); }
   poner("redModo", red.modo === "ethernet" ? t("cable") : red.modo === "wifi" ? `WiFi «${w.ssid}»` : t("no_network"));
