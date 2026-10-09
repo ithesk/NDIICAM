@@ -5,8 +5,9 @@
 [Español](README.es.md)
 
 Plug a USB camera into a small PC and it shows up as an NDI source on your network —
-in OBS, vMix, NDI Studio Monitor or any NDI receiver. Everything is managed from a web
-panel: no terminal needed after installation.
+in OBS, vMix, NDI Studio Monitor or any NDI receiver. Or turn it around: in **receiver mode**
+it shows an NDI source from the network on the TV or monitor plugged into its HDMI, with
+sound. Everything is managed from a web panel: no terminal needed after installation.
 
 ## Screenshots
 
@@ -23,6 +24,8 @@ panel: no terminal needed after installation.
   </tr>
 </table>
 
+![Receiver mode: an NDI source from OBS shown on the device's HDMI output](docs/screenshots/receiver-en.png)
+
 <sub>Screenshots use demo data (<code>docs/screenshots/demo.py</code>).</sub>
 
 ## Features
@@ -37,6 +40,10 @@ panel: no terminal needed after installation.
   stops sending frames, reconnects to known networks when they come back.
 - **HDMI framing monitor**: shows one camera full screen on the monitor plugged into the device,
   straight to the GPU, with no CPU cost. On/off from the panel.
+- **Receiver mode**: the device stops its cameras and becomes an NDI receiver: pick any NDI source
+  on the network (OBS, vMix, a phone app, another NDIICAM…) and it plays on the HDMI output with
+  its audio. It reconnects by itself if the source goes away. A small Atom cannot send and receive
+  at the same time, so it is one mode or the other.
 - **Static IP, backup/restore, factory reset and one-click updates** from the panel.
 - **Light**: one Python service on top of GStreamer, no web frameworks, no database.
 
@@ -44,7 +51,7 @@ panel: no terminal needed after installation.
 
 | | |
 |---|---|
-| CPU | x86_64 Intel or AMD. An Atom x5-Z8350 (4 cores, 1.44 GHz) handles 1080p30 using ~1.6 cores |
+| CPU | x86_64 Intel or AMD. An Atom x5-Z8350 (4 cores, 1.44 GHz) handles 1080p30 using ~1.6 cores as a sender, and receives 1080p30 with ~0.6-0.9 cores |
 | OS | Ubuntu 24.04 LTS (tested). Debian 12+ should work |
 | Camera | USB UVC camera with MJPEG (most webcams, DJI Osmo Pocket 3 in webcam mode…) |
 | Network | Ethernet recommended. WiFi works: 1080p30 uses ~90 Mbit/s per receiver |
@@ -99,6 +106,8 @@ the same screen; then go back to your network and open `http://<device>.local`.
 |---|---|
 | Status | Overall state, sources streaming, receivers, outgoing Mbit/s, CPU, last-2-minute graphs |
 | One card per camera | On/off, NDI name, mode, camera/sent fps, bitrate, dropped frames, audio, receivers by name; settings: NDI name, 720p/1080p, fps, audio (camera mic, another input or none) |
+| Device mode | Sender (cameras to NDI) or receiver (an NDI source to HDMI) |
+| NDI receiver | Receiver mode only: NDI sources found on the network, which one to show, resolution, fps and audio received |
 | HDMI output | On/off, which camera, monitor status, screen resolution at boot |
 | Network | WiFi signal, link usage against the estimated capacity, band, channel, IP, NDI transport |
 | Updates | Installed and latest version, check, install with one click |
@@ -132,6 +141,14 @@ These come from building it on real hardware, and explain some of the defaults:
   the camera's in the panel. It writes `video=` to `/etc/default/grub.d/90-ndiicam.cfg` and needs a
   reboot. Custom GRUB entries with a fixed command line do not pick it up: add `video=1920x1080@60`
   to them by hand. Converting to RGB to scale on the CPU costs +70-150% CPU on an Atom.
+- **Receiver mode plays the NDI source on a GPU video plane too.** NDI decodes to UYVY, which goes
+  to the plane as is: receiving 1080p30 took ~0.6-0.9 cores on the Atom, depending on the picture.
+  `kmssink` needs `skip-vsync`, or it waits two refreshes per frame and stops at 30 fps on a 60 Hz
+  screen. Sources at another resolution are scaled on the CPU (nearest neighbour, with borders),
+  and that is expensive: OBS's per-source "NDI Output" filter sends each source at its native size
+  **with transparency**, and a 2530×1378 screen capture took ~3 cores and once froze the Atom.
+  Send the program instead (DistroAV main output, OBS output resolution = screen resolution).
+  The receiver runs at low priority and leaves one core free for the system and the network.
 - **Processor power** in the panel comes from Intel RAPL and covers the SoC (CPU + GPU) only, not
   WiFi, memory, board or camera. On the Atom: 0.9 W idle, 1.7 W streaming 1080p30.
 - **The setup WiFi runs on a virtual `ap0` interface** when the card supports it, so the
@@ -145,6 +162,7 @@ These come from building it on real hardware, and explain some of the defaults:
 | Source not listed in the receiver | `avahi-daemon` running; receiver and device on the same network/VLAN; mDNS not blocked by the WiFi (client isolation) |
 | Source listed, no video | Set transport to TCP in the panel |
 | Stutter over WiFi | Link usage bar in the panel; 5 GHz; use 720p; prefer Ethernet |
+| Receiver mode is slow | The source does not match the screen or has transparency: send it at the screen resolution (in OBS, DistroAV main output) |
 | Panel unreachable | `systemctl status ndiicam`; something else on port 80 |
 | Logs | `journalctl -u ndiicam -f`; network migration log in `/var/lib/ndiicam/red.log` |
 

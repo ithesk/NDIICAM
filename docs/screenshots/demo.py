@@ -4,7 +4,7 @@
 """Sirve el panel real (ndiicam/web/index.html) con datos de ejemplo.
 
     python3 docs/screenshots/demo.py [puerto]
-    python3 docs/screenshots/demo.py --estatico salida.html [es|en] [claro|oscuro] [panel|portal]
+    python3 docs/screenshots/demo.py --estatico salida.html [es|en] [claro|oscuro] [panel|portal|receptor]
 
 El modo --estatico escribe un HTML autónomo, con las respuestas de la API dentro,
 que se abre sin servidor (así se hacen las capturas con Chrome sin ventana).
@@ -13,6 +13,7 @@ Parámetros de la URL:
     ?lang=es|en      idioma del panel
     ?tema=oscuro     fuerza el tema oscuro
     ?vista=portal    como lo ve un móvil desde la WiFi de configuración
+    ?vista=receptor  el equipo en modo receptor, mostrando una fuente NDI por HDMI
 
 Los datos son inventados: nada de una instalación real sale en las capturas.
 """
@@ -50,7 +51,7 @@ def fuente(ident, camara, modo, ancho_alto, fps, mbps, audio, receptores, nombre
     }
 
 
-def estado(portal):
+def estado(portal, receptor=False):
     ahora = time.time()
     fuentes = [
         fuente("cam1", "DJI Osmo Pocket 3", "1920×1080 @30", None, 30, 50, "DJI Osmo Pocket 3",
@@ -72,24 +73,44 @@ def estado(portal):
         (310, "cam_detectada", {"fuente": "Logitech HD Pro Webcam C920"}),
         (7600, "wifi_ok", {"ssid": "Studio-5G", "ip": "192.168.1.50"}),
         (7700, "ap_activa", {"ssid": "NDIICAM-4F2A", "modo": "simultaneo"}),
-        (7720, "inicio", {"version": "0.1.0"}),
+        (7720, "inicio", {"version": "0.2.0"}),
     ]
     if portal:
         eventos = [(20, "ap_activa", {"ssid": "NDIICAM-4F2A", "modo": "simultaneo"})] + eventos[3:]
+    rx = None
+    if receptor:
+        for f in fuentes:
+            f.update(estado="pausada", nombre_ndi=None, fps_camara=0, fps_enviados=0, mbps_camara=0,
+                     receptores=[], hdmi=False)
+        rx = {"fuente": "STUDIO-PC (OBS Program)", "estado": "recibiendo", "error": "",
+              "desde": ahora - 1260, "ancho": 1920, "alto": 1080, "fps_fuente": 59.94,
+              "fps": round(ruido(59.9, 0.1), 1), "audio": True, "audio_activo": True,
+              "audio_fallido": False}
+        eventos = [(1260, "rx_recibiendo", {"fuente": "STUDIO-PC (OBS Program)", "modo": "1920×1080 @59.94"}),
+                   (1266, "ajustes", {"campos": ["rx_fuente"]}),
+                   (1270, "modo", {"modo": "receptor"})] + eventos
     return {
-        "version": "0.1.0",
+        "version": "0.2.0",
         "equipo": {"nombre": "ndiicam-01", "uptime": ahora - INICIO + 3 * 86400 + 7 * 3600,
-                   "cpu": round(ruido(64, 4)), "nucleos": 4, "potencia_w": ruido(1.9, 0.08),
+                   "cpu": round(ruido(24 if receptor else 64, 3)), "nucleos": 4,
+                   "potencia_w": ruido(1.3 if receptor else 1.9, 0.08),
                    "potencia_nucleos_w": ruido(0.9, 0.05), "temp": 58.0, "ram_pct": 22},
         "fuentes": fuentes,
         "audio_dispositivos": [{"id": "Pocket3", "nombre": "DJI Osmo Pocket 3", "usb": True},
                                {"id": "C920", "nombre": "HD Pro Webcam C920", "usb": True}],
-        "emision": {"estado": "emitiendo", "emitiendo": 2, "activas": 2, "receptores": 3},
-        "hdmi": {"activa": True, "fuente": "auto", "mostrando": "cam1",
+        "emision": {"estado": "recibiendo", "emitiendo": 0, "activas": 2, "receptores": 0} if receptor
+        else {"estado": "emitiendo", "emitiendo": 2, "activas": 2, "receptores": 3},
+        "modo": "receptor" if receptor else "emisor",
+        "receptor": {"fuente": rx["fuente"] if rx else "", "estado": rx,
+                     "red_ndi": [{"nombre": "STUDIO-PC (OBS Program)", "url": "192.168.1.20:5961"},
+                                 {"nombre": "STUDIO-PC (OBS Preview)", "url": "192.168.1.20:5962"},
+                                 {"nombre": "VMIX-CONTROL (Output 1)", "url": "192.168.1.35:5961"}]
+                     if receptor else []},
+        "hdmi": {"activa": True, "fuente": "auto", "mostrando": None if receptor else "cam1",
                  "pantallas": [{"conector": "HDMI-A-1", "id": 95, "conectado": True, "modo": "1920x1080"}],
                  "consola": "1080p", "consola_activa": "1080p", "reinicio_pendiente": False},
         "red": {"modo": "sin_red" if portal else "wifi", "wifi": wifi, "ethernet": None, "tiene_wifi": True,
-                "tx_mbps": 0.4 if portal else ruido(131, 6), "capacidad_mbps": None if portal else 217,
+                "tx_mbps": 0.4 if portal or receptor else ruido(131, 6), "capacidad_mbps": None if portal else 217,
                 "ip": None if portal else {
                     "perfil": "Studio-5G", "dispositivo": "wlan0", "metodo": "auto", "direccion": "",
                     "prefijo": 24, "gateway": "", "dns": [], "cambio": None,
@@ -98,9 +119,9 @@ def estado(portal):
                 "ap": {"activo": portal, "modo": "simultaneo" if portal else None, "ssid": "NDIICAM-4F2A",
                        "clave": "ndiicam-setup", "clientes": 1 if portal else 0, "simultaneo": True,
                        "forzado_hasta": None}},
-        "actualizacion": {"actual": "0.1.0", "ultima": "v0.1.0", "disponible": False,
+        "actualizacion": {"actual": "0.2.0", "ultima": "v0.2.0", "disponible": False,
                           "comprobado": ahora - 3 * 3600, "error": None, "en_curso": False,
-                          "url": "https://github.com/ithesk/NDIICAM/releases/tag/v0.1.0"},
+                          "url": "https://github.com/ithesk/NDIICAM/releases/tag/v0.2.0"},
         "config": {"transporte": "tcp", "ap_ssid": "NDIICAM-4F2A", "ap_clave": "ndiicam-setup",
                    "pais": "US", "clave_panel": False},
         "desde_ap": portal,
@@ -153,7 +174,8 @@ class Demo(BaseHTTPRequestHandler):
         portal = portal or referer.get("vista") == ["portal"]
         if url.path == "/api/estado":
             PASO[0] += 1
-            return self._enviar(json.dumps(estado(portal)).encode(), "application/json")
+            receptor = "receptor" in (q.get("vista", []) + referer.get("vista", []))
+            return self._enviar(json.dumps(estado(portal, receptor)).encode(), "application/json")
         if url.path == "/api/wifi/redes":
             guardadas = [] if portal else [
                 {"id": "Studio-5G", "ssid": "Studio-5G", "prioridad": 40, "activa": True},
@@ -169,7 +191,7 @@ def estatico(salida, lang="en", tema="claro", vista="panel"):
     estados = []
     for _ in range(30):
         PASO[0] += 1
-        estados.append(estado(portal))
+        estados.append(estado(portal, vista == "receptor"))
     redes = {"redes": [dict(r, activa=(r["ssid"] == "Studio-5G" and not portal)) for r in REDES],
              "guardadas": [] if portal else [
                  {"id": "Studio-5G", "ssid": "Studio-5G", "prioridad": 40, "activa": True},

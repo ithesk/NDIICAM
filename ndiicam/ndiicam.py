@@ -47,7 +47,7 @@ from urllib.parse import parse_qs, urlparse
 
 import yaml
 
-VERSION = "0.1.0"
+VERSION = "0.2.0"
 REPO = "ithesk/NDIICAM"
 CONFIG = "/etc/ndiicam/config.json"
 DATOS = "/var/lib/ndiicam"          # el servicio apunta NDI_CONFIG_DIR a DATOS/.ndi
@@ -634,6 +634,8 @@ class Receptor:
         if self.proc is None:
             return
         nombre = self.obj["nombre"]
+        if error == "eos" or "demultiplex" in error.lower():
+            error = "sin_senal"     # así avisa ndisrc de que la fuente dejó de emitir
         if self.obj.get("audio") and (elemento in ("asink", "qa") or "alsa" in error.lower()):
             # el audio HDMI hizo caer el pipeline: seguir sin él
             self.audio_fallido = self.obj["audio"]
