@@ -10,6 +10,9 @@
 
 - Emite cada cámara UVC conectada (MJPEG o YUYV) como fuente NDI, con el audio
   de la propia cámara si lo tiene. Cada fuente corre en su proceso (fuente.py).
+- Salida HDMI: una de las cámaras, para encuadrar.
+- Modo receptor: en vez de emitir, muestra por HDMI una fuente NDI de la red
+  con su audio (receptor.py). Las cámaras se paran: no hay CPU para las dos cosas.
 - Sirve el panel web en el puerto 80: estado, ajustes, redes WiFi, IP fija,
   copias de seguridad y actualización.
 - Si no hay ninguna red conocida, levanta una WiFi de configuración con portal
@@ -51,6 +54,8 @@ DATOS = "/var/lib/ndiicam"          # el servicio apunta NDI_CONFIG_DIR a DATOS/
 AQUI = os.path.dirname(os.path.abspath(__file__))
 WEB = os.path.join(AQUI, "web", "index.html")
 FUENTE_PY = os.path.join(AQUI, "fuente.py")
+RECEPTOR_PY = os.path.join(AQUI, "receptor.py")
+MODOS = ("emisor", "receptor")   # un Atom no da para emitir y recibir a la vez
 RUN = "/run/ndiicam"
 AP_IF = "ap0"
 AP_IP = "10.42.0.1"
@@ -64,7 +69,8 @@ FPS_VALIDOS = (15, 24, 25, 30, 50, 60)
 POR_DEFECTO = {"ndi_nombre": "NDIICAM", "resolucion": "1080p", "fps": 30, "audio": "auto",
                "fuentes": {}, "transporte": "tcp", "ap_ssid": "",
                "ap_clave": "ndiicam-setup", "pais": "", "clave_panel": "",
-               "hdmi": False, "hdmi_fuente": "auto", "hdmi_consola": "nativa"}
+               "hdmi": False, "hdmi_fuente": "auto", "hdmi_consola": "nativa",
+               "modo": "emisor", "rx_fuente": ""}
 GRUB_NDIICAM = "/etc/default/grub.d/90-ndiicam.cfg"
 # resolución de la pantalla al arrancar: la de la cámara para verla a pantalla completa
 MODOS_CONSOLA = {"nativa": None, "1080p": "1920x1080@60", "720p": "1280x720@60"}
@@ -348,6 +354,15 @@ def pantallas():
     return res
 
 
+def resolucion_pantalla(monitor):
+    """[ancho, alto] a los que está la pantalla: la pedida al arrancar (video=)
+    o, si no, la preferida del monitor, que es la que pone el kernel."""
+    m = re.search(r"\bvideo=(?:[\w-]+:)?(\d+)x(\d+)", leer("/proc/cmdline"))
+    if not m:
+        m = re.match(r"(\d+)x(\d+)", monitor.get("modo") or "")
+    return [int(m.group(1)), int(m.group(2))] if m else None
+
+
 def modo_consola_activo():
     """Resolución de pantalla pedida al kernel en este arranque (video=)."""
     m = re.search(r"\bvideo=(?:[\w-]+:)?(\d+x\d+)", leer("/proc/cmdline"))
@@ -389,6 +404,24 @@ def audio_dispositivos():
         res.append({"id": ident, "nombre": largos.get(ident, ident),
                     "dev": f"plughw:CARD={ident},DEV=0", "usb": ruta_usb(f"{cardir}/device")})
     return res
+
+
+def audio_hdmi():
+    """Dispositivo ALSA de salida por HDMI, si la GPU lo tiene."""
+    for info in sorted(glob.glob("/proc/asound/card*/pcm*p/info")):
+        texto = leer(info)
+        if "hdmi" not in texto.lower():
+            continue
+        n = info.split("/")[3][4:]
+        ident = leer(f"/sys/class/sound/card{n}/id")
+        if ident:
+            return f"hdmi:CARD={ident},DEV=0"
+    return None
+
+
+def ips_propias():
+    return {d.split()[3].split("/")[0] for d in
+            sh(["ip", "-o", "addr", "show"]).splitlines() if len(d.split()) > 3}
 
 
 # ------------------------------------------------------------------- fuentes
@@ -506,6 +539,153 @@ class Fuente:
             self.prev = (t, c)
 
 
+class BuscadorNDI:
+    """Fuentes NDI de la red, sin las de este equipo. Usa el monitor de
+    dispositivos del plugin NDI de GStreamer, que arranca la primera vez que
+    se le pide la lista: un equipo que no usa el receptor no busca nada."""
+
+    def __init__(self):
+        self.lock = threading.Lock()
+        self.monitor = None
+        self.fallo = None
+        self.cache = (0.0, [])
+
+    def _iniciar(self):
+        try:
+            import gi
+            gi.require_version("Gst", "1.0")
+            from gi.repository import Gst
+            Gst.init(None)
+            m = Gst.DeviceMonitor.new()
+            m.add_filter("Source/Network", None)
+            if not m.start():
+                raise RuntimeError("DeviceMonitor")
+            self.monitor = m
+        except Exception as ex:
+            self.fallo = str(ex)
+            evento("fallo_interno", detalle=f"NDI finder: {ex}")
+
+    def lista(self):
+        with self.lock:
+            if self.monitor is None and self.fallo is None:
+                self._iniciar()
+            if self.monitor is None:
+                return []
+            if time.time() - self.cache[0] < 3:
+                return self.cache[1]
+            devs = self.monitor.get_devices()
+            propias, res = ips_propias(), []
+            for d in devs:
+                props = d.get_properties()
+                if not props or not props.has_field("ndi-name"):
+                    continue
+                url = props.get_string("url-address") or ""
+                if url.rsplit(":", 1)[0] in propias:
+                    continue
+                res.append({"nombre": props.get_string("ndi-name"), "url": url})
+            res.sort(key=lambda x: x["nombre"].lower())
+            self.cache = (time.time(), res)
+            return res
+
+
+class Receptor:
+    """Una fuente NDI de la red mostrada en el HDMI desde un proceso receptor.py."""
+
+    def __init__(self):
+        self.proc = None
+        self.obj = None             # dict con lo que corre: nombre, hdmi, audio, equipo
+        self.destino = None         # fuente pedida (para reiniciar los reintentos al cambiarla)
+        self.estado = "apagado"     # apagado | conectando | recibiendo | error
+        self.error = ""
+        self.desde = None
+        self.reintento = 0.0
+        self.fallos = 0
+        self.audio_fallido = None
+        self.c = {}
+        self.prev = None
+        self.stats = {"fps": 0, "audio_activo": False}
+
+    def arrancar(self, obj):
+        self.obj = obj
+        self.estado, self.error = "conectando", ""
+        self.c, self.prev = {}, None
+        self.stats = {"fps": 0, "audio_activo": False}
+        self.proc = subprocess.Popen([sys.executable, RECEPTOR_PY, json.dumps(obj)],
+                                     stdout=subprocess.PIPE, text=True)
+        threading.Thread(target=self._leer, args=(self.proc,), daemon=True).start()
+
+    def _leer(self, proc):
+        for linea in proc.stdout:
+            try:
+                d = json.loads(linea)
+            except ValueError:
+                continue
+            if proc is not self.proc:
+                break
+            if "error" in d:
+                self._fallo(d["error"], d.get("elemento", ""))
+            else:
+                self.c = d
+        proc.wait()
+        if proc is self.proc and self.estado in ("conectando", "recibiendo"):
+            self._fallo("proceso", "")
+
+    def _fallo(self, error, elemento):
+        if self.proc is None:
+            return
+        nombre = self.obj["nombre"]
+        if self.obj.get("audio") and (elemento in ("asink", "qa") or "alsa" in error.lower()):
+            # el audio HDMI hizo caer el pipeline: seguir sin él
+            self.audio_fallido = self.obj["audio"]
+            evento("rx_audio_fallo", fuente=nombre, detalle=error)
+            espera = 1
+        else:
+            # la fuente puede tardar en aparecer o haberse ido: reintentar cada
+            # vez más espaciado, avisando solo del primer fallo
+            if self.estado == "recibiendo":
+                evento("rx_perdida", fuente=nombre)
+            elif self.fallos == 0:
+                evento("rx_error", fuente=nombre, detalle=error)
+            self.fallos += 1
+            espera = min(15, 3 * self.fallos)
+        self.detener()
+        self.estado, self.error = "error", error
+        self.reintento = time.time() + espera
+
+    def detener(self):
+        proc, self.proc = self.proc, None
+        if proc and proc.poll() is None:
+            proc.terminate()
+            try:
+                proc.wait(5)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+        self.obj = self.desde = None
+
+    def medir(self, t):
+        """Tasas desde el último informe. A diferencia de una cámara, que no
+        lleguen imágenes no es un fallo: un emisor NDI con la imagen quieta
+        puede no mandar ninguna más, y si desaparece ndisrc da error solo."""
+        c = dict(self.c)
+        if self.proc is None:
+            return
+        if "t" not in c or (self.prev and c["t"] <= self.prev[1]["t"]):
+            if self.prev and t - self.prev[0] > 15:
+                self._fallo("proceso", "")   # no informa: colgado
+            return
+        if self.prev:
+            p = self.prev[1]
+            dt = c["t"] - p["t"]
+            self.stats = {"fps": round((c["rx"] - p["rx"]) / dt, 1),
+                          "audio_activo": c["aud"] > p["aud"]}
+        if c["rx"] > 0 and self.estado != "recibiendo":
+            self.estado, self.desde, self.fallos = "recibiendo", t, 0
+            fps = c.get("fps")
+            evento("rx_recibiendo", fuente=self.obj["nombre"],
+                   modo=f"{c.get('ancho')}×{c.get('alto')}" + (f" @{fps:g}" if fps else ""))
+        self.prev = (t, c)
+
+
 class Fuentes:
     """Supervisa una Fuente por cámara: arranca, reinicia y para según las
     cámaras presentes y los ajustes."""
@@ -518,6 +698,7 @@ class Fuentes:
         self.hdmi_para = None   # id de la cámara que se ve por HDMI
         self.hdmi_conector = None  # conector DRM del monitor (hay que indicarlo para
                                    # cambiar su modo: kmssink coge el primero, aunque esté vacío)
+        self.receptor = Receptor()  # o una fuente NDI de la red en el HDMI
 
     def objetivo(self, f):
         aj = self.config.fuente(f.cam["id"])
@@ -562,11 +743,29 @@ class Fuentes:
         activas = [i for i in cams if self.config.fuente(i)["activa"]]
         monitor = next((p for p in pantallas() if p["conectado"] and p["id"]), None)
         self.hdmi_conector = monitor["id"] if monitor else None
-        if not cfg["hdmi"] or not monitor or not activas:
+        receptor = cfg["modo"] == "receptor"
+        rx_obj = None
+        if receptor and monitor and cfg["rx_fuente"]:
+            rx_obj = {"nombre": cfg["rx_fuente"], "hdmi": monitor["id"],
+                      "equipo": f"NDIICAM {socket.gethostname()}",
+                      "pantalla": resolucion_pantalla(monitor)}
+            audio = audio_hdmi()
+            if rx_obj["nombre"] != self.receptor.destino:
+                self.receptor.destino = rx_obj["nombre"]
+                self.receptor.fallos, self.receptor.audio_fallido = 0, None
+                self.receptor.reintento = 0.0
+            rx_obj["audio"] = None if audio == self.receptor.audio_fallido else audio
+        if receptor or not cfg["hdmi"] or not monitor or not activas:
             self.hdmi_para = None
         else:
             self.hdmi_para = cfg["hdmi_fuente"] if cfg["hdmi_fuente"] in activas else activas[0]
+        rx = self.receptor
         with self.lock:
+            # el HDMI es de uno solo: el receptor lo suelta antes de que una cámara lo coja
+            if rx.proc is not None and rx.obj != rx_obj:
+                rx.detener()
+            if rx_obj is None:
+                rx.estado, rx.error, rx.destino = "apagado", "", None
             for ident in list(self.fuentes):
                 if ident not in cams:
                     self.fuentes[ident].detener()
@@ -580,10 +779,11 @@ class Fuentes:
                     evento("cam_detectada", fuente=cam["nombre"])
                 f.cam = cam
                 aj = self.config.fuente(ident)
-                if not aj["activa"]:
-                    if f.proc is not None or f.estado != "desactivada":
+                if receptor or not aj["activa"]:
+                    parada = "pausada" if receptor else "desactivada"
+                    if f.proc is not None or f.estado != parada:
                         f.detener()
-                        f.estado, f.error = "desactivada", ""
+                        f.estado, f.error = parada, ""
                     continue
                 obj = self.objetivo(f)
                 # dos fuentes del mismo equipo no pueden llamarse igual
@@ -598,6 +798,9 @@ class Fuentes:
                 f.forzar_reinicio = False
                 if f.proc is None and time.time() >= f.reintento:
                     f.arrancar(obj)
+            # y lo coge después de que la cámara que lo tenía se reinicie sin él
+            if rx_obj and rx.proc is None and time.time() >= rx.reintento:
+                rx.arrancar(rx_obj)
 
     def reiniciar(self, ident):
         with self.lock:
@@ -611,6 +814,7 @@ class Fuentes:
         with self.lock:
             for f in self.fuentes.values():
                 f.detener()
+            self.receptor.detener()
 
     def lista(self):
         with self.lock:
@@ -1235,6 +1439,7 @@ def medidor():
             t, tx, cpu, rapl = time.time(), bytes_tx(), tiempos_cpu(), energia_rapl()
             for f in FUENTES.lista():
                 f.medir(t)
+            FUENTES.receptor.medir(t)
             if prev:
                 dt = t - prev["t"]
                 potencia = {k: vatios(v, prev["rapl"].get(k), dt) for k, v in rapl.items()}
@@ -1246,6 +1451,19 @@ def medidor():
         except Exception as ex:
             evento("fallo_interno", detalle=str(ex))
         time.sleep(2)
+
+
+def estado_receptor():
+    rx = FUENTES.receptor
+    if rx.destino is None:
+        return None
+    c = rx.c if rx.proc is not None else {}
+    return {"fuente": rx.destino, "estado": rx.estado, "error": rx.error, "desde": rx.desde,
+            "ancho": c.get("ancho"), "alto": c.get("alto"), "fps_fuente": c.get("fps"),
+            "fps": rx.stats["fps"] if rx.estado == "recibiendo" else 0,
+            "audio": bool(rx.obj and rx.obj.get("audio")),
+            "audio_activo": rx.estado == "recibiendo" and rx.stats["audio_activo"],
+            "audio_fallido": rx.audio_fallido is not None}
 
 
 def construir_estado(tx_mbps, cpu_pct, potencia):
@@ -1287,7 +1505,19 @@ def construir_estado(tx_mbps, cpu_pct, potencia):
                                        and m[2] in FPS_VALIDOS}),
         })
     estados = [x["estado"] for x in fuentes]
-    if not fuentes:
+    receptor = cfg["modo"] == "receptor"
+    rx_estado = estado_receptor()
+    monitor = any(p["conectado"] for p in pantallas())
+    if receptor:
+        # en modo receptor, el estado general es el de la recepción
+        if not monitor:
+            agregado = "sin_monitor"
+        elif not cfg["rx_fuente"]:
+            agregado = "sin_fuente"
+        else:
+            agregado = {"recibiendo": "recibiendo", "error": "rx_error"}.get(
+                rx_estado["estado"] if rx_estado else "", "conectando")
+    elif not fuentes:
         agregado = "sin_camara"
     elif "emitiendo" in estados:
         agregado = "emitiendo"
@@ -1328,6 +1558,9 @@ def construir_estado(tx_mbps, cpu_pct, potencia):
         "fuentes": fuentes,
         "audio_dispositivos": [{"id": a["id"], "nombre": a["nombre"], "usb": bool(a["usb"])}
                                for a in FUENTES.audio],
+        "modo": cfg["modo"],
+        "receptor": {"fuente": cfg["rx_fuente"], "estado": rx_estado,
+                     "red_ndi": BUSCADOR.lista() if receptor else []},
         "hdmi": {"activa": cfg["hdmi"], "fuente": cfg["hdmi_fuente"], "mostrando": FUENTES.hdmi_para,
                  "pantallas": pantallas(), "consola": cfg["hdmi_consola"],
                  "consola_activa": modo_consola_activo(),
@@ -1564,6 +1797,16 @@ class Panel(BaseHTTPRequestHandler):
             if v != "auto" and v not in {f.cam["id"] for f in FUENTES.lista()}:
                 return self._error("camara_invalida")
             cambios["hdmi_fuente"] = v
+        if "modo" in d:
+            if d["modo"] not in MODOS:
+                return self._error("modo_invalido")
+            cambios["modo"] = d["modo"]
+        if "rx_fuente" in d:
+            # una fuente de la red: vale aunque ahora no se vea (se reintenta)
+            v = str(d["rx_fuente"])
+            if len(v) > 200 or not v.isprintable():
+                return self._error("fuente_ndi_invalida")
+            cambios["rx_fuente"] = v
         if "hdmi_consola" in d:
             if d["hdmi_consola"] not in MODOS_CONSOLA:
                 return self._error("modo_invalido")
@@ -1605,7 +1848,10 @@ class Panel(BaseHTTPRequestHandler):
         cambios = {k: v for k, v in cambios.items() if antes.get(k) != v}
         if cambios:
             CONF.actualizar(cambios)
-            evento("ajustes", campos=sorted(cambios))
+            if "modo" in cambios:
+                evento("modo", modo=cambios["modo"])
+            if cambios.keys() - {"modo"}:
+                evento("ajustes", campos=sorted(cambios.keys() - {"modo"}))
         if {"hdmi", "hdmi_fuente"} & cambios.keys():
             for f in FUENTES.lista():
                 f.hdmi_fallido = False      # volver a intentarlo con el ajuste nuevo
@@ -1655,11 +1901,12 @@ class Servidor(ThreadingHTTPServer):
 
 
 def main():
-    global CONF, FUENTES, RED, ACTUALIZADOR
+    global CONF, FUENTES, RED, ACTUALIZADOR, BUSCADOR
     os.makedirs(DATOS, exist_ok=True)
     CONF = Config()
     configurar_ndi(CONF.get()["transporte"])
     FUENTES = Fuentes(CONF)
+    BUSCADOR = BuscadorNDI()
     RED = Red(CONF)
     ACTUALIZADOR = Actualizador()
     evento("inicio", version=VERSION)

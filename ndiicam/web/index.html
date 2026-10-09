@@ -121,6 +121,13 @@
   .conmutador input::after { content: ""; position: absolute; top: 3px; left: 3px; width: 16px; height: 16px; border-radius: 50%; background: #fff; transition: left .2s; box-shadow: 0 1px 2px rgba(0,0,0,.3); }
   .conmutador input:checked { background: var(--ok); }
   .conmutador input:checked::after { left: 19px; }
+  .modos { display: grid; gap: 10px; grid-template-columns: 1fr 1fr; }
+  .modo-op { display: flex; gap: 10px; align-items: flex-start; padding: 12px 14px; border: 1px solid var(--borde);
+    border-radius: 12px; cursor: pointer; }
+  .modo-op:has(input:checked) { border-color: var(--acento); box-shadow: inset 0 0 0 1px var(--acento); }
+  .modo-op input { margin: 3px 0 0; accent-color: var(--acento); }
+  .modo-op b { display: block; }
+  .modo-op small { display: block; color: var(--suave); font-size: 13px; margin-top: 2px; }
   .punto { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--pista); margin-right: 6px; }
   .punto.ok { background: var(--ok); } .punto.mal { background: var(--mal); } .punto.aviso { background: var(--aviso); }
   @media (max-width: 640px) {
@@ -131,6 +138,7 @@
     .cifras { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     .heroe .estado { font-size: 24px; }
     .fuente-cuerpo { grid-template-columns: 1fr; }
+    .modos { grid-template-columns: 1fr; }
   }
 </style>
 </head>
@@ -165,11 +173,39 @@
       <div class="grafica" id="bloqueGrafW"><svg id="grafW" viewBox="0 0 130 38" preserveAspectRatio="none"></svg><span data-t="power_w"></span></div>
     </div>
     <div class="cifras">
-      <div class="cifra"><b id="cFuentes">—</b><span data-t="sources"></span></div>
-      <div class="cifra"><b id="cRecep">—</b><span data-t="receivers"></span></div>
+      <div class="cifra"><b id="cFuentes">—</b><span id="cFuentesT" data-t="sources"></span></div>
+      <div class="cifra"><b id="cRecep">—</b><span id="cRecepT" data-t="receivers"></span></div>
       <div class="cifra"><b id="cTx">—</b><span data-t="mbit_out"></span></div>
       <div class="cifra"><b id="cCpu">—</b><span data-t="cpu"></span></div>
     </div>
+  </section>
+
+  <section class="tarjeta seccion" id="secModo">
+    <div class="fuente-cab"><div><h3 data-t="modo_title"></h3><div class="sub" data-t="modo_sub"></div></div></div>
+    <div class="modos">
+      <label class="modo-op"><input type="radio" name="modo" value="emisor">
+        <span><b data-t="modo_emisor"></b><small data-t="modo_emisor_d"></small></span></label>
+      <label class="modo-op"><input type="radio" name="modo" value="receptor">
+        <span><b data-t="modo_receptor"></b><small data-t="modo_receptor_d"></small></span></label>
+    </div>
+    <div class="mensaje oculto" id="msgModo"></div>
+  </section>
+
+  <section class="tarjeta seccion oculto" id="secRx">
+    <div class="fuente-cab">
+      <div><h3 data-t="rx_title"></h3><div class="sub" id="rxSub"></div></div>
+      <span class="pastilla" id="rxPastilla">—</span>
+    </div>
+    <div class="campos">
+      <div>
+        <label for="rxFuente" data-t="rx_source"></label>
+        <select id="rxFuente"></select>
+      </div>
+      <div><label data-t="hdmi_state"></label><div id="rxEstado">—</div>
+        <div class="ayuda oculto" id="rxTam"></div></div>
+    </div>
+    <div class="ayuda" data-t="rx_help" style="margin-top:10px"></div>
+    <div class="mensaje oculto" id="msgRx"></div>
   </section>
 
   <div id="fuentes"></div>
@@ -177,14 +213,14 @@
   <section class="tarjeta seccion" id="secHdmi">
     <div class="fuente-cab">
       <div><h3 data-t="hdmi_title"></h3><div class="sub" id="hdmiSub"></div></div>
-      <label class="conmutador" style="margin-left:auto"><input type="checkbox" id="hdmiActiva"><span data-t="hdmi_on"></span></label>
+      <label class="conmutador" style="margin-left:auto" id="bloqueHdmiActiva"><input type="checkbox" id="hdmiActiva"><span data-t="hdmi_on"></span></label>
     </div>
     <div class="campos">
       <div id="bloqueHdmiFuente">
         <label for="hdmiFuente" data-t="hdmi_camera"></label>
         <select id="hdmiFuente"></select>
       </div>
-      <div><label data-t="hdmi_state"></label><div id="hdmiEstado">—</div></div>
+      <div id="bloqueHdmiEstado"><label data-t="hdmi_state"></label><div id="hdmiEstado">—</div></div>
       <div>
         <label for="hdmiConsola" data-t="hdmi_screen_res"></label>
         <select id="hdmiConsola">
@@ -199,7 +235,7 @@
       <span data-t="hdmi_reboot_needed"></span>
       <button class="boton" id="btHdmiReboot" style="margin-left:8px" data-t="reboot_now"></button>
     </div>
-    <div class="ayuda" data-t="hdmi_help" style="margin-top:10px"></div>
+    <div class="ayuda" data-t="hdmi_help" id="hdmiAyuda" style="margin-top:10px"></div>
     <div class="mensaje oculto" id="msgHdmi"></div>
   </section>
 
@@ -361,12 +397,25 @@ const T = {
   es: {
     hdmi_title: "Salida HDMI", hdmi_on: "Mostrar", hdmi_camera: "Cámara en pantalla", hdmi_state: "Estado",
     hdmi_help: "Muestra la imagen de una cámara en el monitor conectado al equipo, para encuadrar. No consume CPU. Activarla o cambiar de cámara corta su NDI unos 2 s.",
+    modo_title: "Modo del equipo", modo_sub: "Este equipo no da para emitir y recibir a la vez.",
+    modo_emisor: "Emisor", modo_emisor_d: "Sus cámaras salen por NDI a la red.",
+    modo_receptor: "Receptor", modo_receptor_d: "Muestra en su monitor HDMI una fuente NDI de la red, con su sonido. Las cámaras se paran.",
+    rx_title: "Receptor NDI", rx_source: "Fuente", rx_elegir: "Elige una fuente…",
+    rx_help: "Para que no gaste casi nada, emite la fuente a la misma resolución que la pantalla (en OBS: salida principal de DistroAV y resolución de salida 1920×1080). Las de otra resolución, o con transparencia, cuestan mucha más CPU.",
+    hdmi_ndi_falta: (n) => `${n} (no está en la red)`, hdmi_ndi_buscando: "Buscando fuentes NDI…",
+    hdmi_rx_conectando: (n) => `Conectando con ${n}…`,
+    hdmi_rx_recibiendo: (r) => `${r.ancho}×${r.alto} · ${r.fps ? r.fps + " fps" : "imagen fija"}` + (r.audio_activo ? " · con audio" : r.audio_fallido ? " · sin audio (falló la salida de sonido)" : ""),
+    hdmi_rx_error: (n) => `${n} no responde; reintentando…`,
+    st_recibiendo: "Recibiendo", st_conectando: "Conectando", st_sin_fuente: "Sin fuente", st_sin_monitor: "Sin monitor", st_rx_error: "Sin señal", st_pausada: "En pausa",
+    sub_sin_fuente: "Elige qué fuente NDI mostrar.", sub_sin_monitor: "Conecta un monitor al HDMI del equipo.",
+    hdmi_rx_tam: (r, p) => `La fuente es ${r.ancho}×${r.alto} y la pantalla está a ${p}: se escala por CPU, lo que gasta bastante más. Emítela a ${p} (en OBS, la resolución de salida) para que no cueste nada.`,
     hdmi_no_monitor: "No hay ningún monitor conectado", hdmi_monitor: (p) => `Monitor en ${p.conector} (${p.modo || "?"})`,
     hdmi_showing: (n) => `Mostrando ${n}`, hdmi_off_state: "Apagada", hdmi_waiting: "Esperando a la cámara…",
     hdmi_failed: "La salida falló: la emisión sigue sin ella. Desactívala y vuelve a activarla para reintentar.",
     hdmi_auto: "Automática (la primera activa)",
     hdmi_screen_res: "Resolución de la pantalla", hdmi_res_native: "Nativa del monitor",
-    hdmi_res_help: "Ponla igual que la de la cámara para verla a pantalla completa sin gastar CPU. Se aplica al reiniciar el equipo.",
+    hdmi_res_help: "Ponla igual que la de la cámara, o la de la fuente NDI en modo receptor, para verla a pantalla completa sin gastar CPU. Se aplica al reiniciar el equipo.",
+    fps_recibidos: "fps recibidos", resolucion_fuente: "Resolución de la fuente",
     hdmi_reboot_needed: "Hay que reiniciar el equipo para aplicar la resolución de la pantalla.", reboot_now: "Reiniciar ahora",
     ap_banner_t: "Estás en la WiFi de configuración",
     ap_banner_p: "Elige abajo la red WiFi a la que debe conectarse el equipo.",
@@ -442,6 +491,7 @@ const T = {
       nombre_ndi_invalido: "Nombre NDI no válido: letras, números, espacios, puntos o guiones (máx. 48).",
       resolucion_invalida: "Resolución no válida.", fps_invalido: "Fotogramas por segundo no válidos.",
       camara_invalida: "Esa cámara ya no está conectada.", audio_invalido: "Ese dispositivo de audio ya no está.",
+      fuente_ndi_invalida: "Esa fuente NDI no es válida.", modo_invalido: "Modo no válido.",
       transporte_invalido: "Transporte no válido.",
       ssid_invalido: "Nombre de red no válido (1 a 32 caracteres).",
       clave_wifi_invalida: "La clave WiFi tiene entre 8 y 63 caracteres.",
@@ -466,7 +516,7 @@ const T = {
     stream_errors: { arranque: "No se pudo arrancar la emisión.", eos: "La cámara cerró el flujo.", sin_imagen: "La cámara no entregaba imagen.", proceso: "El proceso de la fuente terminó." },
     fields: { activa: "emitir", ndi_nombre: "nombre NDI", resolucion: "resolución", fps: "fps", audio: "audio",
       transporte: "transporte", ap_ssid: "nombre de la WiFi de configuración", ap_clave: "clave de la WiFi de configuración",
-      pais: "país", clave_panel: "contraseña del panel", hdmi: "salida HDMI", hdmi_fuente: "cámara en HDMI", hdmi_consola: "resolución de la pantalla" },
+      pais: "país", clave_panel: "contraseña del panel", hdmi: "salida HDMI", hdmi_fuente: "cámara en HDMI", rx_fuente: "fuente del receptor", hdmi_consola: "resolución de la pantalla" },
     ev: {
       inicio: (d) => `NDIICAM ${d.version} arrancado`,
       cam_detectada: (d) => `Cámara detectada: ${d.fuente}`, cam_desconectada: (d) => `Cámara desconectada: ${d.fuente}`,
@@ -476,6 +526,11 @@ const T = {
       audio_fallo: (d) => `${d.fuente}: el audio falló (${d.detalle}); emitiendo sin audio`,
       aplicando: (d) => `${d.fuente}: aplicando cambios`, fallo_interno: (d) => `Fallo interno: ${d.detalle}`,
       hdmi_fallo: (d) => `${d.fuente}: la salida HDMI falló (${d.detalle}); emitiendo sin ella`,
+      modo: (d) => d.modo === "receptor" ? "Modo receptor: cámaras en pausa" : "Modo emisor",
+      rx_recibiendo: (d) => `HDMI: recibiendo «${d.fuente}» a ${d.modo}`,
+      rx_perdida: (d) => `HDMI: se perdió la fuente «${d.fuente}»; reintentando`,
+      rx_error: (d) => `HDMI: no se puede recibir «${d.fuente}» (${d.detalle}); reintentando`,
+      rx_audio_fallo: (d) => `HDMI: la salida de sonido falló (${d.detalle}); se sigue sin audio`,
       ajustes_fuente: (d) => `${d.fuente}: ajustes cambiados: ` + d.campos.map((c) => T.es.fields[c] || c).join(", "),
       ap_activa: (d) => `WiFi de configuración activa: «${d.ssid}»`, ap_caida: () => "La WiFi de configuración se cayó; reiniciándola",
       ap_off_red: () => "Red disponible: WiFi de configuración desactivada",
@@ -501,12 +556,25 @@ const T = {
   en: {
     hdmi_title: "HDMI output", hdmi_on: "Show", hdmi_camera: "Camera on screen", hdmi_state: "Status",
     hdmi_help: "Shows one camera on the monitor plugged into the device, for framing. It uses no CPU. Turning it on or switching camera interrupts that camera's NDI for about 2 s.",
+    modo_title: "Device mode", modo_sub: "This device cannot send and receive at the same time.",
+    modo_emisor: "Sender", modo_emisor_d: "Its cameras go out to the network over NDI.",
+    modo_receptor: "Receiver", modo_receptor_d: "Shows an NDI source from the network on its HDMI monitor, with sound. Cameras are stopped.",
+    rx_title: "NDI receiver", rx_source: "Source", rx_elegir: "Pick a source…",
+    rx_help: "For it to cost almost nothing, send the source at the screen's resolution (in OBS: DistroAV main output and a 1920×1080 output resolution). Other resolutions, or sources with transparency, take a lot more CPU.",
+    hdmi_ndi_falta: (n) => `${n} (not on the network)`, hdmi_ndi_buscando: "Looking for NDI sources…",
+    hdmi_rx_conectando: (n) => `Connecting to ${n}…`,
+    hdmi_rx_recibiendo: (r) => `${r.ancho}×${r.alto} · ${r.fps ? r.fps + " fps" : "still image"}` + (r.audio_activo ? " · with audio" : r.audio_fallido ? " · no audio (sound output failed)" : ""),
+    hdmi_rx_error: (n) => `${n} is not responding; retrying…`,
+    st_recibiendo: "Receiving", st_conectando: "Connecting", st_sin_fuente: "No source", st_sin_monitor: "No monitor", st_rx_error: "No signal", st_pausada: "Paused",
+    sub_sin_fuente: "Pick which NDI source to show.", sub_sin_monitor: "Plug a monitor into the device's HDMI.",
+    hdmi_rx_tam: (r, p) => `The source is ${r.ancho}×${r.alto} and the screen is at ${p}: it is scaled on the CPU, which costs a lot more. Send it at ${p} (in OBS, the output resolution) so it costs nothing.`,
     hdmi_no_monitor: "No monitor connected", hdmi_monitor: (p) => `Monitor on ${p.conector} (${p.modo || "?"})`,
     hdmi_showing: (n) => `Showing ${n}`, hdmi_off_state: "Off", hdmi_waiting: "Waiting for the camera…",
     hdmi_failed: "The output failed: streaming continues without it. Turn it off and on again to retry.",
     hdmi_auto: "Automatic (first active one)",
     hdmi_screen_res: "Screen resolution", hdmi_res_native: "Monitor's native",
-    hdmi_res_help: "Set it to the camera's resolution to see it full screen with no CPU cost. Applied when the device restarts.",
+    hdmi_res_help: "Set it to the camera's resolution, or the NDI source's in receiver mode, to see it full screen with no CPU cost. Applied when the device restarts.",
+    fps_recibidos: "fps received", resolucion_fuente: "Source resolution",
     hdmi_reboot_needed: "Restart the device to apply the screen resolution.", reboot_now: "Restart now",
     ap_banner_t: "You are on the setup WiFi",
     ap_banner_p: "Choose below the WiFi network this device should join.",
@@ -582,6 +650,7 @@ const T = {
       nombre_ndi_invalido: "Invalid NDI name: letters, numbers, spaces, dots or dashes (max 48).",
       resolucion_invalida: "Invalid resolution.", fps_invalido: "Invalid frame rate.",
       camara_invalida: "That camera is no longer connected.", audio_invalido: "That audio device is gone.",
+      fuente_ndi_invalida: "That NDI source is not valid.", modo_invalido: "Invalid mode.",
       transporte_invalido: "Invalid transport.",
       ssid_invalido: "Invalid network name (1 to 32 characters).",
       clave_wifi_invalida: "WiFi passwords are 8 to 63 characters long.",
@@ -606,7 +675,7 @@ const T = {
     stream_errors: { arranque: "Could not start the stream.", eos: "The camera closed the stream.", sin_imagen: "The camera stopped sending frames.", proceso: "The source process ended." },
     fields: { activa: "stream", ndi_nombre: "NDI name", resolucion: "resolution", fps: "fps", audio: "audio",
       transporte: "transport", ap_ssid: "setup WiFi name", ap_clave: "setup WiFi password",
-      pais: "country", clave_panel: "panel password", hdmi: "HDMI output", hdmi_fuente: "HDMI camera", hdmi_consola: "screen resolution" },
+      pais: "country", clave_panel: "panel password", hdmi: "HDMI output", hdmi_fuente: "HDMI camera", rx_fuente: "receiver source", hdmi_consola: "screen resolution" },
     ev: {
       inicio: (d) => `NDIICAM ${d.version} started`,
       cam_detectada: (d) => `Camera detected: ${d.fuente}`, cam_desconectada: (d) => `Camera disconnected: ${d.fuente}`,
@@ -616,6 +685,11 @@ const T = {
       audio_fallo: (d) => `${d.fuente}: audio failed (${d.detalle}); streaming without audio`,
       aplicando: (d) => `${d.fuente}: applying changes`, fallo_interno: (d) => `Internal error: ${d.detalle}`,
       hdmi_fallo: (d) => `${d.fuente}: HDMI output failed (${d.detalle}); streaming without it`,
+      modo: (d) => d.modo === "receptor" ? "Receiver mode: cameras paused" : "Sender mode",
+      rx_recibiendo: (d) => `HDMI: receiving "${d.fuente}" at ${d.modo}`,
+      rx_perdida: (d) => `HDMI: lost the source "${d.fuente}"; retrying`,
+      rx_error: (d) => `HDMI: cannot receive "${d.fuente}" (${d.detalle}); retrying`,
+      rx_audio_fallo: (d) => `HDMI: sound output failed (${d.detalle}); continuing without audio`,
       ajustes_fuente: (d) => `${d.fuente}: settings changed: ` + d.campos.map((c) => T.en.fields[c] || c).join(", "),
       ap_activa: (d) => `Setup WiFi on: "${d.ssid}"`, ap_caida: () => "The setup WiFi stopped; restarting it",
       ap_off_red: () => "Network available: setup WiFi turned off",
@@ -745,7 +819,8 @@ function rellenar(input, valor, clave) {
 }
 
 // ----------------------------------------------------------------- fuentes
-const CLASES = { emitiendo: "ok", iniciando: "aviso", sin_camara: "aviso", error: "mal", desactivada: "" };
+const CLASES = { emitiendo: "ok", iniciando: "aviso", sin_camara: "aviso", error: "mal", desactivada: "",
+  recibiendo: "ok", conectando: "aviso", sin_fuente: "aviso", sin_monitor: "aviso", rx_error: "mal", pausada: "" };
 
 function crearTarjeta(f) {
   const id = f.id, k = (campo) => `${id}|${campo}`;
@@ -854,11 +929,13 @@ function pintarFuentes(e) {
 }
 
 function pintarHdmi(e) {
-  const h = e.hdmi || {}, fuentes = e.fuentes || [];
+  const h = e.hdmi || {}, fuentes = e.fuentes || [], receptor = e.modo === "receptor";
   const monitor = (h.pantallas || []).find((p) => p.conectado);
   poner("hdmiSub", monitor ? T[lang].hdmi_monitor(monitor) : t("hdmi_no_monitor"));
+  // en modo receptor la pantalla es del receptor: de esta tarjeta solo queda su resolución
+  for (const id of ["bloqueHdmiActiva", "bloqueHdmiEstado", "hdmiAyuda"]) $(id).classList.toggle("oculto", receptor);
   if (document.activeElement !== $("hdmiActiva")) $("hdmiActiva").checked = !!h.activa;
-  $("bloqueHdmiFuente").classList.toggle("oculto", fuentes.length < 2);
+  $("bloqueHdmiFuente").classList.toggle("oculto", receptor || fuentes.length < 2);
   if (document.activeElement !== $("hdmiFuente")) {
     $("hdmiFuente").replaceChildren(new Option(t("hdmi_auto"), "auto"), ...fuentes.map((f) => new Option(f.camara, f.id)));
     $("hdmiFuente").value = h.fuente || "auto";
@@ -875,24 +952,69 @@ function pintarHdmi(e) {
   $("hdmiReinicio").classList.toggle("oculto", !h.reinicio_pendiente);
 }
 
+function pintarModo(e) {
+  const receptor = e.modo === "receptor";
+  for (const r of document.querySelectorAll("input[name=modo]")) r.checked = r.value === (e.modo || "emisor");
+  $("secRx").classList.toggle("oculto", !receptor);
+  $("fuentes").classList.toggle("oculto", receptor);
+  if (!receptor) return;
+  const rc = e.receptor || {}, rx = rc.estado, red = rc.red_ndi || [], h = e.hdmi || {};
+  const monitor = (h.pantallas || []).find((p) => p.conectado);
+  if (document.activeElement !== $("rxFuente")) {
+    const ops = red.map((x) => new Option(x.nombre, x.nombre));
+    if (rc.fuente && !red.some((x) => x.nombre === rc.fuente)) ops.unshift(new Option(T[lang].hdmi_ndi_falta(rc.fuente), rc.fuente));
+    const vacia = new Option(red.length ? t("rx_elegir") : t("hdmi_ndi_buscando"), "");
+    vacia.disabled = true;
+    $("rxFuente").replaceChildren(vacia, ...ops);
+    $("rxFuente").value = rc.fuente || "";
+  }
+  const em = (e.emision || {}).estado;
+  $("rxPastilla").className = "pastilla " + (CLASES[em] || "") + (em === "recibiendo" ? " vivo" : "");
+  poner("rxPastilla", t("st_" + em));
+  poner("rxSub", rc.fuente || t("sub_sin_fuente"));
+  let estado = "—", tam = "";
+  if (!monitor) estado = t("sub_sin_monitor");
+  else if (!rc.fuente) estado = t("sub_sin_fuente");
+  else if (rx && rx.estado === "recibiendo") {
+    estado = T[lang].hdmi_rx_recibiendo(rx);
+    // la pantalla no escala sola: avisar si la fuente no tiene su resolución
+    const pantalla = { "1080p": "1920x1080", "720p": "1280x720" }[h.consola_activa] || (monitor && monitor.modo);
+    if (rx.ancho && pantalla && pantalla !== `${rx.ancho}x${rx.alto}`) tam = T[lang].hdmi_rx_tam(rx, pantalla.replace("x", "×"));
+  } else if (rx && rx.estado === "error") estado = T[lang].hdmi_rx_error(rc.fuente);
+  else estado = T[lang].hdmi_rx_conectando(rc.fuente);
+  poner("rxEstado", estado);
+  poner("rxTam", tam);
+  $("rxTam").classList.toggle("oculto", !tam);
+}
+
 // ----------------------------------------------------------------- pintar
 function pintar(e) {
   ultimo = e;
   const em = e.emision || {}, red = e.red || {}, eq = e.equipo || {}, cfg = e.config || {}, fuentes = e.fuentes || [];
   const texto = t("st_" + em.estado);
-  $("pastilla").className = "pastilla " + (CLASES[em.estado] || "") + (em.estado === "emitiendo" ? " vivo" : "");
+  $("pastilla").className = "pastilla " + (CLASES[em.estado] || "") + (["emitiendo", "recibiendo"].includes(em.estado) ? " vivo" : "");
   poner("pastilla", texto);
   poner("equipo", eq.nombre ? eq.nombre.toUpperCase() : "");
   poner("version", e.version ? "v" + e.version : "");
   poner("estado", texto);
   let sub = "";
-  if (em.estado === "sin_camara") sub = t("sub_sin_camara");
+  const rx = (e.receptor || {}).estado;
+  if (e.modo === "receptor") sub = em.estado === "sin_monitor" ? t("sub_sin_monitor")
+    : !(e.receptor || {}).fuente ? t("sub_sin_fuente")
+    : (e.receptor.fuente + (rx && rx.estado === "recibiendo" ? " · " + T[lang].hdmi_rx_recibiendo(rx) : ""));
+  else if (em.estado === "sin_camara") sub = t("sub_sin_camara");
   else if (em.estado === "desactivada") sub = t("sub_desactivada");
   else sub = T[lang].sub_emitiendo(fuentes.filter((f) => f.ajustes.activa).length,
     fuentes.filter((f) => f.nombre_ndi).map((f) => f.nombre_ndi));
   poner("estadoSub", sub);
-  poner("cFuentes", `${em.emitiendo ?? 0} / ${fuentes.length}`);
-  poner("cRecep", String(em.receptores ?? 0));
+  if (e.modo === "receptor") {
+    const ok = rx && rx.estado === "recibiendo";
+    poner("cFuentes", ok ? String(rx.fps) : "—"); poner("cFuentesT", t("fps_recibidos"));
+    poner("cRecep", ok && rx.ancho ? `${rx.ancho}×${rx.alto}` : "—"); poner("cRecepT", t("resolucion_fuente"));
+  } else {
+    poner("cFuentes", `${em.emitiendo ?? 0} / ${fuentes.length}`); poner("cFuentesT", t("sources"));
+    poner("cRecep", String(em.receptores ?? 0)); poner("cRecepT", t("receivers"));
+  }
   poner("cTx", red.tx_mbps != null ? red.tx_mbps.toFixed(1) : "—");
   poner("cCpu", eq.cpu != null ? eq.cpu + "%" : "—");
 
@@ -901,6 +1023,7 @@ function pintar(e) {
   grafica("grafTx", historial.tx, 20); grafica("grafCpu", historial.cpu, 100); grafica("grafW", historial.w, 2);
   $("bloqueGrafW").classList.toggle("oculto", eq.potencia_w == null);
 
+  pintarModo(e);
   pintarFuentes(e);
   pintarHdmi(e);
 
@@ -1035,6 +1158,12 @@ $("btQuitarClave").addEventListener("click", () =>
 async function guardarHdmi(datos) {
   try { await api("/api/config", datos); } catch (err) { mensaje("msgHdmi", err.message, "mal"); }
 }
+for (const r of document.querySelectorAll("input[name=modo]")) r.addEventListener("change", async () => {
+  try { await api("/api/config", { modo: r.value }); refrescar(); } catch (err) { mensaje("msgModo", err.message, "mal"); }
+});
+$("rxFuente").addEventListener("change", async () => {
+  try { await api("/api/config", { rx_fuente: $("rxFuente").value }); refrescar(); } catch (err) { mensaje("msgRx", err.message, "mal"); }
+});
 $("hdmiActiva").addEventListener("change", () => guardarHdmi({ hdmi: $("hdmiActiva").checked }));
 $("hdmiFuente").addEventListener("change", () => guardarHdmi({ hdmi_fuente: $("hdmiFuente").value }));
 $("hdmiConsola").addEventListener("change", () => guardarHdmi({ hdmi_consola: $("hdmiConsola").value }));

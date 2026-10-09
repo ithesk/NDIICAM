@@ -139,7 +139,8 @@ for pid in $(ss -ltnpH 'sport = :80' | grep -oE 'pid=[0-9]+' | cut -d= -f2 | sor
   fi
 done
 install -d -m 755 /opt/ndiicam /opt/ndiicam/web
-install -m 755 "$ORIGEN/ndiicam/ndiicam.py" "$ORIGEN/ndiicam/fuente.py" "$ORIGEN/ndiicam/red_nm.py" /opt/ndiicam/
+install -m 755 "$ORIGEN/ndiicam/ndiicam.py" "$ORIGEN/ndiicam/fuente.py" \
+  "$ORIGEN/ndiicam/receptor.py" "$ORIGEN/ndiicam/red_nm.py" /opt/ndiicam/
 install -m 644 "$ORIGEN/ndiicam/web/index.html" /opt/ndiicam/web/
 install -m 644 "$ORIGEN/system/ndiicam.service" /etc/systemd/system/ndiicam.service
 install -d -m 755 /etc/avahi/services
