@@ -835,6 +835,18 @@ class Fuentes:
                 f.hdmi_fallido = False
             return f is not None
 
+    def reiniciar_todo(self):
+        """Botón del panel por si algo se queda atascado: reinicia desde cero
+        todas las cámaras y el receptor, olvidando los fallos anteriores."""
+        with self.lock:
+            for ident in list(self.fuentes):
+                self.reiniciar(ident)
+            rx = self.receptor
+            rx.detener()
+            rx.fallos, rx.audio_fallido, rx.reintento = 0, None, 0.0
+            if rx.destino:
+                rx.estado = "conectando"
+
     def detener_todas(self):
         with self.lock:
             for f in self.fuentes.values():
@@ -1744,6 +1756,10 @@ class Panel(BaseHTTPRequestHandler):
             return self._config(d)
         if ruta == "/api/fuente":
             return self._fuente(d)
+        if ruta == "/api/reiniciar":
+            FUENTES.reiniciar_todo()
+            evento("reinicio_manual", modo=CONF.get()["modo"])
+            return self._json({"ok": True})
         if ruta == "/api/fuente/reiniciar":
             return self._json({"ok": FUENTES.reiniciar(str(d.get("id", "")))})
         if ruta == "/api/wifi/conectar":

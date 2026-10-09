@@ -166,6 +166,8 @@
     <div>
       <div class="estado" id="estado">—</div>
       <div class="sub" id="estadoSub">—</div>
+      <button class="boton" id="btReiniciarTodo" style="margin-top:10px"></button>
+      <div class="mensaje oculto" id="msgReinicio"></div>
     </div>
     <div class="graficas">
       <div class="grafica"><svg id="grafTx" viewBox="0 0 130 38" preserveAspectRatio="none"></svg><span data-t="traffic"></span></div>
@@ -481,6 +483,8 @@ const T = {
     ndi_name_net: "Nombre en la red", mode: "Modo", cam_fps: "fps cámara / enviados", cam_stream: "Flujo de la cámara",
     dropped: "Descartados", receivers_conn: "Receptores", streaming_for: "Emitiendo desde hace",
     none: "Ninguno", in_last_2s: "en 2 s", nobody_now: "ninguno ahora mismo",
+    restart_all_emisor: "Reiniciar emisión", restart_all_receptor: "Reiniciar recepción",
+    restarting_all: "Reiniciando… vuelve en unos segundos.",
     restart_stream: "Reiniciar", saved_ok: "Guardado. La fuente se reinicia con los nuevos ajustes.",
     saved_restart: "Guardado. El servicio se está reiniciando: el panel vuelve en unos segundos.",
     saved_simple: "Guardado.", restarting_stream: "Reiniciando la fuente…",
@@ -534,6 +538,7 @@ const T = {
       error_emision: (d) => `${d.fuente}: error de emisión: ${d.detalle}`,
       sin_imagen: (d) => `${d.fuente}: no entrega imagen; reiniciando la emisión`,
       audio_fallo: (d) => `${d.fuente}: el audio falló (${d.detalle}); emitiendo sin audio`,
+      reinicio_manual: (d) => d.modo === "receptor" ? "Recepción reiniciada desde el panel" : "Emisión reiniciada desde el panel",
       decodificacion_paralela: (d) => `${d.fuente}: la decodificación no da abasto; repartida en ${d.hilos} hilos`,
       aplicando: (d) => `${d.fuente}: aplicando cambios`, fallo_interno: (d) => `Fallo interno: ${d.detalle}`,
       hdmi_fallo: (d) => `${d.fuente}: la salida HDMI falló (${d.detalle}); emitiendo sin ella`,
@@ -643,6 +648,8 @@ const T = {
     ndi_name_net: "Name on the network", mode: "Mode", cam_fps: "fps camera / sent", cam_stream: "Camera stream",
     dropped: "Dropped", receivers_conn: "Receivers", streaming_for: "Streaming for",
     none: "None", in_last_2s: "in 2 s", nobody_now: "none right now",
+    restart_all_emisor: "Restart streaming", restart_all_receptor: "Restart receiving",
+    restarting_all: "Restarting… back in a few seconds.",
     restart_stream: "Restart", saved_ok: "Saved. The source restarts with the new settings.",
     saved_restart: "Saved. The service is restarting: the panel will be back in a few seconds.",
     saved_simple: "Saved.", restarting_stream: "Restarting the source…",
@@ -696,6 +703,7 @@ const T = {
       error_emision: (d) => `${d.fuente}: stream error: ${d.detalle}`,
       sin_imagen: (d) => `${d.fuente}: no frames; restarting the stream`,
       audio_fallo: (d) => `${d.fuente}: audio failed (${d.detalle}); streaming without audio`,
+      reinicio_manual: (d) => d.modo === "receptor" ? "Receiving restarted from the panel" : "Streaming restarted from the panel",
       decodificacion_paralela: (d) => `${d.fuente}: decoding cannot keep up; split across ${d.hilos} threads`,
       aplicando: (d) => `${d.fuente}: applying changes`, fallo_interno: (d) => `Internal error: ${d.detalle}`,
       hdmi_fallo: (d) => `${d.fuente}: HDMI output failed (${d.detalle}); streaming without it`,
@@ -1021,6 +1029,9 @@ function pintar(e) {
   else sub = T[lang].sub_emitiendo(fuentes.filter((f) => f.ajustes.activa).length,
     fuentes.filter((f) => f.nombre_ndi).map((f) => f.nombre_ndi));
   poner("estadoSub", sub);
+  poner("btReiniciarTodo", t(e.modo === "receptor" ? "restart_all_receptor" : "restart_all_emisor"));
+  // solo si hay algo que reiniciar
+  $("btReiniciarTodo").classList.toggle("oculto", e.modo === "receptor" ? !(e.receptor || {}).fuente : !fuentes.length);
   if (e.modo === "receptor") {
     const ok = rx && rx.estado === "recibiendo";
     poner("cFuentes", ok ? String(rx.fps) : "—"); poner("cFuentesT", t("fps_recibidos"));
@@ -1182,6 +1193,12 @@ for (const r of document.querySelectorAll("input[name=modo]")) r.addEventListene
 });
 $("rxFuente").addEventListener("change", async () => {
   try { await api("/api/config", { rx_fuente: $("rxFuente").value }); refrescar(); } catch (err) { mensaje("msgRx", err.message, "mal"); }
+});
+$("btReiniciarTodo").addEventListener("click", async () => {
+  $("btReiniciarTodo").disabled = true;
+  try { await api("/api/reiniciar", {}); mensaje("msgReinicio", t("restarting_all"), "info"); }
+  catch (err) { mensaje("msgReinicio", err.message, "mal"); }
+  setTimeout(() => { $("btReiniciarTodo").disabled = false; mensaje("msgReinicio"); }, 5000);
 });
 $("hdmiActiva").addEventListener("change", () => guardarHdmi({ hdmi: $("hdmiActiva").checked }));
 $("hdmiFuente").addEventListener("change", () => guardarHdmi({ hdmi_fuente: $("hdmiFuente").value }));
