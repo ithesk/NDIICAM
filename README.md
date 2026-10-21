@@ -133,7 +133,7 @@ Two tabs: **Monitor** (what is happening) and **Settings** (what you change). `#
 | Monitor | Status | Overall state, sources streaming, receivers, outgoing Mbit/s, CPU, GPU, last-2-minute graphs |
 | Monitor | One card per camera | Live preview (a camera JPEG every 2 s), NDI name, mode, camera/sent fps, bitrate, dropped frames, audio with level meter, receivers by name, GPU output |
 | Monitor | Recordings, Network, Device, Activity | Recorded files, WiFi signal and link usage, CPU/GPU/memory/power, event log |
-| Settings | One card per camera | On/off, NDI name, 720p/1080p, fps, audio (camera mic, another input or none), H.264 output on the GPU (record, SRT or RTMP), its quality and when to record |
+| Settings | One card per camera | On/off, NDI name, 720p/1080p, fps, audio (camera mic, another input or none), camera format (automatic, MJPEG or uncompressed), H.264 output on the GPU (record, SRT or RTMP), its quality and when to record |
 | Settings | Device mode | Sender (cameras to NDI), receiver (an NDI source to HDMI) or bridge (RTMP/SRT from an ATEM to HDMI) |
 | Settings | Bridge | Bridge mode only: RTMP server and key, SRT address, who is streaming, settings file for ATEM Software Control, new key |
 | Settings | NDI receiver | Receiver mode only: NDI sources found on the network, which one to show, resolution, fps and audio received |
@@ -214,6 +214,13 @@ These come from building it on real hardware, and explain some of the defaults:
   The service restarts it when the IP, mode or state change, and stops it before a camera or the
   receiver take the HDMI. The installer disables the text console on tty1 (`getty@tty1`) so it
   does not fight for the screen; Alt+F2 still opens a console.
+- **Uncompressed video on USB 3.0.** On a USB 3.0 port, cameras and capture cards that offer
+  uncompressed video (YUYV) are used that way by default, which skips decoding JPEG. Measured with
+  an Elgato Cam Link 4K on a Celeron J3355 at 1080p60: the camera process went from 154 % to 104 %
+  of a core, the whole device from 93 % to 82 %, with no dropped frames and 18 ms less delay. At
+  1080p30 the gain is smaller (60 % → 55 % of the device): moving ~124 MB/s over USB costs kernel
+  time too. MJPEG is kept when the GPU output is on (it starts from the JPEG) and on USB 2.0, where
+  uncompressed 1080p does not fit. The preview then comes from a scaled frame every 2 s.
 - **Tally and the receiver count** need `NDIlib_send_get_tally` and `NDIlib_send_get_no_connections`
   from the NDI SDK, which the GStreamer NDI plugin does not expose. `plugin/ndisink-tally.patch`
   adds them to `ndisink` as read-only properties (`tally-program`, `tally-preview`, `connections`);

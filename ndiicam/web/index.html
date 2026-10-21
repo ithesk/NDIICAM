@@ -528,6 +528,10 @@ const T = {
     ip_errors: { sin_conexion: "Con esa configuración no había conexión: se ha vuelto a la anterior.", generico: "No se pudo aplicar: se ha vuelto a la anterior." },
     vu_label: (p, r) => `pico ${p.toFixed(1)} dBFS` + (r != null ? ` · medio ${r.toFixed(1)}` : ""),
     tally_program: "EN EL AIRE", tally_preview: "PREVIO",
+    cam_format: "Formato de la cámara", fmt_auto: "Automático (sin comprimir en USB 3.0)",
+    fmt_mjpeg: "MJPEG (comprimido)", fmt_crudo: "Sin comprimir (necesita USB 3.0)",
+    fmt_now: (f) => f === "MJPG" ? "Ahora: MJPEG. Más CPU, pero cabe por USB 2.0 y permite la salida por GPU."
+      : "Ahora: sin comprimir. Gasta mucha menos CPU; la salida por GPU necesita MJPEG.",
     tab_monitor: "Monitor", tab_config: "Configuración", preview: "Vista previa",
     preview_none: "Sin vista previa: la cámara no entrega MJPEG", preview_wait: "Esperando imagen…",
     device_settings: "Equipo", device_name: "Nombre del equipo",
@@ -745,6 +749,10 @@ const T = {
     ip_errors: { sin_conexion: "That configuration had no connectivity: the previous one was restored.", generico: "Could not apply: the previous one was restored." },
     vu_label: (p, r) => `peak ${p.toFixed(1)} dBFS` + (r != null ? ` · avg ${r.toFixed(1)}` : ""),
     tally_program: "ON AIR", tally_preview: "PREVIEW",
+    cam_format: "Camera format", fmt_auto: "Automatic (uncompressed on USB 3.0)",
+    fmt_mjpeg: "MJPEG (compressed)", fmt_crudo: "Uncompressed (needs USB 3.0)",
+    fmt_now: (f) => f === "MJPG" ? "Now: MJPEG. More CPU, but fits USB 2.0 and allows the GPU output."
+      : "Now: uncompressed. Much less CPU; the GPU output needs MJPEG.",
     tab_monitor: "Monitor", tab_config: "Settings", preview: "Preview",
     preview_none: "No preview: the camera does not deliver MJPEG", preview_wait: "Waiting for a picture…",
     device_settings: "Device", device_name: "Device name",
@@ -1090,7 +1098,10 @@ function crearTarjeta(f) {
         el("label", { text: t("framerate"), style: "margin-top:12px" }),
         c.segFps = el("div", { class: "segmentado" }),
         el("label", { text: t("audio"), style: "margin-top:12px" }),
-        c.selAudio = el("select", { onchange: () => editado.add(k("audio")) })),
+        c.selAudio = el("select", { onchange: () => editado.add(k("audio")) }),
+        el("label", { text: t("cam_format"), style: "margin-top:12px" }),
+        c.selFormato = el("select", { onchange: () => editado.add(k("formato")) }),
+        c.ayudaFormato = el("div", { class: "ayuda" })),
       el("div", null,
         c.gpuBloque = el("div", null,
           el("label", { text: t("gpu_out") }),
@@ -1121,6 +1132,7 @@ function crearTarjeta(f) {
         if (elegido[k("res")]) datos.resolucion = elegido[k("res")];
         if (elegido[k("fps")]) datos.fps = Number(elegido[k("fps")]);
         if (editado.has(k("audio"))) datos.audio = c.selAudio.value;
+        if (editado.has(k("formato"))) datos.formato = c.selFormato.value;
         if (editado.has(k("gpu"))) datos.gpu_salida = c.selGpu.value;
         if (editado.has(k("kbps"))) datos.gpu_kbps = Number(c.selKbps.value);
         if (editado.has(k("puerto"))) datos.srt_puerto = Number(c.puerto.value);
@@ -1131,7 +1143,7 @@ function crearTarjeta(f) {
         ev.target.disabled = true;
         try {
           await api("/api/fuente", datos);
-          ["nombre", "audio", "gpu", "kbps", "puerto", "url", "cuando", "desde", "hasta"].forEach((x) => editado.delete(k(x)));
+          ["nombre", "audio", "gpu", "kbps", "puerto", "url", "cuando", "desde", "hasta", "formato"].forEach((x) => editado.delete(k(x)));
           delete elegido[k("res")]; delete elegido[k("fps")];
           mensaje(c.msg, t("saved_ok"), "ok");
         } catch (err) { mensaje(c.msg, err.message, "mal"); }
@@ -1170,7 +1182,7 @@ function pintarFuente(c, f, e) {
   c.btGrabar.style.marginTop = "10px";
   poner(c.btGrabar, c.grabando ? t("rec_stop") : t("rec_start"));
   // vista previa: un JPEG de la cámara cada 2 s, solo mientras se ve
-  if (pestana === "monitor" && f.estado === "emitiendo" && f.formato === "MJPG") {
+  if (pestana === "monitor" && f.estado === "emitiendo") {
     c.img.src = `/api/fuente/preview?id=${encodeURIComponent(id)}&t=${Date.now()}`;
   } else {
     c.img.classList.add("oculto"); c.previewVacia.classList.remove("oculto");
@@ -1208,6 +1220,11 @@ function pintarFuente(c, f, e) {
     c.selAudio.value = aj.audio;
     if (c.selAudio.value !== aj.audio) c.selAudio.value = "auto";
   }
+  if (!editado.has(k("formato")) && document.activeElement !== c.selFormato) {
+    c.selFormato.replaceChildren(...["auto", "mjpeg", "crudo"].map((v) => new Option(t("fmt_" + v), v)));
+    c.selFormato.value = aj.formato || "auto";
+  }
+  poner(c.ayudaFormato, f.formato ? T[lang].fmt_now(f.formato) : "");
   pintarGpu(c, f, e, k);
 }
 

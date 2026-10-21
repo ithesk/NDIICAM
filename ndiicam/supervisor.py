@@ -2,6 +2,7 @@
 # Copyright (C) 2026 Pablo Holguín. GPL-3.0-or-later: ver LICENSE.
 import hashlib
 import json
+import os
 import socket
 import subprocess
 import sys
@@ -11,7 +12,7 @@ import time
 import nucleo
 from nucleo import (AP_IF, AP_IP, FUENTE_PY, GRABACIONES, MAX_DECODIFICADORES, PUERTO_RTMP,
     RECEPTOR_PY, REPOSO_PY, RESOLUCIONES, VERSION, conexiones_por_pid, dispositivo_por_defecto,
-    evento, ip_de, ips_propias)
+    evento, ip_de, ips_propias, leer)
 from camaras import audio_dispositivos, audio_hdmi, camaras, pantallas, resolucion_pantalla
 from gpu import capacidad_gpu, decodificador_h264, entorno_va
 from puente import PUENTE, clave_puente
@@ -394,15 +395,33 @@ class Fuentes:
             ancho, alto = max(cands, key=lambda m: (m[0] * m[1], m[2]))[:2]
         mismos = [m for m in modos if m[0] == ancho and m[1] == alto]
         fps = max(m[2] for m in ([m for m in mismos if m[2] <= aj["fps"]] or mismos))
-        # MJPEG si existe: YUYV a 1080p no cabe por USB 2.0 a más de ~5 fps
-        fmt = "MJPG" if any(m[2] == fps and m[3] == "MJPG" for m in mismos) else "YUYV"
+        fmt = self.formato(f, aj, [m[3] for m in mismos if m[2] == fps])
         return {"dev": f.cam["dev"], "ancho": ancho, "alto": alto, "fps": fps, "fmt": fmt,
                 "nombre": aj["ndi_nombre"], "audio": self.audio_para(f, aj["audio"]),
                 "decodificadores": self.decodificadores(f, fmt),
                 "hdmi": self.hdmi_conector if f.cam["id"] == self.hdmi_para
                 and not f.hdmi_fallido else None,
                 "gpu": self.salida_gpu(aj, fmt),
-                "preview": ruta_preview(f.cam["id"]) if fmt == "MJPG" else None}
+                "preview": ruta_preview(f.cam["id"])}
+
+    @staticmethod
+    def formato(f, aj, disponibles):
+        """MJPG o YUYV para el modo ya elegido. Sin comprimir se ahorra descomprimir
+        el JPEG, que es lo que más CPU gasta, pero solo cabe por USB 3.0 (por USB 2.0,
+        YUYV a 1080p no pasa de ~5 fps). La salida por GPU parte del JPEG: con ella
+        activa, en automático se queda en MJPEG."""
+        hay_mjpg, hay_crudo = "MJPG" in disponibles, "YUYV" in disponibles
+        if not hay_mjpg:
+            return "YUYV"
+        if not hay_crudo:
+            return "MJPG"
+        quiere = aj.get("formato", "auto")
+        if quiere == "mjpeg":
+            return "MJPG"
+        if quiere == "crudo":
+            return "YUYV"
+        usb3 = velocidad_usb(f.cam.get("usb")) >= 5000
+        return "YUYV" if usb3 and aj.get("gpu_salida", "no") == "no" else "MJPG"
 
     @staticmethod
     def salida_gpu(aj, fmt):
@@ -647,6 +666,17 @@ class Fuentes:
     def lista(self):
         with self.lock:
             return list(self.fuentes.values())
+
+def velocidad_usb(ruta):
+    """Mbit/s del enlace USB de una cámara (480 = USB 2.0, 5000 = USB 3.0), o 0."""
+    if not ruta:
+        return 0
+    v = leer(os.path.join(ruta, "speed"), "0")
+    try:
+        return int(float(v))
+    except ValueError:
+        return 0
+
 
 def en_horario(ahora, desde, hasta):
     """Si la hora HH:MM cae en el tramo [desde, hasta). Un tramo que pasa de

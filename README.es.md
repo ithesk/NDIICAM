@@ -134,7 +134,7 @@ Dos pestañas: **Monitor** (lo que pasa) y **Configuración** (lo que cambias). 
 | Monitor | Estado | Estado general, fuentes emitiendo, receptores, Mbit/s de salida, CPU, GPU, gráficas de los últimos 2 minutos |
 | Monitor | Una tarjeta por cámara | Vista previa (un JPEG de la cámara cada 2 s), nombre NDI, modo, fps de cámara/enviados, tasa, descartes, audio con medidor, receptores por nombre, salida GPU |
 | Monitor | Grabaciones, Red, Equipo, Actividad | Archivos grabados, señal WiFi y uso del enlace, CPU/GPU/memoria/consumo, registro de eventos |
-| Configuración | Una tarjeta por cámara | Activar/desactivar, nombre NDI, 720p/1080p, fps, audio (micro de la cámara, otra entrada o ninguno), salida H.264 por la GPU (grabar, SRT o RTMP), su calidad y cuándo grabar |
+| Configuración | Una tarjeta por cámara | Activar/desactivar, nombre NDI, 720p/1080p, fps, audio (micro de la cámara, otra entrada o ninguno), formato de la cámara (automático, MJPEG o sin comprimir), salida H.264 por la GPU (grabar, SRT o RTMP), su calidad y cuándo grabar |
 | Configuración | Modo del equipo | Emisor (cámaras a NDI), receptor (una fuente NDI al HDMI) o puente (RTMP/SRT de un ATEM al HDMI) |
 | Configuración | Puente | Solo en modo puente: servidor RTMP y clave, dirección SRT, quién emite, archivo de ajustes para ATEM Software Control, clave nueva |
 | Configuración | Receptor NDI | Solo en modo receptor: fuentes NDI encontradas en la red, cuál mostrar, resolución, fps y audio recibidos |
@@ -218,6 +218,14 @@ Salen de montarlo en hardware real y explican algunos valores por defecto:
   vuelve a trabajar. El servicio lo relanza cuando cambian la IP, el modo o el estado, y lo para
   antes de que una cámara o el receptor cojan el HDMI. El instalador desactiva la consola de texto
   de tty1 (`getty@tty1`) para que no pelee por la pantalla; Alt+F2 sigue abriendo una consola.
+- **Vídeo sin comprimir por USB 3.0.** En un puerto USB 3.0, las cámaras y capturadoras que lo
+  ofrecen (YUYV) se usan sin comprimir por defecto, y así no hay que descomprimir JPEG. Medido con
+  una Elgato Cam Link 4K en un Celeron J3355 a 1080p60: el proceso de la cámara pasó del 154 % al
+  104 % de un núcleo y el equipo entero del 93 % al 82 %, sin descartes y con 18 ms menos de
+  retardo. A 1080p30 la ganancia es menor (del 60 % al 55 % del equipo): mover ~124 MB/s por el USB
+  también le cuesta al kernel. Se queda en MJPEG con la salida por GPU activa (parte del JPEG) y por
+  USB 2.0, donde 1080p sin comprimir no cabe. La vista previa sale entonces de un fotograma
+  reducido cada 2 s.
 - **El tally y el número de receptores** necesitan `NDIlib_send_get_tally` y
   `NDIlib_send_get_no_connections` del NDI SDK, que el plugin NDI de GStreamer no expone.
   `plugin/ndisink-tally.patch` los añade a `ndisink` como propiedades de solo lectura

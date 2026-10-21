@@ -157,12 +157,32 @@ class ModoDeCamara(unittest.TestCase):
         f = self.fuente([(1920, 1080, 60, "MJPG"), (1920, 1080, 24, "MJPG")])
         self.assertEqual(self.sup.objetivo(f)["fps"], 24)
 
-    def test_yuyv_sin_preview_ni_gpu(self):
+    def test_solo_yuyv_sin_gpu_con_preview(self):
         f = self.fuente([(1280, 720, 30, "YUYV")])
         o = self.sup.objetivo(f)
         self.assertEqual(o["fmt"], "YUYV")
-        self.assertIsNone(o["preview"])
+        self.assertIsNotNone(o["preview"])          # sale de un fotograma reducido
         self.assertIsNone(o["gpu"])
+
+    def test_formato_segun_el_puerto(self):
+        modos = [(1920, 1080, 30, "MJPG"), (1920, 1080, 30, "YUYV")]
+        original = supervisor.velocidad_usb
+        try:
+            supervisor.velocidad_usb = lambda ruta: 480           # USB 2.0
+            self.assertEqual(self.sup.objetivo(self.fuente(modos))["fmt"], "MJPG")
+            supervisor.velocidad_usb = lambda ruta: 5000          # USB 3.0
+            self.assertEqual(self.sup.objetivo(self.fuente(modos))["fmt"], "YUYV")
+            # la salida por GPU parte del JPEG: en automático se queda en MJPEG
+            self.conf.actualizar_fuente("cam", {"gpu_salida": "grabar"})
+            self.assertEqual(self.sup.objetivo(self.fuente(modos))["fmt"], "MJPG")
+            # forzado a mano, gana el ajuste
+            self.conf.actualizar_fuente("cam", {"gpu_salida": "no", "formato": "mjpeg"})
+            self.assertEqual(self.sup.objetivo(self.fuente(modos))["fmt"], "MJPG")
+            supervisor.velocidad_usb = lambda ruta: 480
+            self.conf.actualizar_fuente("cam", {"formato": "crudo"})
+            self.assertEqual(self.sup.objetivo(self.fuente(modos))["fmt"], "YUYV")
+        finally:
+            supervisor.velocidad_usb = original
 
     def test_horario_de_grabacion(self):
         self.assertTrue(supervisor.en_horario("10:00", "09:00", "18:00"))

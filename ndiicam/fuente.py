@@ -144,8 +144,23 @@ def tramo_camara(cfg):
     if cfg["fmt"] == "MJPG":
         return (f"v4l2src name=src ! image/jpeg,width={cfg['ancho']},height={cfg['alto']},"
                 f"framerate={cfg['fps']}/1 ! queue name=q1 {Q}")
-    return (f"v4l2src name=src ! video/x-raw,format=YUY2,width={cfg['ancho']},"
-            f"height={cfg['alto']},framerate={cfg['fps']}/1 ! queue name=q1 {Q}")
+    tramo = (f"v4l2src name=src ! video/x-raw,format=YUY2,width={cfg['ancho']},"
+             f"height={cfg['alto']},framerate={cfg['fps']}/1 ! queue name=q1 {Q}")
+    if cfg.get("preview"):
+        # sin JPEG que copiar: la vista previa sale de un fotograma reducido cada
+        # 2 s (escalar y comprimir uno de cada 60 cuesta poco)
+        tramo += " ! tee name=tp"
+    return tramo
+
+
+def tramo_preview(cfg):
+    """Rama de vista previa para el vídeo sin comprimir (va al final de la descripción)."""
+    if cfg["fmt"] == "MJPG" or not cfg.get("preview"):
+        return ""
+    return (" tp. ! queue max-size-buffers=1 leaky=downstream ! videorate drop-only=true"
+            " ! video/x-raw,framerate=1/2 ! videoscale ! video/x-raw,width=640,height=360"
+            f" ! jpegenc quality=75 ! multifilesink location={cfg['preview']} max-files=1"
+            " async=false sync=false")
 
 
 class Reparto:
@@ -243,7 +258,7 @@ class Directo:
 
     def __init__(self, cfg):
         deco = " ! jpegdec" if cfg["fmt"] == "MJPG" else ""
-        self.p = Gst.parse_launch(f"{tramo_camara(cfg)}{deco} ! {tramo_salida(cfg)}")
+        self.p = Gst.parse_launch(f"{tramo_camara(cfg)}{deco} ! {tramo_salida(cfg)}{tramo_preview(cfg)}")
         self.pipelines = [self.p]
 
     def elemento(self, nombre):
@@ -506,8 +521,9 @@ def main():
     for cola in ("q1", "q2", "q3"):
         flujo.elemento(cola).connect("overrun", descartado)
 
-    if cfg.get("preview") and cfg["fmt"] == "MJPG":
+    if cfg.get("preview"):
         os.makedirs(os.path.dirname(cfg["preview"]), exist_ok=True)
+    if cfg.get("preview") and cfg["fmt"] == "MJPG":
         flujo.elemento("src").get_static_pad("src").add_probe(
             Gst.PadProbeType.BUFFER, guardar_preview(cfg["preview"]))
 
