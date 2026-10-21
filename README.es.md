@@ -11,16 +11,24 @@ gestiona desde un panel web: tras la instalación no hace falta la terminal.
 
 ## Capturas
 
-![Panel web de NDIICAM: dos cámaras emitiendo por NDI, salida HDMI de encuadre, estado de la red y del equipo](docs/screenshots/panel-es.png)
+![Panel web de NDIICAM: dos cámaras emitiendo por NDI, una en el aire y otra grabando por la GPU, vista previa, tally, red y equipo](docs/screenshots/panel-es.png)
 
 <table>
   <tr>
-    <td width="68%"><img src="docs/screenshots/panel-dark-es.png" alt="Panel en tema oscuro"></td>
+    <td width="68%"><img src="docs/screenshots/panel-dark-es.png" alt="Pestaña Configuración en tema oscuro"></td>
     <td width="32%"><img src="docs/screenshots/setup-wifi-es.png" alt="Portal de la WiFi de configuración en un móvil"></td>
   </tr>
   <tr>
-    <td align="center">El tema oscuro sigue al del sistema</td>
+    <td align="center">Configuración por cámara (el tema oscuro sigue al del sistema)</td>
     <td align="center">WiFi de configuración desde el móvil</td>
+  </tr>
+  <tr>
+    <td width="68%"><img src="docs/screenshots/system-es.png" alt="Pestaña Sistema: seguridad, equipo y registro"></td>
+    <td width="32%"><img src="docs/screenshots/login-es.png" alt="Entrada al panel con contraseña"></td>
+  </tr>
+  <tr>
+    <td align="center">Sistema: HTTPS, contraseña, cortafuegos, motivo del último arranque y registro</td>
+    <td align="center">Entrada con contraseña</td>
   </tr>
 </table>
 
