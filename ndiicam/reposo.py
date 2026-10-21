@@ -38,7 +38,7 @@ T = {
         "modo": {"emisor": "Modo emisor", "receptor": "Modo receptor", "puente": "Modo puente"},
         "panel": "Panel de control", "escanea": "Escanea para abrir el panel",
         "red": "Red", "cable": "Cable", "wifi": "WiFi", "ip": "IP",
-        "ap": "WiFi de configuración", "clave": "clave", "sin_ip": "sin dirección",
+        "ap": "WiFi de configuración", "linea_clave": "Clave: {}", "sin_ip": "sin dirección",
         "consola": "Consola de texto: Alt+F2",
     },
     "en": {
@@ -49,7 +49,7 @@ T = {
         "modo": {"emisor": "Sender mode", "receptor": "Receiver mode", "puente": "Bridge mode"},
         "panel": "Control panel", "escanea": "Scan to open the panel",
         "red": "Network", "cable": "Wired", "wifi": "WiFi", "ip": "IP",
-        "ap": "Setup WiFi", "clave": "password", "sin_ip": "no address",
+        "ap": "Setup WiFi", "linea_clave": "Password: {}", "sin_ip": "no address",
         "consola": "Text console: Alt+F2",
     },
 }
@@ -91,7 +91,7 @@ def dibujar(cfg):
     if ap:
         d.text((mx, y), f"{t['ap']}: {ap['ssid']}", font=fuente(38, True), fill=AVISO)
         y += int(56 * e)
-        d.text((mx, y), f"{t['clave']}: {ap['clave']}", font=fuente(34), fill=TEXTO)
+        d.text((mx, y), t["linea_clave"].format(ap["clave"]), font=fuente(34), fill=TEXTO)
         y += int(70 * e)
     red = cfg.get("red") or {}
     if red.get("tipo") == "wifi":
