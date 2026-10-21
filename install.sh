@@ -62,18 +62,46 @@ fi
 paso "Installing dependencies / instalando dependencias"
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -qq
+# gstreamer1.0-plugins-bad trae kmssink: la salida HDMI (encuadre y modo receptor)
+# gstreamer1.0-libav: el decodificador H.264 de FFmpeg para el modo puente
 apt-get install -y -qq --no-install-recommends \
   python3 python3-gi python3-yaml gir1.2-gstreamer-1.0 gir1.2-gst-plugins-base-1.0 \
   gstreamer1.0-tools gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-alsa \
+  gstreamer1.0-plugins-bad gstreamer1.0-libav \
+  python3-pil python3-segno fonts-dejavu-core \
   v4l-utils network-manager dnsmasq-base hostapd iw avahi-daemon avahi-utils \
   iproute2 curl ca-certificates >/dev/null
+# GPU Intel: driver VA moderno (iHD) para la salida H.264 por GPU. El antiguo
+# (i965) no entrega decodificado el JPEG 4:2:0 de la mayoría de cámaras
+REINICIO_HUC=0
+if grep -qs 0x8086 /sys/class/drm/card*/device/vendor; then
+  apt-get install -y -qq --no-install-recommends intel-media-va-driver >/dev/null \
+    || aviso "intel-media-va-driver not installed: no GPU output / sin salida por GPU"
+  # Las Intel Gen9 (Skylake a Gemini Lake) traen HuC pero el kernel no lo carga.
+  # Sin él, su codificador de bajo consumo puede colgar el equipo entero (NDIICAM
+  # no lo usa sin HuC: la salida GPU queda desactivada hasta reiniciar)
+  # sin tubería: con pipefail, 'cat | head' falla al azar si cat sigue escribiendo
+  HUC="$(cat /sys/kernel/debug/dri/*/gt*/uc/huc_info 2>/dev/null || true)"
+  if [ -n "$HUC" ] && ! grep -qi "not supported" <<<"$HUC" \
+      && ! grep -qs "enable_guc" /etc/default/grub /etc/default/grub.d/*.cfg \
+      && [ -d /etc/default/grub.d ] && command -v update-grub >/dev/null; then
+    printf '%s\n' "# NDIICAM: carga el firmware HuC de la GPU Intel (salida H.264 por GPU)" \
+      'GRUB_CMDLINE_LINUX_DEFAULT="$GRUB_CMDLINE_LINUX_DEFAULT i915.enable_guc=2"' \
+      > /etc/default/grub.d/80-ndiicam-huc.cfg
+    update-grub >/dev/null 2>&1 && REINICIO_HUC=1
+  fi
+fi
+# la consola de texto de tty1 deja sitio a la pantalla de ayuda por HDMI;
+# Alt+F2 sigue abriendo una consola (autovt)
+systemctl disable --now getty@tty1.service >/dev/null 2>&1 || true
 # hostapd lo arranca NDIICAM cuando hace falta, no su servicio
 systemctl disable --now hostapd >/dev/null 2>&1 || true
 systemctl mask hostapd >/dev/null 2>&1 || true
 systemctl enable --now avahi-daemon >/dev/null 2>&1
 
 # -------------------------------------------------------------------- NDI SDK
-if ldconfig -p | grep -q 'libndi\.so\.6'; then
+# grep sin -q: con pipefail, si grep corta antes de que ldconfig acabe, la tubería falla
+if ldconfig -p | grep 'libndi\.so\.6' >/dev/null; then
   paso "NDI SDK already installed / NDI SDK ya instalado"
 else
   paso "NDI® SDK"
@@ -92,7 +120,9 @@ EOF
   fi
   curl -fL --progress-bar "$NDI_SDK_URL" -o "$TMP/ndi.tar.gz"
   tar -xzf "$TMP/ndi.tar.gz" -C "$TMP"
-  (cd "$TMP" && yes | PAGER=cat bash ./Install_NDI_SDK_v6_Linux.sh >/dev/null)
+  # `yes` muere con SIGPIPE (141) cuando el instalador del SDK termina; con
+  # pipefail eso abortaba una instalación limpia aunque el SDK quedara bien.
+  (cd "$TMP" && { yes || true; } | PAGER=cat bash ./Install_NDI_SDK_v6_Linux.sh >/dev/null)
   LIB="$(ls "$TMP/NDI SDK for Linux/lib/x86_64-linux-gnu/"libndi.so.6.* | head -1)"
   [ -f "$LIB" ] || error "NDI SDK: libndi.so.6 not found / no se encontró libndi.so.6"
   install -m 755 "$LIB" /usr/local/lib/
@@ -101,8 +131,31 @@ EOF
   ldconfig
 fi
 
+# ------------------------------------- MediaMTX (modo puente, como un ATEM Streaming Bridge)
+# Servidor RTMP/SRT donde publica el ATEM; GStreamer no sabe hacer de servidor.
+# MIT, un solo binario. Versión fijada y comprobada con su SHA-256
+MEDIAMTX_VER="v1.21.2"
+MEDIAMTX_SHA="121be6e00397e473a95d83c75f4fcd3819a6af3b0e1a50889cba43ab4fab6a27"
+MEDIAMTX_BIN="/usr/local/lib/ndiicam/mediamtx"
+if [ "$("$MEDIAMTX_BIN" --version 2>/dev/null)" = "$MEDIAMTX_VER" ]; then
+  paso "MediaMTX $MEDIAMTX_VER already installed / ya instalado"
+else
+  paso "MediaMTX $MEDIAMTX_VER (bridge mode / modo puente, MIT)"
+  if curl -fsSL "https://github.com/bluenviron/mediamtx/releases/download/$MEDIAMTX_VER/mediamtx_${MEDIAMTX_VER}_linux_amd64.tar.gz" \
+       -o "$TMP/mediamtx.tgz" \
+     && echo "$MEDIAMTX_SHA  $TMP/mediamtx.tgz" | sha256sum -c --quiet; then
+    tar -xzf "$TMP/mediamtx.tgz" -C "$TMP" mediamtx
+    install -d -m 755 "$(dirname "$MEDIAMTX_BIN")"
+    install -m 755 "$TMP/mediamtx" "$MEDIAMTX_BIN"
+  else
+    aviso "MediaMTX not installed: no bridge mode / sin modo puente"
+  fi
+fi
+
 # ------------------------------------------------- plugin NDI de GStreamer
 DIR_GST="$(dirname "$(gst-inspect-1.0 coreelements | awk '/Filename/ {print $2}')")"
+# vale el que haya: sin el parche de tally (plugin/) NDIICAM funciona igual, solo
+# no enseña el tally. Forzar el nuestro obligaría a compilar Rust en el equipo
 if gst-inspect-1.0 ndisink >/dev/null 2>&1; then
   paso "GStreamer NDI plugin already installed / plugin NDI de GStreamer ya instalado"
 else
@@ -114,13 +167,15 @@ else
   else
     aviso "Building the plugin from source: it can take a long time on slow CPUs"
     aviso "Compilando el plugin: en CPUs lentas puede tardar bastante"
-    apt-get install -y -qq --no-install-recommends build-essential pkg-config git \
+    apt-get install -y -qq --no-install-recommends build-essential pkg-config git patch \
       libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev >/dev/null
     export RUSTUP_HOME="$TMP/rustup" CARGO_HOME="$TMP/cargo"
     curl -fsSL https://sh.rustup.rs | sh -s -- -y --profile minimal --no-modify-path >/dev/null
     git clone -q --depth 1 --branch "$GST_RS_TAG" \
       https://gitlab.freedesktop.org/gstreamer/gst-plugins-rs.git "$TMP/gst-plugins-rs"
-    (cd "$TMP/gst-plugins-rs" && "$CARGO_HOME/bin/cargo" build --release --locked -p gst-plugin-ndi)
+    # tally y número de receptores del emisor (plugin/ndisink-tally.patch)
+    (cd "$TMP/gst-plugins-rs" && patch -p1 < "$ORIGEN/plugin/ndisink-tally.patch" \
+      && "$CARGO_HOME/bin/cargo" build --release --locked -p gst-plugin-ndi)
     cp "$TMP/gst-plugins-rs/target/release/libgstndi.so" "$TMP/libgstndi.so"
   fi
   install -m 644 "$TMP/libgstndi.so" "$DIR_GST/libgstndi.so"
@@ -139,16 +194,24 @@ for pid in $(ss -ltnpH 'sport = :80' | grep -oE 'pid=[0-9]+' | cut -d= -f2 | sor
   fi
 done
 install -d -m 755 /opt/ndiicam /opt/ndiicam/web
-install -m 755 "$ORIGEN/ndiicam/ndiicam.py" "$ORIGEN/ndiicam/fuente.py" \
-  "$ORIGEN/ndiicam/receptor.py" "$ORIGEN/ndiicam/red_nm.py" /opt/ndiicam/
+# el servicio son varios módulos (ver la cabecera de ndiicam.py): van todos
+install -m 755 "$ORIGEN"/ndiicam/*.py /opt/ndiicam/
 install -m 644 "$ORIGEN/ndiicam/web/index.html" /opt/ndiicam/web/
 install -m 644 "$ORIGEN/system/ndiicam.service" /etc/systemd/system/ndiicam.service
 install -d -m 755 /etc/avahi/services
 install -m 644 "$ORIGEN/system/ndiicam-avahi.service" /etc/avahi/services/ndiicam.service
 install -d -m 755 /etc/NetworkManager/conf.d
-install -m 644 "$ORIGEN/system/90-ndiicam.conf" /etc/NetworkManager/conf.d/90-ndiicam.conf
+# "zz-" para que se lea después de default-wifi-powersave-on.conf de Ubuntu:
+# NetworkManager aplica los conf.d por orden alfabético y gana el último.
+rm -f /etc/NetworkManager/conf.d/90-ndiicam.conf
+install -m 644 "$ORIGEN/system/zz-ndiicam.conf" /etc/NetworkManager/conf.d/zz-ndiicam.conf
 install -d -m 700 /etc/ndiicam /var/lib/ndiicam
 systemctl reload NetworkManager >/dev/null 2>&1 || true
+# la nueva configuración vale para las próximas conexiones; en la activa se
+# apaga ya el ahorro de energía, sin cortar la WiFi
+for w in /sys/class/net/*/wireless; do
+  [ -e "$w" ] && iw dev "$(basename "$(dirname "$w")")" set power_save off 2>/dev/null || true
+done
 systemctl daemon-reload
 systemctl enable ndiicam.service >/dev/null 2>&1
 systemctl restart ndiicam.service
@@ -170,6 +233,9 @@ cat <<EOF
                 password / clave: ndiicam-setup  (change it in the panel / cámbiala en el panel)
 
 EOF
+if [ "$REINICIO_HUC" -eq 1 ]; then
+  aviso "Reboot to enable the GPU H.264 output (HuC firmware) / reinicia para activar la salida H.264 por GPU (firmware HuC)"
+fi
 
 # ----------------------------------------------------------------------- red
 if [ "$RED" -eq 1 ]; then

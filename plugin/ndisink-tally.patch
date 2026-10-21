@@ -1,0 +1,144 @@
+diff -ruN a/net/ndi/src/ndi.rs b/net/ndi/src/ndi.rs
+--- a/net/ndi/src/ndi.rs	2026-10-20 21:25:57
++++ b/net/ndi/src/ndi.rs	2026-10-20 21:25:57
+@@ -425,6 +425,23 @@
+     pub fn send_metadata(&self, metadata: &MetadataFrame) {
+         unsafe { NDIlib_send_send_metadata(self.0.as_ptr(), metadata.as_ptr()) }
+     }
++
++    /// Tally that the connected receivers report for this sender (program / preview).
++    pub fn tally(&self, timeout_ms: u32) -> Tally {
++        let mut tally = NDIlib_tally_t {
++            on_program: false,
++            on_preview: false,
++        };
++        unsafe {
++            NDIlib_send_get_tally(self.0.as_ptr(), &mut tally, timeout_ms);
++        }
++        Tally(tally)
++    }
++
++    /// Number of receivers currently connected to this sender.
++    pub fn connections(&self, timeout_ms: u32) -> i32 {
++        unsafe { NDIlib_send_get_no_connections(self.0.as_ptr(), timeout_ms) }
++    }
+ }
+ 
+ impl Drop for SendInstance {
+diff -ruN a/net/ndi/src/ndisink/imp.rs b/net/ndi/src/ndisink/imp.rs
+--- a/net/ndi/src/ndisink/imp.rs	2026-10-20 21:25:57
++++ b/net/ndi/src/ndisink/imp.rs	2026-10-20 21:25:57
+@@ -67,11 +67,29 @@
+ impl ObjectImpl for NdiSink {
+     fn properties() -> &'static [glib::ParamSpec] {
+         static PROPERTIES: Lazy<Vec<glib::ParamSpec>> = Lazy::new(|| {
+-            vec![glib::ParamSpecString::builder("ndi-name")
+-                .nick("NDI Name")
+-                .blurb("NDI Name to use")
+-                .doc_show_default()
+-                .build()]
++            vec![
++                glib::ParamSpecString::builder("ndi-name")
++                    .nick("NDI Name")
++                    .blurb("NDI Name to use")
++                    .doc_show_default()
++                    .build(),
++                glib::ParamSpecBoolean::builder("tally-program")
++                    .nick("Tally program")
++                    .blurb("A connected receiver has this source on program (NDI tally)")
++                    .read_only()
++                    .build(),
++                glib::ParamSpecBoolean::builder("tally-preview")
++                    .nick("Tally preview")
++                    .blurb("A connected receiver has this source on preview (NDI tally)")
++                    .read_only()
++                    .build(),
++                glib::ParamSpecInt::builder("connections")
++                    .nick("Connections")
++                    .blurb("Receivers currently connected to this source")
++                    .minimum(0)
++                    .read_only()
++                    .build(),
++            ]
+         });
+ 
+         PROPERTIES.as_ref()
+@@ -94,6 +112,30 @@
+             "ndi-name" => {
+                 let settings = self.settings.lock().unwrap();
+                 settings.ndi_name.to_value()
++            }
++            "tally-program" => {
++                let state = self.state.lock().unwrap();
++                state
++                    .as_ref()
++                    .map(|s| s.send.tally(0).on_program())
++                    .unwrap_or(false)
++                    .to_value()
++            }
++            "tally-preview" => {
++                let state = self.state.lock().unwrap();
++                state
++                    .as_ref()
++                    .map(|s| s.send.tally(0).on_preview())
++                    .unwrap_or(false)
++                    .to_value()
++            }
++            "connections" => {
++                let state = self.state.lock().unwrap();
++                state
++                    .as_ref()
++                    .map(|s| s.send.connections(0))
++                    .unwrap_or(0)
++                    .to_value()
+             }
+             _ => unimplemented!(),
+         }
+diff -ruN a/net/ndi/src/ndisys.rs b/net/ndi/src/ndisys.rs
+--- a/net/ndi/src/ndisys.rs	2026-10-20 21:25:57
++++ b/net/ndi/src/ndisys.rs	2026-10-20 21:25:57
+@@ -75,6 +75,15 @@
+     >,
+     send_send_metadata:
+         Symbol<fn(p_instance: NDIlib_send_instance_t, p_metadata: *const NDIlib_metadata_frame_t)>,
++    send_get_tally: Symbol<
++        fn(
++            p_instance: NDIlib_send_instance_t,
++            p_tally: *mut NDIlib_tally_t,
++            timeout_in_ms: u32,
++        ) -> bool,
++    >,
++    send_get_no_connections:
++        Symbol<fn(p_instance: NDIlib_send_instance_t, timeout_in_ms: u32) -> ::std::os::raw::c_int>,
+ }
+ 
+ pub type NDIlib_find_instance_t = *mut ::std::os::raw::c_void;
+@@ -434,6 +443,8 @@
+             send_send_video_v2: load_symbol!(NDIlib_send_send_video_v2),
+             send_send_audio_v3: load_symbol!(NDIlib_send_send_audio_v3),
+             send_send_metadata: load_symbol!(NDIlib_send_send_metadata),
++            send_get_tally: load_symbol!(NDIlib_send_get_tally),
++            send_get_no_connections: load_symbol!(NDIlib_send_get_no_connections),
+             _library: library,
+         };
+ 
+@@ -574,4 +585,19 @@
+     p_metadata: *const NDIlib_metadata_frame_t,
+ ) {
+     (FFI.get_unchecked().send_send_metadata)(p_instance, p_metadata)
++}
++
++pub unsafe fn NDIlib_send_get_tally(
++    p_instance: NDIlib_send_instance_t,
++    p_tally: *mut NDIlib_tally_t,
++    timeout_in_ms: u32,
++) -> bool {
++    (FFI.get_unchecked().send_get_tally)(p_instance, p_tally, timeout_in_ms)
++}
++
++pub unsafe fn NDIlib_send_get_no_connections(
++    p_instance: NDIlib_send_instance_t,
++    timeout_in_ms: u32,
++) -> ::std::os::raw::c_int {
++    (FFI.get_unchecked().send_get_no_connections)(p_instance, timeout_in_ms)
+ }
