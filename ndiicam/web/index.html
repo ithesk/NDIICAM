@@ -76,7 +76,24 @@
   .pestanas button { flex: 1; border: 1px solid var(--borde); background: var(--panel); color: var(--suave);
     font: inherit; font-weight: 600; padding: 10px 14px; border-radius: 10px; cursor: pointer; }
   .pestanas button.activo { background: var(--acento); border-color: var(--acento); color: var(--acento-t); }
-  body[data-tab="monitor"] [data-tab="config"], body[data-tab="config"] [data-tab="monitor"] { display: none !important; }
+  body:not([data-tab="monitor"]) [data-tab="monitor"], body:not([data-tab="config"]) [data-tab="config"],
+  body:not([data-tab="sistema"]) [data-tab="sistema"] { display: none !important; }
+  /* entrada al panel: crear la contraseña la primera vez, o escribirla */
+  .entrada { position: fixed; inset: 0; z-index: 10; background: var(--fondo); display: flex; align-items: center;
+    justify-content: center; padding: 16px; overflow-y: auto; }
+  .entrada form { width: 100%; max-width: 380px; display: grid; gap: 12px; }
+  .entrada p { margin: 0; color: var(--suave); font-size: 14px; }
+  .entrada .marca { margin-bottom: 4px; }
+  /* registro del sistema */
+  .registro { max-height: 460px; overflow: auto; background: var(--fondo); border: 1px solid var(--borde);
+    border-radius: 10px; padding: 8px 10px; margin-top: 12px; font-size: 12px; line-height: 1.5; }
+  .registro div { white-space: pre-wrap; overflow-wrap: anywhere; }
+  .registro time { color: var(--suave); margin-right: 6px; }
+  .registro .u { color: var(--acento); margin-right: 6px; }
+  .registro .p3 { color: var(--mal); }
+  .registro .p4 { color: var(--aviso); }
+  .filtros { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  .filtros select, .filtros input[type=text] { width: auto; flex: 1 1 140px; }
   /* medidor de audio: pico (barra) y RMS (marca), de -60 a 0 dBFS */
   .vumetro { position: relative; height: 8px; border-radius: 4px; background: var(--pista); margin-top: 6px; overflow: hidden; }
   .vumetro i { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 4px; background: var(--ok); transition: width .2s; }
@@ -177,6 +194,7 @@
   <nav class="pestanas" aria-label="Secciones">
     <button type="button" data-tab-btn="monitor" data-t="tab_monitor"></button>
     <button type="button" data-tab-btn="config" data-t="tab_config"></button>
+    <button type="button" data-tab-btn="sistema" data-t="tab_system"></button>
   </nav>
 
   <section class="tarjeta aviso-ap oculto" id="avisoAp">
@@ -432,12 +450,6 @@
         <select id="selIdioma"><option value="es">Español</option><option value="en">English</option></select>
         <div class="ayuda" data-t="screen_lang_help"></div>
       </div>
-      <div>
-        <label for="inClavePanel" data-t="panel_password"></label>
-        <input type="password" id="inClavePanel" maxlength="64" autocomplete="new-password">
-        <div class="ayuda" id="ayudaClavePanel"></div>
-        <button type="button" class="boton peligro oculto" id="btQuitarClave" style="margin-top:8px" data-t="remove_password"></button>
-      </div>
     </div>
     <div class="botones">
       <button class="boton principal" id="btGuardarEquipo" data-t="save"></button>
@@ -458,7 +470,6 @@
     <div class="ayuda" id="apEstado" style="margin:0 0 10px"></div>
     <div class="botones" style="margin-top:0">
       <button class="boton" id="btAp"></button>
-      <button class="boton peligro" id="btReboot" data-t="reboot"></button>
     </div>
   </section>
 
@@ -467,9 +478,112 @@
     <ul class="lista eventos" id="eventos"></ul>
   </section>
 
+  <section class="tarjeta seccion" data-tab="sistema" id="secSeguridad">
+    <h2 data-t="security"></h2>
+    <div class="mensaje mal oculto" id="avisoHttp" style="margin-bottom:12px"></div>
+    <div class="mensaje info oculto" id="avisoApClave" style="margin-bottom:12px"></div>
+    <dl>
+      <dt data-t="sec_connection"></dt><dd id="segConexion">—</dd>
+      <dt data-t="sec_fingerprint"></dt><dd class="mono" id="segHuella">—</dd>
+    </dl>
+    <h2 style="margin-top:20px" data-t="change_password"></h2>
+    <div class="campos">
+      <div id="bloqueClaveActual">
+        <label for="inClaveActual" data-t="current_password"></label>
+        <input type="password" id="inClaveActual" maxlength="128" autocomplete="current-password">
+      </div>
+      <div>
+        <label for="inClaveNueva" data-t="new_password"></label>
+        <input type="password" id="inClaveNueva" maxlength="128" autocomplete="new-password">
+        <div class="ayuda" data-t="password_help"></div>
+      </div>
+      <div>
+        <label for="inClaveNueva2" data-t="repeat_password"></label>
+        <input type="password" id="inClaveNueva2" maxlength="128" autocomplete="new-password">
+      </div>
+    </div>
+    <div class="botones">
+      <button class="boton principal" id="btCambiarClave" data-t="change_password"></button>
+      <button class="boton" id="btSalir" data-t="logout"></button>
+    </div>
+    <div class="mensaje oculto" id="msgClave"></div>
+
+    <h2 style="margin-top:20px" data-t="firewall"></h2>
+    <label class="conmutador"><input type="checkbox" id="cfActivo"><span data-t="firewall_on"></span></label>
+    <div class="ayuda" data-t="firewall_help"></div>
+    <div class="ayuda" id="cfEstado"></div>
+    <div class="campos" style="margin-top:12px">
+      <div>
+        <label for="inPuertosExtra" data-t="extra_ports"></label>
+        <input type="text" id="inPuertosExtra" maxlength="300" placeholder="tcp:8080 udp:5000-5010" autocomplete="off" spellcheck="false">
+        <div class="ayuda" data-t="extra_ports_help"></div>
+      </div>
+    </div>
+    <div class="botones">
+      <button class="boton principal" id="btCortafuegos" data-t="save"></button>
+    </div>
+    <div class="mensaje oculto" id="msgCortafuegos"></div>
+  </section>
+
+  <section class="tarjeta seccion" data-tab="sistema" id="secSistema">
+    <h2 data-t="system"></h2>
+    <dl>
+      <dt data-t="last_boot"></dt><dd id="sisArranque">—</dd>
+      <dt data-t="watchdog"></dt><dd id="sisWatchdog">—</dd>
+      <dt data-t="clock"></dt><dd id="sisHora">—</dd>
+    </dl>
+    <div class="campos" style="margin-top:14px">
+      <div>
+        <label for="selZona" data-t="timezone"></label>
+        <select id="selZona"></select>
+        <div class="ayuda" data-t="timezone_help"></div>
+      </div>
+    </div>
+    <div class="botones">
+      <button class="boton principal" id="btZona" data-t="save"></button>
+      <button class="boton peligro" id="btReboot" data-t="reboot"></button>
+      <button class="boton peligro" id="btApagar" data-t="shutdown"></button>
+    </div>
+    <div class="mensaje oculto" id="msgSistema"></div>
+  </section>
+
+  <section class="tarjeta seccion" data-tab="sistema" id="secRegistro">
+    <h2 data-t="log"></h2>
+    <div class="filtros">
+      <div class="segmentado" id="segRegOrigen">
+        <button type="button" data-v="servicio">NDIICAM</button>
+        <button type="button" data-v="sistema" data-t="log_system"></button>
+        <button type="button" data-v="kernel">Kernel</button>
+      </div>
+      <select id="selRegArranque"></select>
+      <select id="selRegNivel">
+        <option value="todo" data-t="log_all"></option>
+        <option value="aviso" data-t="log_warnings"></option>
+        <option value="error" data-t="log_errors"></option>
+      </select>
+      <input type="text" id="inRegBuscar" maxlength="100" autocomplete="off" spellcheck="false">
+      <button class="boton" id="btRegistro" data-t="refresh"></button>
+      <a class="boton" id="btRegDescargar" download data-t="download"></a>
+    </div>
+    <div class="registro mono" id="registro"></div>
+  </section>
+
   <footer>NDIICAM <span id="version"></span> · GPL-3.0 · NDI® is a registered trademark of Vizrt NDI AB</footer>
 </div>
 <div class="desconectado oculto" id="desconectado" data-t="disconnected"></div>
+<div class="entrada oculto" id="entrada">
+  <form class="tarjeta" id="formEntrada" autocomplete="on">
+    <div class="marca"><strong>NDIICAM</strong> <small id="entradaEquipo"></small></div>
+    <h3 id="entradaTitulo"></h3>
+    <p id="entradaTexto"></p>
+    <input type="text" name="username" autocomplete="username" value="ndiicam" class="oculto" aria-hidden="true">
+    <input type="password" id="entradaClave" maxlength="128" required>
+    <input type="password" id="entradaClave2" maxlength="128" class="oculto">
+    <button class="boton principal" type="submit" id="btEntrar"></button>
+    <div class="mensaje oculto" id="msgEntrada"></div>
+    <p class="ayuda" id="entradaAyuda"></p>
+  </form>
+</div>
 
 <script>
 "use strict";
@@ -540,6 +654,44 @@ const T = {
     fmt_mjpeg: "MJPEG (comprimido)", fmt_crudo: "Sin comprimir (necesita USB 3.0)",
     fmt_now: (f) => f === "MJPG" ? "Ahora: MJPEG. Más CPU, pero cabe por USB 2.0 y permite la salida por GPU."
       : "Ahora: sin comprimir. Gasta mucha menos CPU; la salida por GPU necesita MJPEG.",
+    tab_system: "Sistema", security: "Seguridad", sec_connection: "Conexión", sec_fingerprint: "Huella del certificado",
+    sec_https: "Cifrada (HTTPS, certificado propio del equipo)", sec_http_ap: "Sin cifrar: WiFi de configuración",
+    sec_http: "Sin cifrar (HTTP)",
+    sec_http_warn: "Estás entrando sin cifrar. Abre el panel con https:// para que la contraseña no viaje en claro.",
+    sec_no_https: "Este equipo no pudo crear su certificado (falta openssl): el panel va sin cifrar.",
+    ap_default_warn: "La WiFi de configuración usa la clave por defecto (ndiicam-setup), que es pública: cualquiera cerca podría entrar al panel desde ella. Cámbiala en Configuración.",
+    change_password: "Cambiar contraseña", current_password: "Contraseña actual", new_password: "Contraseña nueva",
+    repeat_password: "Repítela", password_help: "Al menos 8 caracteres. Cierra las demás sesiones abiertas.",
+    password_mismatch: "Las dos contraseñas no coinciden.", password_changed: "Contraseña cambiada.",
+    logout: "Cerrar sesión",
+    firewall: "Cortafuegos", firewall_on: "Activo",
+    firewall_help: "Solo deja entrar lo que el modo actual necesita: el panel, SSH, NDI, mDNS, y el SRT o el RTMP si están en uso. No toca otras reglas del sistema.",
+    firewall_open: (l) => `Abiertos: ${l.join(", ")}`, firewall_off: "Desactivado: todos los puertos abiertos.",
+    firewall_error: (e) => `No se pudo aplicar: ${e === "sin_nft" ? "falta nftables" : e}`,
+    extra_ports: "Puertos extra", extra_ports_help: "Para otros programas del equipo. Ej.: tcp:8080 udp:5000-5010",
+    system: "Equipo", last_boot: "Último arranque", watchdog: "Watchdog", clock: "Reloj",
+    timezone: "Zona horaria", timezone_help: "Afecta al horario de grabación y a los nombres de los archivos.",
+    shutdown: "Apagar equipo",
+    confirm_shutdown: "¿Apagar el equipo? Para volver a encenderlo hará falta pulsar su botón o desenchufarlo y enchufarlo.",
+    shutting_down: "Apagando…", rebooting: "Reiniciando…",
+    wd_on: (d) => `Activo: reinicia el equipo si se cuelga más de ${d.timeout} s` + (d.dispositivo ? ` (${d.dispositivo})` : ""),
+    wd_off: "No disponible: si el equipo se cuelga habrá que reiniciarlo a mano",
+    clock_ok: (z) => `${z} · sincronizado por internet`, clock_bad: (z) => `${z} · sin sincronizar: la hora puede no ser correcta`,
+    boot_reasons: { primero: "Primer arranque con NDIICAM 0.5", reinicio_panel: "Reiniciado desde el panel",
+      apagado_panel: "Apagado desde el panel y encendido de nuevo", reinicio: "Reinicio o apagado ordenado del sistema",
+      apagado: "Apagado ordenado del sistema y encendido de nuevo",
+      panico: "Fallo del kernel: el equipo se reinició solo", watchdog: "Cuelgue: el watchdog reinició el equipo",
+      inesperado: "Sin aviso: corte de luz, o un cuelgue que reinició el watchdog" },
+    last_signal: (h) => `; última señal ${h}`,
+    log: "Registro", log_system: "Sistema", log_all: "Todo", log_warnings: "Avisos y errores", log_errors: "Solo errores",
+    log_search: "Buscar…", log_empty: "Sin líneas con ese filtro.", log_current: "Arranque actual", refresh: "Actualizar",
+    download: "Descargar",
+    login_create_t: "Crea la contraseña del panel", login_create_p: "Es la primera vez que se abre este panel. Elige una contraseña de al menos 8 caracteres: la pedirá desde cualquier equipo de la red.",
+    login_t: "Entrar", login_p: "Escribe la contraseña del panel.", login_button: "Entrar", create_button: "Crear y entrar",
+    login_pw: "Contraseña", login_pw2: "Repite la contraseña",
+    login_forgot: "¿La olvidaste? Conéctate a la WiFi de configuración del equipo: desde ella el panel no la pide y puedes poner otra.",
+    login_wait: (s) => `Demasiados intentos. Espera ${s} s.`,
+    login_http: "Ojo: esta conexión no va cifrada. Mejor abre el panel con https://",
     tab_monitor: "Monitor", tab_config: "Configuración", preview: "Vista previa",
     preview_none: "Sin vista previa: la cámara no entrega MJPEG", preview_wait: "Esperando imagen…",
     device_settings: "Equipo", device_name: "Nombre del equipo",
@@ -637,7 +789,12 @@ const T = {
       ssid_invalido: "Nombre de red no válido (1 a 32 caracteres).",
       clave_wifi_invalida: "La clave WiFi tiene entre 8 y 63 caracteres.",
       pais_invalido: "El país es un código de 2 letras, como ES, MX o US.",
-      clave_panel_corta: "La contraseña del panel necesita al menos 4 caracteres.",
+      clave_panel_corta: "La contraseña del panel necesita al menos 8 caracteres.",
+      sin_sesion: "Hace falta entrar con la contraseña.", clave_incorrecta: "Contraseña incorrecta.",
+      demasiados_intentos: "Demasiados intentos: espera un poco.", clave_ya_creada: "La contraseña ya estaba creada: entra con ella.",
+      clave_actual_incorrecta: "La contraseña actual no es correcta.",
+      puertos_invalidos: "Puertos no válidos: usa tcp:PUERTO o udp:INICIO-FIN, separados por espacios.",
+      zona_invalida: "Zona horaria no válida.", usar_https: "Abre el panel con https://", origen: "Petición rechazada (otro origen).",
       nombre_equipo_invalido: "Nombre de equipo no válido: letras, números y guiones, sin espacios.",
       conexion_en_curso: "Ya hay una conexión en curso.",
       ap_no_simultaneo: "Esta tarjeta WiFi no puede ser punto de acceso y cliente a la vez: se activará sola cuando no haya red.",
@@ -657,7 +814,7 @@ const T = {
     stream_errors: { arranque: "No se pudo arrancar la emisión.", eos: "La cámara cerró el flujo.", sin_imagen: "La cámara no entregaba imagen.", proceso: "El proceso de la fuente terminó." },
     fields: { activa: "emitir", ndi_nombre: "nombre NDI", resolucion: "resolución", fps: "fps", audio: "audio",
       transporte: "transporte", ap_ssid: "nombre de la WiFi de configuración", ap_clave: "clave de la WiFi de configuración",
-      pais: "país", clave_panel: "contraseña del panel", hdmi: "salida HDMI", hdmi_fuente: "cámara en HDMI", rx_fuente: "fuente del receptor", hdmi_consola: "resolución de la pantalla", decodificadores: "decodificación JPEG" },
+      pais: "país", clave_panel: "contraseña del panel", hdmi: "salida HDMI", hdmi_fuente: "cámara en HDMI", rx_fuente: "fuente del receptor", hdmi_consola: "resolución de la pantalla", decodificadores: "decodificación JPEG", cortafuegos: "cortafuegos", puertos_extra: "puertos extra" },
     ev: {
       inicio: (d) => `NDIICAM ${d.version} arrancado`,
       cam_detectada: (d) => `Cámara detectada: ${d.fuente}`, cam_desconectada: (d) => `Cámara desconectada: ${d.fuente}`,
@@ -703,6 +860,12 @@ const T = {
       actualizacion_error: (d) => `No se pudo lanzar la actualización: ${d.detalle}`,
       respaldo_restaurado: (d) => `Copia del ${d.fecha} restaurada (${d.wifi} redes WiFi añadidas)`,
       fabrica: () => "Valores de fábrica restablecidos",
+      acceso: (d) => `Entrada al panel desde ${d.ip}`, acceso_fallido: (d) => `Contraseña incorrecta desde ${d.ip}`,
+      clave_creada: (d) => `Contraseña del panel creada desde ${d.ip}`,
+      arranque: (d) => `Arranque: ${T.es.boot_reasons[d.motivo] || d.motivo}${d.detalle ? ` (${d.detalle})` : ""}`,
+      apagado_equipo: () => "Apagado del equipo solicitado", zona_horaria: (d) => `Zona horaria: ${d.zona}`,
+      cortafuegos: (d) => `Cortafuegos aplicado (modo ${d.detalle})`, cortafuegos_error: (d) => `El cortafuegos falló: ${d.detalle}`,
+      sin_https: () => "No se pudo crear el certificado: el panel va sin cifrar",
     },
   },
   en: {
@@ -770,6 +933,44 @@ const T = {
     fmt_mjpeg: "MJPEG (compressed)", fmt_crudo: "Uncompressed (needs USB 3.0)",
     fmt_now: (f) => f === "MJPG" ? "Now: MJPEG. More CPU, but fits USB 2.0 and allows the GPU output."
       : "Now: uncompressed. Much less CPU; the GPU output needs MJPEG.",
+    tab_system: "System", security: "Security", sec_connection: "Connection", sec_fingerprint: "Certificate fingerprint",
+    sec_https: "Encrypted (HTTPS, the device's own certificate)", sec_http_ap: "Unencrypted: setup WiFi",
+    sec_http: "Unencrypted (HTTP)",
+    sec_http_warn: "You are connected without encryption. Open the panel with https:// so the password is not sent in the clear.",
+    sec_no_https: "This device could not create its certificate (openssl missing): the panel is unencrypted.",
+    ap_default_warn: "The setup WiFi uses the default password (ndiicam-setup), which is public: anyone nearby could reach the panel through it. Change it in Settings.",
+    change_password: "Change password", current_password: "Current password", new_password: "New password",
+    repeat_password: "Repeat it", password_help: "At least 8 characters. Other open sessions are signed out.",
+    password_mismatch: "The two passwords do not match.", password_changed: "Password changed.",
+    logout: "Sign out",
+    firewall: "Firewall", firewall_on: "Enabled",
+    firewall_help: "Only lets in what the current mode needs: the panel, SSH, NDI, mDNS, and SRT or RTMP when in use. It does not touch other system rules.",
+    firewall_open: (l) => `Open: ${l.join(", ")}`, firewall_off: "Disabled: all ports open.",
+    firewall_error: (e) => `Could not apply: ${e === "sin_nft" ? "nftables missing" : e}`,
+    extra_ports: "Extra ports", extra_ports_help: "For other programs on the device. E.g.: tcp:8080 udp:5000-5010",
+    system: "Device", last_boot: "Last boot", watchdog: "Watchdog", clock: "Clock",
+    timezone: "Time zone", timezone_help: "Used by the recording schedule and the file names.",
+    shutdown: "Shut down device",
+    confirm_shutdown: "Shut down the device? To turn it back on you will need to press its button or unplug and replug it.",
+    shutting_down: "Shutting down…", rebooting: "Rebooting…",
+    wd_on: (d) => `Active: reboots the device if it hangs for more than ${d.timeout} s` + (d.dispositivo ? ` (${d.dispositivo})` : ""),
+    wd_off: "Not available: if the device hangs it must be rebooted by hand",
+    clock_ok: (z) => `${z} · synchronized over the internet`, clock_bad: (z) => `${z} · not synchronized: the time may be wrong`,
+    boot_reasons: { primero: "First boot with NDIICAM 0.5", reinicio_panel: "Rebooted from the panel",
+      apagado_panel: "Shut down from the panel and turned on again", reinicio: "Orderly system reboot or shutdown",
+      apagado: "Orderly system shutdown and turned on again",
+      panico: "Kernel failure: the device rebooted itself", watchdog: "Hang: the watchdog rebooted the device",
+      inesperado: "No warning: power cut, or a hang the watchdog recovered from" },
+    last_signal: (h) => `; last sign of life ${h}`,
+    log: "Log", log_system: "System", log_all: "All", log_warnings: "Warnings and errors", log_errors: "Errors only",
+    log_search: "Search…", log_empty: "No lines match that filter.", log_current: "Current boot", refresh: "Refresh",
+    download: "Download",
+    login_create_t: "Create the panel password", login_create_p: "This is the first time this panel is opened. Choose a password of at least 8 characters: it will be asked from any computer on the network.",
+    login_t: "Sign in", login_p: "Type the panel password.", login_button: "Sign in", create_button: "Create and sign in",
+    login_pw: "Password", login_pw2: "Repeat the password",
+    login_forgot: "Forgot it? Join the device's setup WiFi: from there the panel does not ask for it and you can set a new one.",
+    login_wait: (s) => `Too many attempts. Wait ${s} s.`,
+    login_http: "Note: this connection is not encrypted. Better open the panel with https://",
     tab_monitor: "Monitor", tab_config: "Settings", preview: "Preview",
     preview_none: "No preview: the camera does not deliver MJPEG", preview_wait: "Waiting for a picture…",
     device_settings: "Device", device_name: "Device name",
@@ -867,7 +1068,12 @@ const T = {
       ssid_invalido: "Invalid network name (1 to 32 characters).",
       clave_wifi_invalida: "WiFi passwords are 8 to 63 characters long.",
       pais_invalido: "The country is a 2-letter code, such as US, GB or ES.",
-      clave_panel_corta: "The panel password needs at least 4 characters.",
+      clave_panel_corta: "The panel password needs at least 8 characters.",
+      sin_sesion: "You need to sign in with the password.", clave_incorrecta: "Wrong password.",
+      demasiados_intentos: "Too many attempts: wait a little.", clave_ya_creada: "The password already exists: sign in with it.",
+      clave_actual_incorrecta: "The current password is not correct.",
+      puertos_invalidos: "Invalid ports: use tcp:PORT or udp:START-END, separated by spaces.",
+      zona_invalida: "Invalid time zone.", usar_https: "Open the panel with https://", origen: "Request rejected (other origin).",
       nombre_equipo_invalido: "Invalid device name: letters, numbers and dashes, no spaces.",
       conexion_en_curso: "A connection is already in progress.",
       ap_no_simultaneo: "This WiFi card cannot be an access point and a client at once: it will turn on by itself when there is no network.",
@@ -887,7 +1093,7 @@ const T = {
     stream_errors: { arranque: "Could not start the stream.", eos: "The camera closed the stream.", sin_imagen: "The camera stopped sending frames.", proceso: "The source process ended." },
     fields: { activa: "stream", ndi_nombre: "NDI name", resolucion: "resolution", fps: "fps", audio: "audio",
       transporte: "transport", ap_ssid: "setup WiFi name", ap_clave: "setup WiFi password",
-      pais: "country", clave_panel: "panel password", hdmi: "HDMI output", hdmi_fuente: "HDMI camera", rx_fuente: "receiver source", hdmi_consola: "screen resolution", decodificadores: "JPEG decoding" },
+      pais: "country", clave_panel: "panel password", hdmi: "HDMI output", hdmi_fuente: "HDMI camera", rx_fuente: "receiver source", hdmi_consola: "screen resolution", decodificadores: "JPEG decoding", cortafuegos: "firewall", puertos_extra: "extra ports" },
     ev: {
       inicio: (d) => `NDIICAM ${d.version} started`,
       cam_detectada: (d) => `Camera detected: ${d.fuente}`, cam_desconectada: (d) => `Camera disconnected: ${d.fuente}`,
@@ -933,6 +1139,12 @@ const T = {
       actualizacion_error: (d) => `Could not launch the update: ${d.detalle}`,
       respaldo_restaurado: (d) => `Backup from ${d.fecha} restored (${d.wifi} WiFi networks added)`,
       fabrica: () => "Factory settings restored",
+      acceso: (d) => `Panel sign-in from ${d.ip}`, acceso_fallido: (d) => `Wrong password from ${d.ip}`,
+      clave_creada: (d) => `Panel password created from ${d.ip}`,
+      arranque: (d) => `Boot: ${T.en.boot_reasons[d.motivo] || d.motivo}${d.detalle ? ` (${d.detalle})` : ""}`,
+      apagado_equipo: () => "Device shutdown requested", zona_horaria: (d) => `Time zone: ${d.zona}`,
+      cortafuegos: (d) => `Firewall applied (${d.detalle} mode)`, cortafuegos_error: (d) => `The firewall failed: ${d.detalle}`,
+      sin_https: () => "Could not create the certificate: the panel is unencrypted",
     },
   },
 };
@@ -949,10 +1161,13 @@ function aplicarIdioma() {
   tarjetas.forEach((c) => { c.raiz.remove(); c.raizCfg.remove(); }); tarjetas.clear();
   if (ultimo) pintar(ultimo);
   cargarWifi(false);
+  pintarEntrada();
+  $("inRegBuscar").placeholder = t("log_search");
+  if (arranquesCargados) { arranquesCargados = false; if (pestana === "sistema") abrirSistema(); }
 }
 let pestana = "monitor";
 try { pestana = localStorage.getItem("ndiicam-tab") || "monitor"; } catch (_) { /* sin almacenamiento */ }
-if (["#monitor", "#config"].includes(location.hash)) pestana = location.hash.slice(1);   // enlace directo
+if (["#monitor", "#config", "#sistema"].includes(location.hash)) pestana = location.hash.slice(1);   // enlace directo
 function aplicarPestana() {
   document.body.dataset.tab = pestana;
   document.querySelectorAll("[data-tab-btn]").forEach((b) => b.classList.toggle("activo", b.dataset.tabBtn === pestana));
@@ -962,6 +1177,7 @@ document.querySelectorAll("[data-tab-btn]").forEach((b) => b.addEventListener("c
   try { localStorage.setItem("ndiicam-tab", pestana); } catch (_) { /* sin almacenamiento */ }
   aplicarPestana();
   window.scrollTo({ top: 0 });
+  if (pestana === "sistema") abrirSistema();
 }));
 aplicarPestana();
 document.querySelectorAll(".idioma button").forEach((b) => b.addEventListener("click", () => {
@@ -1027,9 +1243,58 @@ async function api(ruta, datos) {
     { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(datos) };
   const r = await fetch(ruta, op);
   const j = await r.json().catch(() => ({}));
-  if (!r.ok) throw new Error(textoError(j.error || "HTTP " + r.status));
+  if (r.status === 401) { comprobarSesion(); const e = new Error(textoError("sin_sesion")); e.sinSesion = true; throw e; }
+  if (!r.ok) { const e = new Error(textoError(j.error || "HTTP " + r.status)); e.datos = j; throw e; }
   return j;
 }
+
+// ---------------------------------------------------------------- entrada
+let sesion = null;
+async function comprobarSesion() {
+  try { sesion = await (await fetch("/api/sesion")).json(); } catch (_) { return false; }
+  if (sesion.autenticado) { $("entrada").classList.add("oculto"); return true; }
+  pintarEntrada();
+  return false;
+}
+function pintarEntrada() {
+  if (!sesion || sesion.autenticado) return;
+  const crear = !sesion.clave_creada;
+  poner("entradaTitulo", t(crear ? "login_create_t" : "login_t"));
+  poner("entradaTexto", t(crear ? "login_create_p" : "login_p"));
+  poner("btEntrar", t(crear ? "create_button" : "login_button"));
+  $("entradaClave").placeholder = t("login_pw");
+  $("entradaClave").autocomplete = crear ? "new-password" : "current-password";
+  $("entradaClave").minLength = crear ? sesion.minimo : 1;
+  $("entradaClave2").placeholder = t("login_pw2");
+  $("entradaClave2").classList.toggle("oculto", !crear);
+  $("entradaClave2").required = crear;
+  poner("entradaAyuda", [crear ? "" : t("login_forgot"), sesion.https ? "" : t("login_http")].filter(Boolean).join(" "));
+  poner("entradaEquipo", location.hostname);
+  if (sesion.espera) mensaje("msgEntrada", T[lang].login_wait(sesion.espera), "mal");
+  if ($("entrada").classList.contains("oculto")) {
+    $("entrada").classList.remove("oculto");
+    $("entradaClave").focus();
+  }
+}
+$("formEntrada").addEventListener("submit", async (ev) => {
+  ev.preventDefault();
+  const crear = sesion && !sesion.clave_creada, clave = $("entradaClave").value;
+  if (crear && clave !== $("entradaClave2").value) return mensaje("msgEntrada", t("password_mismatch"), "mal");
+  $("btEntrar").disabled = true;
+  try {
+    await api(crear ? "/api/clave/crear" : "/api/login", { clave });
+    $("entradaClave").value = $("entradaClave2").value = "";
+    mensaje("msgEntrada");
+    $("entrada").classList.add("oculto");
+    sesion.autenticado = true;
+    if (pestana === "sistema") abrirSistema();
+  } catch (err) {
+    const espera = err.datos && err.datos.espera;
+    mensaje("msgEntrada", espera ? T[lang].login_wait(espera) : err.message, "mal");
+    $("entradaClave").select();
+  }
+  $("btEntrar").disabled = false;
+});
 function el(tag, attrs, ...hijos) {
   const e = document.createElement(tag);
   for (const k in attrs || {}) {
@@ -1613,8 +1878,7 @@ function pintar(e) {
   rellenar($("inPais"), cfg.pais, "inPais");
   if (!editado.has("selIdioma") && document.activeElement !== $("selIdioma")) $("selIdioma").value = cfg.idioma || "es";
   rellenar($("selDeco"), String(cfg.decodificadores ?? "auto"), "selDeco");
-  poner("ayudaClavePanel", cfg.clave_panel ? t("panel_pw_on") : t("panel_pw_off"));
-  $("btQuitarClave").classList.toggle("oculto", !cfg.clave_panel);
+  pintarSeguridad(e); pintarSistema(e);
 
   // WiFi de configuración
   const ap = red.ap || {};
@@ -1640,11 +1904,133 @@ async function refrescar() {
   try {
     pintar(await api("/api/estado"));
     $("desconectado").classList.add("oculto");
-  } catch (_) {
-    $("desconectado").classList.remove("oculto");
+  } catch (err) {
+    $("desconectado").classList.toggle("oculto", !!err.sinSesion);
   }
   setTimeout(refrescar, 2000);
 }
+
+// --------------------------------------------------------------- seguridad
+function pintarSeguridad(e) {
+  const s = e.seguridad || {}, cfg = e.config || {}, cf = s.cortafuegos || {};
+  poner("segConexion", s.https ? t("sec_https") : e.desde_ap ? t("sec_http_ap") : t("sec_http"));
+  poner("segHuella", s.huella || "—");
+  const aviso = !s.https && !e.desde_ap ? (s.https_disponible ? t("sec_http_warn") : t("sec_no_https")) : "";
+  mensaje("avisoHttp", aviso, "mal");
+  mensaje("avisoApClave", s.ap_clave_defecto ? t("ap_default_warn") : "", "info");
+  $("bloqueClaveActual").classList.toggle("oculto", !!e.desde_ap);
+  if (document.activeElement !== $("cfActivo") && !("cortafuegos" in elegido)) $("cfActivo").checked = cfg.cortafuegos !== false;
+  rellenar($("inPuertosExtra"), cfg.puertos_extra, "inPuertosExtra");
+  poner("cfEstado", cf.error ? T[lang].firewall_error(cf.error) : cf.activo ? T[lang].firewall_open(cf.abiertos || [])
+    : t("firewall_off"));
+}
+$("cfActivo").addEventListener("change", () => { elegido.cortafuegos = $("cfActivo").checked; });
+$("btCortafuegos").addEventListener("click", async () => {
+  const datos = { cortafuegos: $("cfActivo").checked };
+  if (editado.has("inPuertosExtra")) datos.puertos_extra = $("inPuertosExtra").value.trim();
+  $("btCortafuegos").disabled = true;
+  try {
+    await api("/api/config", datos);
+    editado.delete("inPuertosExtra"); delete elegido.cortafuegos;
+    mensaje("msgCortafuegos", t("saved_simple"), "ok");
+  } catch (err) { mensaje("msgCortafuegos", err.message, "mal"); }
+  $("btCortafuegos").disabled = false;
+  setTimeout(() => mensaje("msgCortafuegos"), 6000);
+});
+$("btCambiarClave").addEventListener("click", async () => {
+  const nueva = $("inClaveNueva").value;
+  if (nueva !== $("inClaveNueva2").value) return mensaje("msgClave", t("password_mismatch"), "mal");
+  $("btCambiarClave").disabled = true;
+  try {
+    await api("/api/config", { clave_panel: nueva, clave_actual: $("inClaveActual").value });
+    ["inClaveActual", "inClaveNueva", "inClaveNueva2"].forEach((x) => { $(x).value = ""; });
+    mensaje("msgClave", t("password_changed"), "ok");
+  } catch (err) { mensaje("msgClave", err.message, "mal"); }
+  $("btCambiarClave").disabled = false;
+  setTimeout(() => mensaje("msgClave"), 7000);
+});
+$("btSalir").addEventListener("click", async () => {
+  await api("/api/logout", {}).catch(() => {});
+  comprobarSesion();
+});
+
+// ----------------------------------------------------------------- sistema
+let zonasCargadas = false;
+function pintarSistema(e) {
+  const eq = e.equipo || {}, ar = eq.arranque, wd = eq.watchdog, h = eq.hora;
+  if (ar) {
+    const senal = ar.ultima_senal ? T[lang].last_signal(new Date(ar.ultima_senal * 1000).toLocaleString(lang)) : "";
+    poner("sisArranque", (T[lang].boot_reasons[ar.codigo] || ar.codigo) + (ar.detalle ? ` (${ar.detalle})` : "") + senal);
+  }
+  if (wd) poner("sisWatchdog", wd.activo ? T[lang].wd_on(wd) : t("wd_off"));
+  if (h) {
+    poner("sisHora", h.sincronizada ? T[lang].clock_ok(h.zona) : T[lang].clock_bad(h.zona));
+    if (zonasCargadas && !editado.has("selZona") && document.activeElement !== $("selZona")) $("selZona").value = h.zona;
+  }
+}
+async function cargarZonas() {
+  if (zonasCargadas) return;
+  try {
+    const d = await api("/api/sistema/zonas");
+    $("selZona").replaceChildren(...d.zonas.map((z) => el("option", { value: z, text: z.replaceAll("_", " ") })));
+    $("selZona").value = d.zona;
+    zonasCargadas = true;
+  } catch (_) { /* se reintenta al volver a la pestaña */ }
+}
+$("selZona").addEventListener("change", () => editado.add("selZona"));
+$("btZona").addEventListener("click", async () => {
+  $("btZona").disabled = true;
+  try {
+    await api("/api/sistema/zona", { zona: $("selZona").value });
+    editado.delete("selZona");
+    mensaje("msgSistema", t("saved_simple"), "ok");
+  } catch (err) { mensaje("msgSistema", err.message, "mal"); }
+  $("btZona").disabled = false;
+  setTimeout(() => mensaje("msgSistema"), 6000);
+});
+$("btApagar").addEventListener("click", async () => {
+  if (!confirm(t("confirm_shutdown"))) return;
+  try { await api("/api/sistema/apagar", {}); mensaje("msgSistema", t("shutting_down"), "info"); }
+  catch (err) { mensaje("msgSistema", err.message, "mal"); }
+});
+
+// ---------------------------------------------------------------- registro
+let regOrigen = "servicio", arranquesCargados = false;
+function parametrosRegistro() {
+  const q = new URLSearchParams({ origen: regOrigen, nivel: $("selRegNivel").value, n: "400" });
+  if ($("selRegArranque").value) q.set("arranque", $("selRegArranque").value);
+  if ($("inRegBuscar").value.trim()) q.set("buscar", $("inRegBuscar").value.trim());
+  return q;
+}
+async function cargarArranques() {
+  if (arranquesCargados) return;
+  try {
+    const d = await api("/api/registro/arranques");
+    $("selRegArranque").replaceChildren(...d.arranques.map((b) => el("option", { value: b.actual ? "" : b.id,
+      text: b.actual ? t("log_current") : `${new Date(b.desde * 1000).toLocaleString(lang)} → ${new Date(b.hasta * 1000).toLocaleTimeString(lang)}` })));
+    arranquesCargados = true;
+  } catch (_) { /* sin diario */ }
+}
+async function cargarRegistro() {
+  segmentadoEn($("segRegOrigen"), null, regOrigen, []);
+  const q = parametrosRegistro();
+  q.set("formato", "txt"); $("btRegDescargar").href = "/api/registro?" + q;
+  $("btRegistro").disabled = true;
+  try {
+    const d = await api("/api/registro?" + parametrosRegistro());
+    const caja = $("registro");
+    caja.replaceChildren(...d.lineas.map((x) => el("div", { class: x.p <= 3 ? "p3" : x.p === 4 ? "p4" : "" },
+      el("time", { text: new Date(x.t * 1000).toLocaleString(lang) }), el("span", { class: "u", text: x.u }), x.m)));
+    if (!d.lineas.length) vacio(caja, t("log_empty"));
+    caja.scrollTop = caja.scrollHeight;
+  } catch (err) { $("registro").replaceChildren(el("div", { class: "p3", text: err.message })); }
+  $("btRegistro").disabled = false;
+}
+$("segRegOrigen").querySelectorAll("button").forEach((b) => b.addEventListener("click", () => { regOrigen = b.dataset.v; cargarRegistro(); }));
+["selRegArranque", "selRegNivel"].forEach((x) => $(x).addEventListener("change", cargarRegistro));
+$("inRegBuscar").addEventListener("keydown", (ev) => { if (ev.key === "Enter") cargarRegistro(); });
+$("btRegistro").addEventListener("click", cargarRegistro);
+async function abrirSistema() { await cargarArranques(); cargarRegistro(); cargarZonas(); }
 
 $("ptNueva").addEventListener("click", async () => {
   if (!confirm(t("pt_confirm"))) return;
@@ -1656,7 +2042,7 @@ $("ptNueva").addEventListener("click", async () => {
 });
 
 // --------------------------------------------------------- ajustes equipo
-["inEquipo", "inApSsid", "inApClave", "inPais", "inClavePanel", "ipDir", "ipPref", "ipGw", "ipDns"].forEach((id) =>
+["inEquipo", "inApSsid", "inApClave", "inPais", "ipDir", "ipPref", "ipGw", "ipDns", "inPuertosExtra"].forEach((id) =>
   $(id).addEventListener("input", () => editado.add(id)));
 $("selDeco").addEventListener("change", () => editado.add("selDeco"));
 $("selIdioma").addEventListener("change", () => editado.add("selIdioma"));
@@ -1688,12 +2074,8 @@ $("btGuardarEquipo").addEventListener("click", () => {
   if (editado.has("inPais")) datos.pais = $("inPais").value.trim();
   if (editado.has("selIdioma")) datos.idioma = $("selIdioma").value;
   if (editado.has("selDeco")) datos.decodificadores = $("selDeco").value;
-  if (editado.has("inClavePanel") && $("inClavePanel").value.trim()) datos.clave_panel = $("inClavePanel").value.trim();
-  $("inClavePanel").value = "";
-  guardar($("btGuardarEquipo"), "msgEquipo", datos, ["inEquipo", "inApSsid", "inApClave", "inPais", "inClavePanel", "selDeco", "selIdioma"]);
+  guardar($("btGuardarEquipo"), "msgEquipo", datos, ["inEquipo", "inApSsid", "inApClave", "inPais", "selDeco", "selIdioma"]);
 });
-$("btQuitarClave").addEventListener("click", () =>
-  guardar($("btQuitarClave"), "msgEquipo", { clave_panel: "" }, ["inClavePanel"]));
 
 // -------------------------------------------------------------------- HDMI
 async function guardarHdmi(datos) {
@@ -1854,6 +2236,7 @@ $("btReboot").addEventListener("click", async () => {
 });
 
 aplicarIdioma();
+comprobarSesion().then((dentro) => { if (dentro && pestana === "sistema") abrirSistema(); });
 refrescar();
 </script>
 </body>

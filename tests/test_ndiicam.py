@@ -33,6 +33,10 @@ import estado  # noqa: E402
 import fuente  # noqa: E402
 import puente  # noqa: E402
 import supervisor  # noqa: E402
+import cortafuegos  # noqa: E402
+import seguridad  # noqa: E402
+import sistema  # noqa: E402
+import panel  # noqa: E402
 
 
 class Utilidades(unittest.TestCase):
@@ -320,6 +324,261 @@ class Grabaciones(unittest.TestCase):
             self.assertIsNotNone(g["libre"])
         estado.GRABACIONES = original
         self.assertEqual(estado.grabaciones.__name__, "grabaciones")
+
+
+class Sesiones(unittest.TestCase):
+    def test_crear_validar_cerrar(self):
+        with tempfile.TemporaryDirectory() as d:
+            ruta = os.path.join(d, "sesiones.json")
+            s = seguridad.Sesiones(ruta)
+            a, b = s.crear("1.1.1.1"), s.crear("2.2.2.2")
+            self.assertTrue(s.valida(a))
+            self.assertFalse(s.valida("inventado"))
+            self.assertFalse(s.valida(None))
+            with open(ruta) as fh:
+                self.assertNotIn(a, fh.read())          # en disco solo el resumen
+            self.assertTrue(seguridad.Sesiones(ruta).valida(b))    # sobrevive al reinicio
+            s.cerrar_todas(salvo=a)
+            self.assertTrue(s.valida(a))
+            self.assertFalse(s.valida(b))
+            s.cerrar(a)
+            self.assertFalse(s.valida(a))
+
+    def test_caducan(self):
+        with tempfile.TemporaryDirectory() as d:
+            s = seguridad.Sesiones(os.path.join(d, "s.json"))
+            a = s.crear("1.1.1.1")
+            for v in s.datos.values():
+                v["usada"] -= seguridad.DURACION_SESION + 1
+            self.assertFalse(s.valida(a))
+
+
+class LimiteDeIntentos(unittest.TestCase):
+    def test_bloqueo_creciente_y_acierto(self):
+        reloj = [1000.0]
+        lim = seguridad.LimiteIntentos(reloj=lambda: reloj[0])
+        for _ in range(4):
+            lim.fallo("1.1.1.1")
+        self.assertEqual(lim.espera("1.1.1.1"), 0)      # 4 fallos aún sin castigo
+        lim.fallo("1.1.1.1")
+        self.assertEqual(lim.espera("1.1.1.1"), 30)
+        self.assertEqual(lim.espera("2.2.2.2"), 0)      # por IP
+        reloj[0] += 31
+        self.assertEqual(lim.espera("1.1.1.1"), 0)
+        lim.fallo("1.1.1.1")
+        self.assertEqual(lim.espera("1.1.1.1"), 60)     # cada tanda, el doble
+        for _ in range(10):
+            lim.fallo("1.1.1.1")
+        self.assertLessEqual(lim.espera("1.1.1.1"), seguridad.LimiteIntentos.BLOQUEO_MAX)
+        lim.acierto("1.1.1.1")
+        reloj[0] += 61
+        self.assertEqual(lim.espera("1.1.1.1"), 0)
+
+    def test_tope_global(self):
+        lim = seguridad.LimiteIntentos(reloj=lambda: 50.0)
+        for i in range(seguridad.LimiteIntentos.TOPE_GLOBAL):
+            lim.fallo(f"10.0.0.{i}")
+        self.assertGreater(lim.espera("10.9.9.9"), 0)   # IP nueva, pero hay un ataque repartido
+
+
+class Cortafuegos(unittest.TestCase):
+    def test_puertos_extra(self):
+        self.assertEqual(cortafuegos.puertos_extra(""), [])
+        self.assertEqual(cortafuegos.puertos_extra("tcp:8080, udp:5000-5010"),
+                         [("tcp", 8080, 8080), ("udp", 5000, 5010)])
+        for malo in ("8080", "tcp:0", "udp:10-5", "icmp:1", "tcp:70000", "tcp:80;drop"):
+            self.assertIsNone(cortafuegos.puertos_extra(malo), malo)
+
+    def test_reglas_por_modo(self):
+        emisor = cortafuegos.reglas("emisor", [9000], [], [22])
+        self.assertIn("policy drop", emisor)
+        self.assertIn("ct state established,related accept", emisor)
+        self.assertIn("tcp dport 5959-5999 accept", emisor)
+        self.assertRegex(emisor, r"udp dport \{[^}]*\b9000\b")
+        self.assertNotRegex(emisor, r"\b1935\b")
+        self.assertRegex(emisor, r"tcp dport \{ 22, 53, 80, 443 \}")
+        puente_ = cortafuegos.reglas("puente", [9000], [("tcp", 8080, 8080), ("udp", 7000, 7010)], [22, 2222])
+        self.assertRegex(puente_, r"tcp dport \{[^}]*\b1935\b")
+        self.assertRegex(puente_, r"udp dport \{[^}]*\b8890\b")
+        self.assertNotIn("5959", puente_)
+        self.assertNotRegex(puente_, r"\b9000\b")       # el SRT de las cámaras solo en emisor
+        self.assertRegex(puente_, r"\b2222\b")
+        self.assertRegex(puente_, r"\b8080\b")
+        self.assertIn("udp dport 7000-7010 accept", puente_)
+        # rehace la tabla de una vez: la crea si falta y la borra antes de definirla
+        self.assertTrue(puente_.startswith("table inet ndiicam\ndelete table inet ndiicam\n"))
+
+    def test_estado_lista_lo_abierto(self):
+        c = cortafuegos.Cortafuegos()
+        c.guion = cortafuegos.reglas("emisor", [], [], [22])
+        e = c.estado({"cortafuegos": True})
+        self.assertTrue(e["activo"])
+        self.assertIn("tcp/443", e["abiertos"])
+        self.assertIn("udp/5959-5999", e["abiertos"])
+
+
+class MotivoDelArranque(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.originales = (sistema.ARRANQUE, sistema.PSTORE, sistema.id_arranque, sistema._diario_arranque,
+                           sistema.leer, sistema.evento)
+        sistema.ARRANQUE = os.path.join(self.tmp.name, "arranque.json")
+        sistema.PSTORE = os.path.join(self.tmp.name, "pstore")
+        self.diario = ([], None)
+        self.bootstatus = "0"
+        sistema._diario_arranque = lambda boot: self.diario
+        sistema.leer = lambda ruta, defecto="": self.bootstatus if ruta.endswith("bootstatus") \
+            else self.originales[4](ruta, defecto)
+        sistema.evento = lambda *a, **k: None
+
+    def tearDown(self):
+        (sistema.ARRANQUE, sistema.PSTORE, sistema.id_arranque, sistema._diario_arranque,
+         sistema.leer, sistema.evento) = self.originales
+        self.tmp.cleanup()
+
+    def arrancar(self, boot):
+        sistema.id_arranque = lambda: boot
+        return sistema.calcular_motivo()["codigo"]
+
+    def test_secuencia(self):
+        a, b, c, d = ("a" * 32, "b" * 32, "c" * 32, "d" * 32)
+        self.assertEqual(self.arrancar(a), "primero")
+        self.assertEqual(self.arrancar(a), "primero")           # reiniciar el servicio no cambia nada
+        sistema.marcar_fin("reinicio_panel")
+        sistema.marcar_fin("reinicio", sobrescribir=False)    # el apagado de systemd no lo pisa
+        self.assertEqual(self.arrancar(b), "reinicio_panel")
+        self.diario = (["systemd: Stopping...", "systemd: Reached target shutdown.target - System Shutdown."], 100.0)
+        self.assertEqual(self.arrancar(c), "reinicio")          # apagado por SSH: se ve en el diario
+        # la sesión SSH de un usuario también "llega a shutdown.target": eso no es apagar
+        self.diario = (["systemd: Reached target shutdown.target - Shutdown.", "sshd: algo"], 100.0)
+        self.assertEqual(self.arrancar(d), "inesperado")        # corte de luz
+        self.bootstatus = str(sistema.WDIOF_CARDRESET)
+        self.assertEqual(self.arrancar("e" * 32), "watchdog")
+
+    def test_panico_por_pstore(self):
+        self.arrancar("a" * 32)
+        with open(sistema.ARRANQUE) as fh:
+            t = json.load(fh)["t"]
+        carpeta = os.path.join(sistema.PSTORE, str(int(t) + 30), "001")
+        os.makedirs(carpeta)
+        with open(os.path.join(carpeta, "dmesg.txt"), "w") as fh:
+            fh.write("Panic#1 Part1\n<0>Kernel panic - not syncing: sysrq triggered crash\n")
+        self.diario = (["algo"], t + 25)
+        sistema.id_arranque = lambda: "b" * 32
+        m = sistema.calcular_motivo()
+        self.assertEqual(m["codigo"], "panico")
+        self.assertIn("Kernel panic", m["detalle"])
+        # el mismo volcado no vuelve a contar en el arranque siguiente
+        self.diario = (["systemd: Reached target reboot.target - System Reboot."], t + 90)
+        sistema.id_arranque = lambda: "c" * 32
+        self.assertEqual(sistema.calcular_motivo()["codigo"], "reinicio")
+
+
+class EventosGuardados(unittest.TestCase):
+    def test_sobreviven_y_toleran_ceros(self):
+        original = nucleo.EVENTOS_ARCHIVO
+        with tempfile.TemporaryDirectory() as d:
+            nucleo.EVENTOS_ARCHIVO = os.path.join(d, "eventos.jsonl")
+            nucleo.EVENTOS.clear()
+            nucleo.evento("inicio", version="x")
+            nucleo.evento("modo", modo="puente")
+            with open(nucleo.EVENTOS_ARCHIVO, "a") as fh:
+                fh.write("\x00" * 50 + "\n")             # lo que deja un cuelgue a medias
+            nucleo.EVENTOS.clear()
+            nucleo.cargar_eventos()
+            self.assertEqual([e["c"] for e in nucleo.EVENTOS], ["modo", "inicio"])
+        nucleo.EVENTOS_ARCHIVO = original
+        nucleo.EVENTOS.clear()
+
+
+class AccesoAlPanel(unittest.TestCase):
+    """El servidor de verdad, en local, con la configuración en un directorio temporal."""
+
+    def setUp(self):
+        import http.client
+        import threading
+        self.http = http.client
+        self.tmp = tempfile.TemporaryDirectory()
+        self.original = (nucleo.CONFIG, nucleo.CONF, nucleo.SESIONES, nucleo.INTENTOS, nucleo.HTTPS,
+                         nucleo.CORTAFUEGOS)
+        nucleo.CONFIG = os.path.join(self.tmp.name, "config.json")
+        nucleo.CONF = nucleo.Config()
+        nucleo.SESIONES = seguridad.Sesiones(os.path.join(self.tmp.name, "s.json"))
+        nucleo.INTENTOS = seguridad.LimiteIntentos()
+        nucleo.HTTPS = None
+        nucleo.CORTAFUEGOS = cortafuegos.Cortafuegos()
+        self.servidor = panel.Servidor(("::", 0), panel.Panel)
+        self.puerto = self.servidor.server_address[1]
+        threading.Thread(target=self.servidor.serve_forever, daemon=True).start()
+
+    def tearDown(self):
+        self.servidor.shutdown()
+        self.servidor.server_close()
+        (nucleo.CONFIG, nucleo.CONF, nucleo.SESIONES, nucleo.INTENTOS, nucleo.HTTPS,
+         nucleo.CORTAFUEGOS) = self.original
+        self.tmp.cleanup()
+
+    def pedir(self, metodo, ruta, datos=None, cookie=None, cabeceras=None):
+        c = self.http.HTTPConnection("127.0.0.1", self.puerto, timeout=10)
+        h = {"Content-Type": "application/json", **(cabeceras or {})}
+        if cookie:
+            h["Cookie"] = cookie
+        c.request(metodo, ruta, json.dumps(datos) if datos is not None else None, h)
+        r = c.getresponse()
+        cuerpo = r.read()
+        c.close()
+        return r, json.loads(cuerpo) if r.getheader("Content-Type", "").startswith("application/json") else cuerpo
+
+    def test_primera_vez_entrada_y_bloqueo(self):
+        r, d = self.pedir("GET", "/api/sesion")
+        self.assertEqual((d["autenticado"], d["clave_creada"]), (False, False))
+        r, _ = self.pedir("GET", "/api/grabaciones")
+        self.assertEqual(r.status, 401)                    # sin contraseña no hay panel
+        r, _ = self.pedir("GET", "/")
+        self.assertEqual(r.status, 200)                    # la página sí: enseña la entrada
+        r, d = self.pedir("POST", "/api/clave/crear", {"clave": "corta"})
+        self.assertEqual(d["error"], "clave_panel_corta")
+        r, d = self.pedir("POST", "/api/clave/crear", {"clave": "una-clave-larga"})
+        self.assertEqual(r.status, 200)
+        cookie = r.getheader("Set-Cookie").split(";")[0]
+        self.assertIn("HttpOnly", r.getheader("Set-Cookie"))
+        self.assertIn("SameSite=Strict", r.getheader("Set-Cookie"))
+        r, _ = self.pedir("GET", "/api/grabaciones", cookie=cookie)
+        self.assertEqual(r.status, 200)
+        r, d = self.pedir("POST", "/api/clave/crear", {"clave": "otra-clave-larga"})
+        self.assertEqual(r.status, 409)                    # no se puede volver a crear
+        # contraseña mal 5 veces: bloqueo
+        for _ in range(4):
+            r, d = self.pedir("POST", "/api/login", {"clave": "mal"})
+            self.assertEqual(r.status, 403)
+        r, d = self.pedir("POST", "/api/login", {"clave": "mal"})
+        self.assertEqual(r.status, 429)
+        r, d = self.pedir("POST", "/api/login", {"clave": "una-clave-larga"})
+        self.assertEqual((r.status, d["error"]), (429, "demasiados_intentos"))   # ni la buena, hasta que pase
+
+    def test_basic_auth_y_origen(self):
+        nucleo.CONF.actualizar({"clave_panel": nucleo.resumen_clave("una-clave-larga")})
+        import base64
+        bueno = {"Authorization": "Basic " + base64.b64encode(b"x:una-clave-larga").decode()}
+        r, _ = self.pedir("GET", "/api/grabaciones", cabeceras=bueno)
+        self.assertEqual(r.status, 200)
+        r, d = self.pedir("POST", "/api/login", {"clave": "una-clave-larga"},
+                          cabeceras={"Origin": "http://otra-web.example"})
+        self.assertEqual((r.status, d["error"]), (403, "origen"))
+
+    def test_cambiar_clave_pide_la_actual(self):
+        r, _ = self.pedir("POST", "/api/clave/crear", {"clave": "una-clave-larga"})
+        cookie = r.getheader("Set-Cookie").split(";")[0]
+        otra = nucleo.SESIONES.crear("9.9.9.9")
+        r, d = self.pedir("POST", "/api/config", {"clave_panel": "nueva-clave-larga", "clave_actual": "mal"},
+                          cookie=cookie)
+        self.assertEqual(d["error"], "clave_actual_incorrecta")
+        r, d = self.pedir("POST", "/api/config", {"clave_panel": "nueva-clave-larga",
+                                                  "clave_actual": "una-clave-larga"}, cookie=cookie)
+        self.assertEqual(r.status, 200)
+        self.assertFalse(nucleo.SESIONES.valida(otra))      # las demás sesiones, fuera
+        r, _ = self.pedir("GET", "/api/grabaciones", cookie=cookie)
+        self.assertEqual(r.status, 200)                     # la de quien la cambió sigue
 
 
 if __name__ == "__main__":

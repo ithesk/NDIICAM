@@ -20,6 +20,8 @@ done
 [ "$(id -u)" -eq 0 ] || { echo "Run as root / ejecuta como root" >&2; exit 1; }
 
 systemctl disable --now ndiicam.service 2>/dev/null || true
+systemctl disable ndiicam-watchdog.service 2>/dev/null || true
+nft delete table inet ndiicam 2>/dev/null || true
 if [ "$RESTAURAR" -eq 1 ]; then
   if [ -d /var/lib/ndiicam/netplan-respaldo ]; then
     python3 /opt/ndiicam/red_nm.py revertir
@@ -28,6 +30,10 @@ if [ "$RESTAURAR" -eq 1 ]; then
   fi
 fi
 rm -f /etc/systemd/system/ndiicam.service /etc/avahi/services/ndiicam.service \
+      /etc/systemd/system/ndiicam-watchdog.service \
+      /etc/systemd/system.conf.d/zz-ndiicam-watchdog.conf \
+      /etc/sysctl.d/90-ndiicam-panico.conf \
+      /etc/systemd/journald.conf.d/ndiicam.conf \
       /etc/NetworkManager/conf.d/90-ndiicam.conf \
       /etc/NetworkManager/conf.d/zz-ndiicam.conf
 rm -rf /opt/ndiicam /run/ndiicam /usr/local/lib/ndiicam
@@ -37,6 +43,8 @@ if ls /etc/default/grub.d/80-ndiicam-huc.cfg /etc/default/grub.d/90-ndiicam.cfg 
   update-grub >/dev/null 2>&1 || true
 fi
 systemctl daemon-reload
+# sin su configuración, systemd desactiva el watchdog al reejecutarse
+systemctl daemon-reexec 2>/dev/null || true
 systemctl reload NetworkManager 2>/dev/null || true
 systemctl unmask hostapd 2>/dev/null || true
 systemctl enable --now getty@tty1.service 2>/dev/null || true

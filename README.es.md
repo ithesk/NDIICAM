@@ -32,12 +32,15 @@ gestiona desde un panel web: tras la instalación no hace falta la terminal.
 
 - **Emite cada cámara UVC conectada como fuente NDI propia** (MJPEG o YUYV) a 720p o 1080p,
   hasta 60 fps, **con el micrófono de la cámara** como audio NDI si lo tiene.
-- **Panel web** en `http://<equipo>.local`: estado en vivo, fps, tasa de datos, receptores
+- **Panel web** en `https://<equipo>.local`, con contraseña: estado en vivo, fps, tasa de datos, receptores
   conectados, señal WiFi y uso del enlace, CPU y temperatura. En español e inglés.
 - **WiFi de configuración**: si no hay ninguna red conocida, el equipo crea su propia WiFi
   con portal cautivo. Te conectas desde el móvil, eliges tu red, pones la clave y listo.
 - **Se recupera solo**: detecta la cámara al enchufarla, reinicia la emisión si la cámara
-  deja de dar imagen y vuelve a las redes conocidas cuando reaparecen.
+  deja de dar imagen y vuelve a las redes conocidas cuando reaparecen. Si el equipo entero
+  se cuelga, el watchdog de la placa lo reinicia; el panel dice después por qué arrancó.
+- **Seguro en redes ajenas**: panel cifrado (HTTPS), contraseña obligatoria con límite de
+  intentos y cortafuegos que solo abre lo que el modo actual necesita.
 - **Monitor de encuadre por HDMI**: muestra una cámara a pantalla completa en el monitor conectado al
   equipo, directo a la GPU y sin gastar CPU. Se activa y desactiva desde el panel.
 - **Modo receptor**: el equipo para sus cámaras y se convierte en receptor NDI: eliges cualquier
@@ -115,19 +118,22 @@ Volver a ejecutar el instalador actualiza NDIICAM y conserva la configuración.
 ## Primer uso
 
 1. Conecta la cámara. La emisión empieza sola.
-2. Abre `http://<equipo>.local` (el instalador te da la dirección).
+2. Abre `https://<equipo>.local` (el instalador te da la dirección). El navegador avisará
+   del certificado: es uno propio del equipo, acéptalo (la huella está en *Sistema →
+   Seguridad* para comprobarla). La primera vez el panel pide **crear la contraseña**.
 3. En OBS: *Añadir fuente → NDI Source* (con [DistroAV](https://github.com/DistroAV/DistroAV))
    y elige `<EQUIPO> (NDIICAM)`.
 
 **¿Sin red?** Tras 60 s sin ninguna red conocida, el equipo activa la WiFi de configuración
 `NDIICAM-XXXX` (clave `ndiicam-setup`, cámbiala en el panel). Conéctate desde el móvil: el
 panel se abre solo. Elige tu red y escribe su clave. El resultado sale en la misma pantalla;
-después vuelve a tu red y abre `http://<equipo>.local`.
+después vuelve a tu red y abre `https://<equipo>.local`.
 
 ## Panel
 
-Dos pestañas: **Monitor** (lo que pasa) y **Configuración** (lo que cambias). `#monitor` y
-`#config` en la URL abren una directamente.
+Tres pestañas: **Monitor** (lo que pasa), **Configuración** (lo que cambias) y **Sistema**
+(seguridad, el equipo y el registro). `#monitor`, `#config` y `#sistema` en la URL abren una
+directamente.
 
 | Pestaña | Sección | Qué hace |
 |---|---|---|
@@ -142,10 +148,41 @@ Dos pestañas: **Monitor** (lo que pasa) y **Configuración** (lo que cambias). 
 | Configuración | Actualizaciones | Versión instalada y última, comprobar, instalar con un clic |
 | Configuración | Redes WiFi | Redes guardadas (olvidar), buscar, conectar |
 | Configuración | Dirección IP | DHCP o fija, para la conexión activa o para el puerto de cable (aunque no esté enchufado: se guarda y se aplica al conectarlo). Si con la fija no hay conexión, vuelve sola a la anterior |
-| Configuración | Equipo | Nombre del equipo, transporte NDI, nombre y clave de la WiFi de configuración, país, idioma de la pantalla de ayuda HDMI, contraseña opcional del panel, descargar/restaurar copia, valores de fábrica, reiniciar |
+| Configuración | Equipo | Nombre del equipo, transporte NDI, nombre y clave de la WiFi de configuración, país, idioma de la pantalla de ayuda HDMI, descargar/restaurar copia, valores de fábrica |
+| Sistema | Seguridad | Conexión cifrada y huella del certificado, cambiar la contraseña, cerrar sesión, cortafuegos (activar, puertos abiertos, puertos extra) |
+| Sistema | Equipo | Motivo del último arranque (desde el panel, apagado ordenado, fallo del kernel, watchdog o corte de luz) y última señal antes, estado del watchdog, reloj y zona horaria, reiniciar, apagar |
+| Sistema | Registro | El diario de systemd: de NDIICAM, de todo el sistema o del kernel; de este arranque o de los anteriores; por nivel y con búsqueda; descargable |
 
-La contraseña del panel no se pide desde la WiFi de configuración: quien está en ella ya
-conoce su clave, y es la forma de volver a entrar si se olvida la del panel.
+### Seguridad
+
+- **HTTPS**: el panel va por el puerto 443 con un certificado propio del equipo (se crea al
+  instalar y se rehace si cambia el nombre). El 80 solo redirige. El navegador avisa la
+  primera vez porque no lo firma una autoridad conocida.
+- **Contraseña obligatoria**, de al menos 8 caracteres, que se elige en la primera visita (no
+  hay ninguna por defecto). Cinco fallos seguidos desde una IP la bloquean 30 s, y cada tanda
+  más el doble, hasta 15 min; además hay un tope de 30 fallos por minuto entre todas. Las
+  sesiones duran 30 días con el uso y sobreviven a las actualizaciones; cambiar la
+  contraseña cierra las demás.
+- Para scripts (Companion, curl) vale también *Basic Auth* con la contraseña del panel:
+  `curl -k -u :CLAVE https://<equipo>.local/api/estado`.
+- **Desde la WiFi de configuración no se pide**: quien está en ella ya conoce su clave, y es
+  la forma de volver a entrar si se olvida la del panel. Por eso conviene cambiar su clave
+  por defecto (`ndiicam-setup`); el panel avisa mientras no se haya cambiado.
+- **Cortafuegos**: una tabla propia de nftables (`inet ndiicam`) que solo deja entrar SSH, el
+  panel, mDNS, DHCP/DNS de la WiFi de configuración y, según el modo, NDI (5959-5999), el SRT
+  de las cámaras o el RTMP/SRT del puente. No toca otras reglas del sistema. Si el equipo
+  ejecuta otros servicios, sus puertos se añaden en *Puertos extra*.
+
+### Fiabilidad
+
+El instalador deja el equipo listo para funcionar sin nadie delante:
+
+- **Watchdog de la placa** (ACPI WDAT, Intel TCO o AMD), alimentado por systemd: si el equipo
+  se congela entero, la placa lo reinicia a los 30 s. Ubuntu tiene estos módulos en su lista
+  negra, así que el servicio `ndiicam-watchdog` los carga por su nombre.
+- **Reinicio tras un fallo del kernel** a los 10 s (`kernel.panic`), en vez de quedarse parado.
+- **Registro persistente** (journald, hasta 200 MB) y los eventos del panel guardados en
+  disco: tras un reinicio se ve qué pasó antes.
 
 ## Notas técnicas
 
@@ -278,8 +315,10 @@ en "Lowest". El búfer de la salida SRT (200 ms por defecto) puede bajar a 80-12
 | Tirones por WiFi | Barra de uso del enlace en el panel; 5 GHz; 720p; mejor por cable |
 | El modo receptor va lento | La fuente no tiene la resolución de la pantalla o trae transparencia: mándala a la resolución de la pantalla (en OBS, salida principal de DistroAV) |
 | Los fps de cámara superan a los fps NDI en una cámara MJPEG | La decodificación no da abasto; el servicio añade hilos solo (evento "la decodificación no da abasto"). A mano, en *Equipo → Decodificación JPEG* |
-| El panel no abre | `systemctl status ndiicam`; otro programa en el puerto 80 |
-| Registros | `journalctl -u ndiicam -f`; el del cambio de red en `/var/lib/ndiicam/red.log` |
+| El panel no abre | `systemctl status ndiicam`; otro programa en el puerto 80 o 443 |
+| Olvidé la contraseña del panel | Desde la WiFi de configuración (aparece sola cuando el equipo no tiene ninguna red conocida) el panel no la pide: cámbiala ahí. O por SSH borra `clave_panel` en `/etc/ndiicam/config.json` y reinicia el servicio |
+| Un programa del equipo dejó de ser accesible | El cortafuegos: añade su puerto en *Sistema → Seguridad → Puertos extra*, o desactívalo |
+| Registros | *Sistema → Registro* en el panel, o `journalctl -u ndiicam -f`; el del cambio de red en `/var/lib/ndiicam/red.log` |
 
 ## Desinstalar
 

@@ -20,9 +20,13 @@ RED = None             # Red
 FUENTES = None         # Fuentes
 ACTUALIZADOR = None    # Actualizador
 BUSCADOR = None        # BuscadorNDI
+CORTAFUEGOS = None     # Cortafuegos
+SESIONES = None        # Sesiones del panel
+INTENTOS = None        # LimiteIntentos de la contraseña
+HTTPS = None           # contexto TLS del panel (None: solo HTTP, sin openssl)
 
 
-VERSION = "0.4.1"
+VERSION = "0.5.0"
 REPO = "ithesk/NDIICAM"
 CONFIG = "/etc/ndiicam/config.json"
 DATOS = "/var/lib/ndiicam"          # el servicio apunta NDI_CONFIG_DIR a DATOS/.ndi
@@ -57,7 +61,8 @@ POR_DEFECTO = {"ndi_nombre": "NDIICAM", "resolucion": "1080p", "fps": 30, "audio
                "ap_clave": "ndiicam-setup", "pais": "", "clave_panel": "",
                "hdmi": False, "hdmi_fuente": "auto", "hdmi_consola": "nativa",
                "modo": "emisor", "rx_fuente": "", "decodificadores": "auto",
-               "puente_clave": "", "idioma": "es"}
+               "puente_clave": "", "idioma": "es", "cortafuegos": True, "puertos_extra": ""}
+AP_CLAVE_DEFECTO = POR_DEFECTO["ap_clave"]
 
 # decodificadores JPEG por fuente: jpegdec va en un solo hilo y con imágenes muy
 # detalladas no llega a 30 fps a 1080p. En "auto" se arranca con uno y se reparte
@@ -246,11 +251,45 @@ def version_tupla(texto):
     return tuple(int(x) for x in re.findall(r"\d+", texto or ""))
 
 EVENTOS = deque(maxlen=80)
+# los eventos se guardan en disco para ver, tras un reinicio, qué pasó antes
+EVENTOS_ARCHIVO = os.path.join(DATOS, "eventos.jsonl")
+EVENTOS_MAX_BYTES = 256 * 1024
+_lock_eventos = threading.Lock()
 
 def evento(codigo, **datos):
     """Registra un evento; el panel lo muestra traducido."""
-    EVENTOS.appendleft({"t": time.time(), "c": codigo, "d": datos})
+    e = {"t": time.time(), "c": codigo, "d": datos}
+    EVENTOS.appendleft(e)
     print(codigo, json.dumps(datos, ensure_ascii=False) if datos else "", flush=True)
+    with _lock_eventos:
+        try:
+            with open(EVENTOS_ARCHIVO, "a") as f:
+                f.write(json.dumps(e, ensure_ascii=False) + "\n")
+                grande = f.tell() > EVENTOS_MAX_BYTES
+            if grande:      # recortar a la mitad más reciente
+                with open(EVENTOS_ARCHIVO) as f:
+                    lineas = f.readlines()
+                with open(EVENTOS_ARCHIVO + ".tmp", "w") as f:
+                    f.writelines(lineas[len(lineas) // 2:])
+                os.replace(EVENTOS_ARCHIVO + ".tmp", EVENTOS_ARCHIVO)
+        except OSError:
+            pass
+
+def cargar_eventos():
+    """Los últimos eventos guardados, al arrancar. Tras un cuelgue el final del
+    archivo puede quedar con ceros: esas líneas se ignoran."""
+    try:
+        with open(EVENTOS_ARCHIVO, errors="replace") as f:
+            lineas = f.readlines()[-EVENTOS.maxlen:]
+    except OSError:
+        return
+    for linea in lineas:
+        try:
+            e = json.loads(linea.strip("\x00\n "))
+        except ValueError:
+            continue
+        if isinstance(e, dict) and {"t", "c"} <= e.keys():
+            EVENTOS.appendleft(e)
 
 # ------------------------------------------------------------- configuración
 

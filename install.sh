@@ -70,7 +70,7 @@ apt-get install -y -qq --no-install-recommends \
   gstreamer1.0-plugins-bad gstreamer1.0-libav \
   python3-pil python3-segno fonts-dejavu-core \
   v4l-utils network-manager dnsmasq-base hostapd iw avahi-daemon avahi-utils \
-  iproute2 curl ca-certificates >/dev/null
+  iproute2 curl ca-certificates nftables openssl >/dev/null
 # GPU Intel: driver VA moderno (iHD) para la salida H.264 por GPU. El antiguo
 # (i965) no entrega decodificado el JPEG 4:2:0 de la mayoría de cámaras
 REINICIO_HUC=0
@@ -186,17 +186,20 @@ fi
 
 # -------------------------------------------------------------------- NDIICAM
 paso "Installing NDIICAM / instalando NDIICAM"
-for pid in $(ss -ltnpH 'sport = :80' | grep -oE 'pid=[0-9]+' | cut -d= -f2 | sort -u); do
-  if ! tr '\0' ' ' <"/proc/$pid/cmdline" | grep -q ndiicam.py; then
-    aviso "Port 80 is in use by another program: the panel will not start until it is free"
-    aviso "El puerto 80 lo usa otro programa: el panel no arrancará hasta que quede libre"
-    ss -ltnpH 'sport = :80' >&2 || true
-    break
-  fi
+for puerto in 80 443; do
+  for pid in $(ss -ltnpH "sport = :$puerto" | grep -oE 'pid=[0-9]+' | cut -d= -f2 | sort -u); do
+    if ! tr '\0' ' ' <"/proc/$pid/cmdline" | grep -q ndiicam.py; then
+      aviso "Port $puerto is in use by another program: the panel will not start until it is free"
+      aviso "El puerto $puerto lo usa otro programa: el panel no arrancará hasta que quede libre"
+      ss -ltnpH "sport = :$puerto" >&2 || true
+      break
+    fi
+  done
 done
 install -d -m 755 /opt/ndiicam /opt/ndiicam/web
 # el servicio son varios módulos (ver la cabecera de ndiicam.py): van todos
 install -m 755 "$ORIGEN"/ndiicam/*.py /opt/ndiicam/
+install -m 755 "$ORIGEN/system/ndiicam-watchdog.sh" /opt/ndiicam/
 install -m 644 "$ORIGEN/ndiicam/web/index.html" /opt/ndiicam/web/
 install -m 644 "$ORIGEN/system/ndiicam.service" /etc/systemd/system/ndiicam.service
 install -d -m 755 /etc/avahi/services
@@ -213,7 +216,29 @@ systemctl reload NetworkManager >/dev/null 2>&1 || true
 for w in /sys/class/net/*/wireless; do
   [ -e "$w" ] && iw dev "$(basename "$(dirname "$w")")" set power_save off 2>/dev/null || true
 done
+
+# fiabilidad: el equipo tiene que volver solo si se cuelga, sin nadie delante
+#  - watchdog de la placa, alimentado por systemd (30 s)
+#  - reinicio a los 10 s tras un fallo del kernel
+#  - registro en disco, para saber después qué pasó
+install -m 644 "$ORIGEN/system/ndiicam-watchdog.service" /etc/systemd/system/
+install -d -m 755 /etc/systemd/system.conf.d /etc/systemd/journald.conf.d /etc/sysctl.d
+install -m 644 "$ORIGEN/system/zz-ndiicam-watchdog.conf" /etc/systemd/system.conf.d/
+install -m 644 "$ORIGEN/system/90-ndiicam-panico.conf" /etc/sysctl.d/
+install -m 644 "$ORIGEN/system/ndiicam-journald.conf" /etc/systemd/journald.conf.d/ndiicam.conf
+sysctl -q -p /etc/sysctl.d/90-ndiicam-panico.conf || true
+systemctl restart systemd-journald >/dev/null 2>&1 || true
 systemctl daemon-reload
+systemctl enable ndiicam-watchdog.service >/dev/null 2>&1
+systemctl start ndiicam-watchdog.service >/dev/null 2>&1 || true
+# systemd lee RuntimeWatchdogSec al arrancar: reexec lo aplica sin reiniciar
+systemctl daemon-reexec >/dev/null 2>&1 || true
+if [ -e /dev/watchdog0 ]; then
+  echo "Hardware watchdog active / watchdog de la placa activo: $(cat /sys/class/watchdog/watchdog0/identity 2>/dev/null)"
+else
+  aviso "No hardware watchdog found: a hang will need a manual reboot / sin watchdog: un cuelgue necesitará reinicio a mano"
+fi
+
 systemctl enable ndiicam.service >/dev/null 2>&1
 systemctl restart ndiicam.service
 sleep 4
@@ -228,7 +253,10 @@ cat <<EOF
 
   NDIICAM is installed / NDIICAM está instalado
 
-  Panel:        http://$EQUIPO.local   ${IP:+(http://$IP)}
+  Panel:        https://$EQUIPO.local   ${IP:+(https://$IP)}
+                the first visit asks you to create a password / la primera visita pide crear una contraseña
+                the browser warns about the certificate (it is the device's own) / el navegador
+                avisa del certificado (es propio del equipo): acéptalo
   NDI source:   ${EQUIPO^^} (NDIICAM)
   Setup WiFi:   turns on when no known network is available / se activa sin red conocida
                 password / clave: ndiicam-setup  (change it in the panel / cámbiala en el panel)

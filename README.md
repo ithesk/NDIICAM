@@ -32,12 +32,15 @@ sound. Everything is managed from a web panel: no terminal needed after installa
 
 - **Streams every UVC camera plugged in as its own NDI source** (MJPEG or YUYV) at 720p or 1080p,
   up to 60 fps, **with the camera's microphone** as NDI audio when it has one.
-- **Web panel** at `http://<device>.local`: live status, frame rate, bitrate, connected
+- **Web panel** at `https://<device>.local`, password protected: live status, frame rate, bitrate, connected
   receivers, WiFi signal and link usage, CPU and temperature. In English and Spanish.
 - **Setup WiFi**: with no known network in range, the device creates its own WiFi with a
   captive portal. Join it from your phone, pick your network, type the password, done.
 - **Self-healing**: detects the camera when plugged in, restarts the stream if the camera
-  stops sending frames, reconnects to known networks when they come back.
+  stops sending frames, reconnects to known networks when they come back. If the whole
+  device hangs, the board watchdog reboots it; the panel then tells you why it restarted.
+- **Safe on other people's networks**: encrypted panel (HTTPS), mandatory password with an
+  attempt limit, and a firewall that only opens what the current mode needs.
 - **HDMI framing monitor**: shows one camera full screen on the monitor plugged into the device,
   straight to the GPU, with no CPU cost. On/off from the panel.
 - **Receiver mode**: the device stops its cameras and becomes an NDI receiver: pick any NDI source
@@ -114,19 +117,22 @@ Running the installer again updates NDIICAM and keeps your settings.
 ## First use
 
 1. Plug in the camera. Streaming starts by itself.
-2. Open `http://<device>.local` (the installer prints the address).
+2. Open `https://<device>.local` (the installer prints the address). The browser warns about
+   the certificate: it is the device's own, accept it (the fingerprint is under *System →
+   Security* to check it). The first time, the panel asks you to **create the password**.
 3. In OBS: *Add source → NDI Source* (with [DistroAV](https://github.com/DistroAV/DistroAV))
    and pick `<DEVICE> (NDIICAM)`.
 
 **No network?** After 60 s without any known network the device turns on the setup WiFi
 `NDIICAM-XXXX` (password `ndiicam-setup`, change it in the panel). Join it from a phone:
 the panel opens by itself. Pick your network and type its password. The result is shown on
-the same screen; then go back to your network and open `http://<device>.local`.
+the same screen; then go back to your network and open `https://<device>.local`.
 
 ## Panel
 
-Two tabs: **Monitor** (what is happening) and **Settings** (what you change). `#monitor` and
-`#config` in the URL open one directly.
+Three tabs: **Monitor** (what is happening), **Settings** (what you change) and **System**
+(security, the device and the log). `#monitor`, `#config` and `#sistema` in the URL open one
+directly.
 
 | Tab | Section | What it does |
 |---|---|---|
@@ -141,10 +147,41 @@ Two tabs: **Monitor** (what is happening) and **Settings** (what you change). `#
 | Settings | Updates | Installed and latest version, check, install with one click |
 | Settings | WiFi networks | Saved networks (forget), scan, connect |
 | Settings | IP address | DHCP or static, for the active connection or for the wired port (even unplugged: saved and applied when the cable goes in). A static address with no connectivity reverts by itself |
-| Settings | Device | Device name, NDI transport, setup WiFi name and password, country, HDMI help screen language, optional panel password, backup download/restore, factory reset, reboot |
+| Settings | Device | Device name, NDI transport, setup WiFi name and password, country, HDMI help screen language, backup download/restore, factory reset |
+| System | Security | Encrypted connection and certificate fingerprint, change password, sign out, firewall (on/off, open ports, extra ports) |
+| System | Device | Reason for the last boot (from the panel, orderly shutdown, kernel failure, watchdog or power cut) and the last sign of life before it, watchdog status, clock and time zone, reboot, shut down |
+| System | Log | The systemd journal: NDIICAM, the whole system or the kernel; this boot or earlier ones; by level and with search; downloadable |
 
-The optional panel password is not asked from the setup WiFi: anyone on it already knows
-its password, and it is the way back in if you forget the panel password.
+### Security
+
+- **HTTPS**: the panel runs on port 443 with the device's own certificate (created at install
+  time, recreated if the name changes). Port 80 only redirects. The browser warns the first
+  time because no known authority signs it.
+- **Mandatory password**, at least 8 characters, chosen on the first visit (there is no
+  default one). Five failures in a row from one IP lock it for 30 s, each further round
+  doubles it, up to 15 min; there is also a cap of 30 failures per minute across all IPs.
+  Sessions last 30 days with use and survive updates; changing the password signs out the
+  others.
+- Scripts (Companion, curl) can also use *Basic Auth* with the panel password:
+  `curl -k -u :PASSWORD https://<device>.local/api/estado`.
+- **Not asked from the setup WiFi**: anyone on it already knows its password, and it is the
+  way back in if you forget the panel password. So change its default password
+  (`ndiicam-setup`); the panel warns until you do.
+- **Firewall**: its own nftables table (`inet ndiicam`) that only lets in SSH, the panel,
+  mDNS, the setup WiFi's DHCP/DNS and, depending on the mode, NDI (5959-5999), the cameras'
+  SRT or the bridge's RTMP/SRT. It does not touch other system rules. If the device runs other
+  services, add their ports under *Extra ports*.
+
+### Reliability
+
+The installer leaves the device ready to run with nobody around:
+
+- **Board watchdog** (ACPI WDAT, Intel TCO or AMD), fed by systemd: if the device freezes
+  completely, the board reboots it after 30 s. Ubuntu blacklists these modules, so the
+  `ndiicam-watchdog` service loads them by name.
+- **Reboot after a kernel failure** in 10 s (`kernel.panic`), instead of sitting frozen.
+- **Persistent log** (journald, up to 200 MB) and panel events saved to disk: after a reboot
+  you can see what happened before.
 
 ## Technical notes
 
@@ -273,8 +310,10 @@ output's buffer (200 ms by default) can go down to 80-120 ms on a local network.
 | Stutter over WiFi | Link usage bar in the panel; 5 GHz; use 720p; prefer Ethernet |
 | Receiver mode is slow | The source does not match the screen or has transparency: send it at the screen resolution (in OBS, DistroAV main output) |
 | Camera fps higher than NDI fps on an MJPEG camera | Decoding cannot keep up; the service adds decoder threads by itself (event "decoding cannot keep up"). Fix it by hand in *Device → JPEG decoding* |
-| Panel unreachable | `systemctl status ndiicam`; something else on port 80 |
-| Logs | `journalctl -u ndiicam -f`; network migration log in `/var/lib/ndiicam/red.log` |
+| Panel unreachable | `systemctl status ndiicam`; something else on port 80 or 443 |
+| Forgot the panel password | From the setup WiFi (it comes up by itself when the device has no known network) the panel does not ask for it: change it there. Or over SSH remove `clave_panel` from `/etc/ndiicam/config.json` and restart the service |
+| A program on the device is no longer reachable | The firewall: add its port under *System → Security → Extra ports*, or turn it off |
+| Logs | *System → Log* in the panel, or `journalctl -u ndiicam -f`; network migration log in `/var/lib/ndiicam/red.log` |
 
 ## Uninstall
 
