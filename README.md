@@ -11,16 +11,24 @@ sound. Everything is managed from a web panel: no terminal needed after installa
 
 ## Screenshots
 
-![NDIICAM web panel: two cameras streaming over NDI, HDMI framing output, network and device status](docs/screenshots/panel-en.png)
+![NDIICAM web panel: two cameras streaming over NDI, one on air and one recording on the GPU, live preview, tally, network and device status](docs/screenshots/panel-en.png)
 
 <table>
   <tr>
-    <td width="68%"><img src="docs/screenshots/panel-dark-en.png" alt="Panel in dark mode"></td>
+    <td width="68%"><img src="docs/screenshots/panel-dark-en.png" alt="Settings tab in dark mode"></td>
     <td width="32%"><img src="docs/screenshots/setup-wifi-en.png" alt="Setup WiFi captive portal on a phone"></td>
   </tr>
   <tr>
-    <td align="center">Dark mode follows the system theme</td>
+    <td align="center">Per-camera settings (dark mode follows the system theme)</td>
     <td align="center">Setup WiFi on a phone</td>
+  </tr>
+  <tr>
+    <td width="68%"><img src="docs/screenshots/system-en.png" alt="System tab: security, device and log"></td>
+    <td width="32%"><img src="docs/screenshots/login-en.png" alt="Panel sign-in with a password"></td>
+  </tr>
+  <tr>
+    <td align="center">System: HTTPS, password, firewall, reason for the last boot and log</td>
+    <td align="center">Password sign-in</td>
   </tr>
 </table>
 

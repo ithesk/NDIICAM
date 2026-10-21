@@ -1364,7 +1364,7 @@ function crearTarjeta(f) {
         el("dt", { text: t("latency") }), c.lat = el("dd"),
         el("dt", { text: t("audio") }), c.audio = el("dd", null, c.audioTxt = el("span"), c.vu = vumetro()),
         el("dt", { text: t("receivers_conn") }), c.recep = el("dd"),
-        el("dt", { text: t("streaming_for") }), c.desde = el("dd"),
+        el("dt", { text: t("streaming_for") }), c.emitiendoDesde = el("dd"),
         c.gpuDt = el("dt", { text: t("gpu_state") }), c.gpuDd = el("dd"))));
   // --- Configuración: ajustes
   c.raizCfg = el("section", { class: "tarjeta fuente" },
@@ -1499,7 +1499,7 @@ function pintarFuente(c, f, e) {
   // el SDK cuenta receptores que la lista por TCP no ve (UDP, multicast)
   if (f.conexiones_ndi > nombresRx.length) nombresRx.push(`+${f.conexiones_ndi - nombresRx.length}`);
   poner(c.recep, nombresRx.length ? nombresRx.join(", ") : t("nobody_now"));
-  poner(c.desde, f.desde ? duracion(Date.now() / 1000 - f.desde) : "—");
+  poner(c.emitiendoDesde, f.desde ? duracion(Date.now() / 1000 - f.desde) : "—");
   // ajustes, sin pisar lo que se está editando
   if (document.activeElement !== c.conmutador) c.conmutador.checked = aj.activa;
   rellenar(c.nombre, aj.ndi_nombre, k("nombre"));
@@ -1888,8 +1888,9 @@ function pintar(e) {
   $("btAp").dataset.activar = ap.forzado_hasta ? "" : "1";
   $("secWifi").classList.toggle("oculto", !red.tiene_wifi);
   $("avisoAp").classList.toggle("oculto", !e.desde_ap);
-  // desde la WiFi de configuración, lo primero es elegir red
+  // desde la WiFi de configuración, lo primero es elegir red: arriba, y en su pestaña
   if (e.desde_ap && $("avisoAp").nextElementSibling !== $("secWifi")) $("avisoAp").after($("secWifi"));
+  if (e.desde_ap && !pintar.pestanaAp) { pintar.pestanaAp = true; pestana = "config"; aplicarPestana(); }
 
   // actividad
   const ev = $("eventos"); ev.replaceChildren();
