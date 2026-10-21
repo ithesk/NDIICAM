@@ -28,11 +28,18 @@ if [ "$RESTAURAR" -eq 1 ]; then
   fi
 fi
 rm -f /etc/systemd/system/ndiicam.service /etc/avahi/services/ndiicam.service \
-      /etc/NetworkManager/conf.d/90-ndiicam.conf
-rm -rf /opt/ndiicam /run/ndiicam
+      /etc/NetworkManager/conf.d/90-ndiicam.conf \
+      /etc/NetworkManager/conf.d/zz-ndiicam.conf
+rm -rf /opt/ndiicam /run/ndiicam /usr/local/lib/ndiicam
+# parámetros de arranque de NDIICAM: resolución de la pantalla y firmware HuC
+if ls /etc/default/grub.d/80-ndiicam-huc.cfg /etc/default/grub.d/90-ndiicam.cfg >/dev/null 2>&1; then
+  rm -f /etc/default/grub.d/80-ndiicam-huc.cfg /etc/default/grub.d/90-ndiicam.cfg
+  update-grub >/dev/null 2>&1 || true
+fi
 systemctl daemon-reload
 systemctl reload NetworkManager 2>/dev/null || true
 systemctl unmask hostapd 2>/dev/null || true
+systemctl enable --now getty@tty1.service 2>/dev/null || true
 
 if [ "$PURGAR" -eq 1 ]; then
   rm -rf /etc/ndiicam /var/lib/ndiicam

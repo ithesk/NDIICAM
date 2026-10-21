@@ -8,6 +8,10 @@
                            (nombre con el que nos ve el emisor) y pantalla
                            ([ancho, alto] de la pantalla, o null)
 
+Con origen "puente" hace lo de un ATEM Streaming Bridge: en vez de NDI lee de
+url (el RTMP local de MediaMTX, donde publica el ATEM) y decodifica el H.264
+con decodificador (avdec_h264, el de FFmpeg, en varios hilos).
+
 Igual que fuente.py: cada 2 s escribe una línea JSON con los contadores y el
 formato recibido; si el pipeline falla, escribe {"error": ..., "elemento": ...}
 y termina con código 1. Que no lleguen imágenes no es un fallo: un emisor NDI
@@ -16,6 +20,7 @@ error por su cuenta.
 """
 import json
 import os
+import re
 import signal
 import sys
 import time
@@ -27,11 +32,49 @@ from gi.repository import GLib, Gst  # noqa: E402
 
 CONTADORES = {"rx": 0, "aud": 0}
 FORMATO = {}
+NIVEL = {"db_peak": None, "db_rms": None}     # audio, dBFS, lo último que dijo 'level'
 
 
 def informar(datos):
     sys.stdout.write(json.dumps(datos) + "\n")
     sys.stdout.flush()
+
+
+def nivel_audio(msg):
+    """Pico y RMS en dBFS (el mayor de los canales) de un mensaje del elemento
+    'level', o None si no es uno. GValueArray no siempre pasa a Python: se lee
+    del texto del mensaje cuando hace falta."""
+    s = msg.get_structure()
+    if s is None or s.get_name() != "level":
+        return None
+    texto = s.to_string()
+
+    def mayor(campo):
+        try:
+            valores = list(s.get_value(campo))
+        except Exception:               # TypeError, ValueError según la versión
+            m = re.search(campo + r"=\([^)]*\)[<{]([^>}]*)[>}]", texto)
+            valores = [float(x) if x != "-inf" else -120.0 for x in
+                       re.findall(r"-inf|-?\d+(?:\.\d+)?(?:e[-+]?\d+)?", m.group(1))] if m else []
+        valores = [max(-120.0, min(0.0, float(v))) for v in valores]
+        return round(max(valores), 1) if valores else None
+    return {"peak": mayor("peak"), "rms": mayor("rms")}
+
+
+def sonda_retardo(pipeline, acumulado):
+    """Sonda para el pad de entrada del sumidero: cuánto lleva cada fotograma en
+    la tubería (hora de reloj menos su marca de tiempo de captura). Suma en
+    acumulado["suma"]/["n"]; tic() saca la media y pone a cero."""
+    def probe(pad, info):
+        buf = info.get_buffer()
+        reloj = pipeline.get_clock()
+        if buf.pts != Gst.CLOCK_TIME_NONE and reloj is not None:
+            ahora = reloj.get_time() - pipeline.get_base_time()
+            if ahora >= buf.pts:
+                acumulado["suma"] += (ahora - buf.pts) / 1e6
+                acumulado["n"] += 1
+        return Gst.PadProbeReturn.OK
+    return probe
 
 
 def main():
@@ -62,21 +105,42 @@ def main():
         escala = (f" ! videoscale n-threads={hilos} add-borders=true method=nearest-neighbour"
                   f" ! videoconvert n-threads={hilos}"
                   f" ! video/x-raw,width={ancho},height={alto},pixel-aspect-ratio=1/1")
-    desc = ("ndisrc name=src ! ndisrcdemux name=d "
-            "d.video ! queue name=qv max-size-buffers=2 leaky=downstream" + escala +
-            " ! kmssink name=hdmi sync=false async=false skip-vsync=true"
-            f" connector-id={cfg['hdmi']}")
-    # el audio se enlaza siempre: si la fuente lo trae y su salida no está
-    # enlazada, el demultiplexor tumba el pipeline
-    desc += " d.audio ! queue name=qa max-size-time=300000000 leaky=downstream"
+    puente = cfg.get("origen") == "puente"
+    if puente:
+        # Por CPU con FFmpeg: medido en un Celeron J3355, 1080p60 con algo más de un
+        # núcleo. La GPU decodifica con mucho menos, pero en las Intel Apollo Lake su
+        # imagen no llega al HDMI sin copias: los planos no aceptan NV12, iHD no
+        # convierte (sin VPP), i965 falla en GStreamer 1.24 y OpenGL sobre KMS colgó
+        # el equipo. Bajar la imagen a memoria cuesta más que decodificar por CPU.
+        # El plano de vídeo escala a la pantalla (Gen9 sí puede): sin escalar por CPU
+        dec = cfg.get("decodificador") or "avdec_h264"
+        desc = (f"rtmp2src name=src location={cfg['url']} ! flvdemux name=d "
+                "d.video ! queue name=qd max-size-time=1000000000 ! h264parse"
+                f" ! {dec} name=dec ! queue name=qv max-size-buffers=2 leaky=downstream"
+                f" ! videoconvert n-threads={hilos} ! video/x-raw,format=UYVY"
+                " ! kmssink name=hdmi sync=false async=false skip-vsync=true"
+                f" connector-id={cfg['hdmi']}")
+        desc += (" d.audio ! queue name=qa max-size-time=300000000 leaky=downstream"
+                 " ! aacparse ! faad")
+    else:
+        desc = ("ndisrc name=src ! ndisrcdemux name=d "
+                "d.video ! queue name=qv max-size-buffers=2 leaky=downstream" + escala +
+                " ! kmssink name=hdmi sync=false async=false skip-vsync=true"
+                f" connector-id={cfg['hdmi']}")
+        # el audio se enlaza siempre: si la fuente lo trae y su salida no está
+        # enlazada, el demultiplexor tumba el pipeline
+        desc += " d.audio ! queue name=qa max-size-time=300000000 leaky=downstream"
     if cfg.get("audio"):
-        desc += " ! audioconvert ! audioresample ! alsasink name=asink sync=false async=false"
+        # 'level' mide el nivel (dBFS) cada 200 ms para el medidor del panel
+        desc += (" ! audioconvert ! audioresample ! level name=nivel interval=200000000"
+                 " post-messages=true ! alsasink name=asink sync=false async=false")
     else:
         desc += " ! fakesink name=asink sync=false async=false"
     p = Gst.parse_launch(desc)
-    src = p.get_by_name("src")
-    src.set_property("ndi-name", cfg["nombre"])
-    src.set_property("receiver-ndi-name", cfg.get("equipo") or "NDIICAM")
+    if not puente:
+        src = p.get_by_name("src")
+        src.set_property("ndi-name", cfg["nombre"])
+        src.set_property("receiver-ndi-name", cfg.get("equipo") or "NDIICAM")
     if cfg.get("audio"):
         p.get_by_name("asink").set_property("device", cfg["audio"])
 
@@ -96,6 +160,9 @@ def main():
         return Gst.PadProbeReturn.OK
 
     p.get_by_name("qv").get_static_pad("sink").add_probe(Gst.PadProbeType.BUFFER, video)
+    # retardo interno: de la llegada (marca de la fuente) a la entrada del HDMI
+    retardo = {"suma": 0.0, "n": 0}
+    p.get_by_name("hdmi").get_static_pad("sink").add_probe(Gst.PadProbeType.BUFFER, sonda_retardo(p, retardo))
     p.get_by_name("asink").get_static_pad("sink").add_probe(Gst.PadProbeType.BUFFER, audio)
 
     bucle = GLib.MainLoop()
@@ -112,13 +179,21 @@ def main():
             informar({"error": "eos", "elemento": "src"})
             salida[0] = 1
             bucle.quit()
+        elif msg.type == Gst.MessageType.ELEMENT:
+            n = nivel_audio(msg)
+            if n:
+                NIVEL["db_peak"], NIVEL["db_rms"] = n["peak"], n["rms"]
 
     bus = p.get_bus()
     bus.add_signal_watch()
     bus.connect("message", mensaje)
 
     def tic():
-        informar({**CONTADORES, **FORMATO, "t": time.monotonic()})
+        lat = {}
+        if retardo["n"]:
+            lat = {"lat_ms": round(retardo["suma"] / retardo["n"], 1)}
+            retardo["suma"], retardo["n"] = 0.0, 0
+        informar({**CONTADORES, **FORMATO, **NIVEL, **lat, "t": time.monotonic()})
         return True
     GLib.timeout_add(2000, tic)
 

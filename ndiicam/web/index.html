@@ -52,7 +52,7 @@
   .heroe { display: grid; gap: 16px; grid-template-columns: 1fr auto; align-items: center; }
   .heroe .estado { font-size: 28px; font-weight: 700; letter-spacing: -.01em; }
   .heroe .sub { color: var(--suave); margin-top: 2px; word-break: break-word; }
-  .cifras { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; grid-column: 1 / -1; }
+  .cifras { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 10px; grid-column: 1 / -1; }
   .cifra { background: var(--fondo); border-radius: 10px; padding: 10px 12px; min-width: 0; }
   .cifra b { display: block; font-size: 20px; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .cifra span { color: var(--suave); font-size: 12.5px; }
@@ -71,8 +71,25 @@
   .aviso-ap { border-color: var(--acento); margin-bottom: 12px; }
   .aviso-ap p { margin: 4px 0 0; color: var(--suave); }
   .seccion { margin-top: 12px; }
+  /* pestañas Monitor / Configuración: cada bloque lleva data-tab y solo se ve el de la activa */
+  .pestanas { display: flex; gap: 6px; margin-top: 14px; }
+  .pestanas button { flex: 1; border: 1px solid var(--borde); background: var(--panel); color: var(--suave);
+    font: inherit; font-weight: 600; padding: 10px 14px; border-radius: 10px; cursor: pointer; }
+  .pestanas button.activo { background: var(--acento); border-color: var(--acento); color: var(--acento-t); }
+  body[data-tab="monitor"] [data-tab="config"], body[data-tab="config"] [data-tab="monitor"] { display: none !important; }
+  /* medidor de audio: pico (barra) y RMS (marca), de -60 a 0 dBFS */
+  .vumetro { position: relative; height: 8px; border-radius: 4px; background: var(--pista); margin-top: 6px; overflow: hidden; }
+  .vumetro i { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 4px; background: var(--ok); transition: width .2s; }
+  .vumetro i.alto { background: var(--aviso); }
+  .vumetro i.tope { background: var(--mal); }
+  .vumetro b { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--texto); opacity: .7; }
+  .vumetro-txt { font-size: 11.5px; color: var(--suave); font-variant-numeric: tabular-nums; }
+  .preview { display: block; width: 100%; aspect-ratio: 16 / 9; object-fit: cover; border-radius: 10px; background: var(--pista); }
+  .preview-vacia { display: flex; align-items: center; justify-content: center; aspect-ratio: 16 / 9;
+    border-radius: 10px; background: var(--pista); color: var(--suave); font-size: 12.5px; text-align: center; padding: 10px; }
   label { display: block; font-size: 13.5px; color: var(--suave); margin: 0 0 6px; }
   .ayuda { font-size: 12.5px; color: var(--suave); margin-top: 5px; }
+  .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; overflow-wrap: anywhere; }
   input[type=text], input[type=password], input[type=number], select { width: 100%; padding: 10px 12px; font: inherit; color: var(--texto);
     background: var(--fondo); border: 1px solid var(--borde); border-radius: 10px; outline: none; }
   input:focus, select:focus { border-color: var(--acento); }
@@ -157,21 +174,28 @@
     </div>
   </header>
 
+  <nav class="pestanas" aria-label="Secciones">
+    <button type="button" data-tab-btn="monitor" data-t="tab_monitor"></button>
+    <button type="button" data-tab-btn="config" data-t="tab_config"></button>
+  </nav>
+
   <section class="tarjeta aviso-ap oculto" id="avisoAp">
     <strong data-t="ap_banner_t"></strong>
     <p data-t="ap_banner_p"></p>
   </section>
 
-  <section class="tarjeta heroe">
+  <section class="tarjeta heroe" data-tab="monitor">
     <div>
       <div class="estado" id="estado">—</div>
       <div class="sub" id="estadoSub">—</div>
+      <div id="vuRx" style="max-width:320px"></div>
       <button class="boton" id="btReiniciarTodo" style="margin-top:10px"></button>
       <div class="mensaje oculto" id="msgReinicio"></div>
     </div>
     <div class="graficas">
       <div class="grafica"><svg id="grafTx" viewBox="0 0 130 38" preserveAspectRatio="none"></svg><span data-t="traffic"></span></div>
       <div class="grafica"><svg id="grafCpu" viewBox="0 0 130 38" preserveAspectRatio="none"></svg><span data-t="cpu_pct"></span></div>
+      <div class="grafica oculto" id="bloqueGrafGpu"><svg id="grafGpu" viewBox="0 0 130 38" preserveAspectRatio="none"></svg><span data-t="gpu_pct"></span></div>
       <div class="grafica" id="bloqueGrafW"><svg id="grafW" viewBox="0 0 130 38" preserveAspectRatio="none"></svg><span data-t="power_w"></span></div>
     </div>
     <div class="cifras">
@@ -179,21 +203,28 @@
       <div class="cifra"><b id="cRecep">—</b><span id="cRecepT" data-t="receivers"></span></div>
       <div class="cifra"><b id="cTx">—</b><span id="cTxT" data-t="mbit_out"></span></div>
       <div class="cifra"><b id="cCpu">—</b><span data-t="cpu"></span></div>
+      <div class="cifra oculto" id="bloqueCGpu"><b id="cGpu">—</b><span data-t="gpu"></span></div>
     </div>
   </section>
 
-  <section class="tarjeta seccion" id="secModo">
+  <div id="fuentes" data-tab="monitor"></div>
+
+  <section class="tarjeta seccion" id="secModo" data-tab="config">
     <div class="fuente-cab"><div><h3 data-t="modo_title"></h3><div class="sub" data-t="modo_sub"></div></div></div>
     <div class="modos">
       <label class="modo-op"><input type="radio" name="modo" value="emisor">
         <span><b data-t="modo_emisor"></b><small data-t="modo_emisor_d"></small></span></label>
       <label class="modo-op"><input type="radio" name="modo" value="receptor">
         <span><b data-t="modo_receptor"></b><small data-t="modo_receptor_d"></small></span></label>
+      <label class="modo-op"><input type="radio" name="modo" value="puente">
+        <span><b data-t="modo_puente"></b><small data-t="modo_puente_d"></small></span></label>
     </div>
     <div class="mensaje oculto" id="msgModo"></div>
   </section>
 
-  <section class="tarjeta seccion oculto" id="secRx">
+  <div id="fuentesCfg" data-tab="config"></div>
+
+  <section class="tarjeta seccion oculto" id="secRx" data-tab="config">
     <div class="fuente-cab">
       <div><h3 data-t="rx_title"></h3><div class="sub" id="rxSub"></div></div>
       <span class="pastilla" id="rxPastilla">—</span>
@@ -210,9 +241,32 @@
     <div class="mensaje oculto" id="msgRx"></div>
   </section>
 
-  <div id="fuentes"></div>
+  <section class="tarjeta seccion oculto" id="secPuente" data-tab="config">
+    <div class="fuente-cab">
+      <div><h3 data-t="pt_title"></h3><div class="sub" id="ptSub"></div></div>
+      <span class="pastilla" id="ptPastilla">—</span>
+    </div>
+    <div class="campos">
+      <div><label data-t="pt_rtmp"></label><div class="mono" id="ptRtmp">—</div></div>
+      <div><label data-t="pt_key"></label><div class="mono" id="ptClave">—</div></div>
+      <div><label data-t="pt_srt"></label><div class="mono" id="ptSrt">—</div></div>
+      <div><label data-t="hdmi_state"></label><div id="ptEstado">—</div></div>
+    </div>
+    <div class="botones">
+      <a class="boton principal" id="ptXml" href="/api/puente/atem.xml" data-t="pt_xml"></a>
+      <button class="boton" id="ptNueva" data-t="pt_new_key"></button>
+    </div>
+    <div class="ayuda" data-t="pt_help" style="margin-top:10px"></div>
+    <div class="mensaje oculto" id="msgPuente"></div>
+  </section>
 
-  <section class="tarjeta seccion" id="secHdmi">
+  <section class="tarjeta seccion oculto" id="secGrab" data-tab="monitor">
+    <div class="fuente-cab"><div><h3 data-t="rec_title"></h3><div class="sub" id="grabSub"></div></div></div>
+    <ul class="lista" id="grabLista"></ul>
+    <div class="mensaje oculto" id="msgGrab"></div>
+  </section>
+
+  <section class="tarjeta seccion" id="secHdmi" data-tab="config">
     <div class="fuente-cab">
       <div><h3 data-t="hdmi_title"></h3><div class="sub" id="hdmiSub"></div></div>
       <label class="conmutador" style="margin-left:auto" id="bloqueHdmiActiva"><input type="checkbox" id="hdmiActiva"><span data-t="hdmi_on"></span></label>
@@ -242,7 +296,7 @@
   </section>
 
   <div class="rejilla">
-    <section class="tarjeta">
+    <section class="tarjeta" data-tab="monitor">
       <h2 data-t="network"></h2>
       <div class="linea-barra">
         <div class="rotulo"><span id="redTitulo"></span><span id="redSenal">—</span></div>
@@ -254,6 +308,8 @@
       </div>
       <dl>
         <dt data-t="connection"></dt><dd id="redModo">—</dd>
+        <dt data-t="wired"></dt><dd id="redCable">—</dd>
+        <dt>WiFi</dt><dd id="redWifi">—</dd>
         <dt data-t="band"></dt><dd id="redBanda">—</dd>
         <dt data-t="link_speed"></dt><dd id="redEnlace">—</dd>
         <dt data-t="ip"></dt><dd id="redIp">—</dd>
@@ -261,11 +317,16 @@
       </dl>
     </section>
 
-    <section class="tarjeta">
+    <section class="tarjeta" data-tab="monitor">
       <h2 data-t="device"></h2>
       <div class="linea-barra">
         <div class="rotulo"><span data-t="cpu"></span><span id="eqCpu">—</span></div>
         <div class="barra" id="barraCpu"><i></i></div>
+      </div>
+      <div class="linea-barra oculto" id="bloqueEqGpu">
+        <div class="rotulo"><span data-t="gpu"></span><span id="eqGpu">—</span></div>
+        <div class="barra" id="barraGpu"><i></i></div>
+        <div class="ayuda" id="eqGpuDetalle"></div>
       </div>
       <div class="linea-barra">
         <div class="rotulo"><span data-t="memory"></span><span id="eqRam">—</span></div>
@@ -278,7 +339,7 @@
       </dl>
     </section>
 
-    <section class="tarjeta">
+    <section class="tarjeta" data-tab="config">
       <h2 data-t="updates"></h2>
       <dl>
         <dt data-t="installed_version"></dt><dd id="actActual">—</dd>
@@ -294,7 +355,7 @@
     </section>
   </div>
 
-  <section class="tarjeta seccion" id="secWifi">
+  <section class="tarjeta seccion" id="secWifi" data-tab="config">
     <h2 data-t="wifi_networks"></h2>
     <label data-t="saved_help"></label>
     <ul class="lista" id="wifiGuardadas"></ul>
@@ -306,8 +367,12 @@
     <div class="mensaje oculto" id="msgWifi"></div>
   </section>
 
-  <section class="tarjeta seccion" id="secIp">
+  <section class="tarjeta seccion" id="secIp" data-tab="config">
     <h2 data-t="ip_address"></h2>
+    <div class="segmentado oculto" id="segIpCon" style="margin-bottom:10px">
+      <button type="button" data-v="activa" data-t="ip_con_active"></button>
+      <button type="button" data-v="cable" data-t="ip_con_cable"></button>
+    </div>
     <div class="ayuda" id="ipPerfil" style="margin:0 0 12px"></div>
     <div class="segmentado" id="segIp">
       <button type="button" data-v="auto" data-t="ip_auto"></button>
@@ -325,7 +390,7 @@
     <div class="mensaje oculto" id="msgIp"></div>
   </section>
 
-  <section class="tarjeta seccion">
+  <section class="tarjeta seccion" data-tab="config">
     <h2 data-t="device_settings"></h2>
     <div class="campos">
       <div>
@@ -362,6 +427,11 @@
         <input type="text" id="inPais" maxlength="2" autocomplete="off" spellcheck="false">
       </div>
       <div>
+        <label for="selIdioma" data-t="screen_lang"></label>
+        <select id="selIdioma"><option value="es">Español</option><option value="en">English</option></select>
+        <div class="ayuda" data-t="screen_lang_help"></div>
+      </div>
+      <div>
         <label for="inClavePanel" data-t="panel_password"></label>
         <input type="password" id="inClavePanel" maxlength="64" autocomplete="new-password">
         <div class="ayuda" id="ayudaClavePanel"></div>
@@ -391,7 +461,7 @@
     </div>
   </section>
 
-  <section class="tarjeta seccion">
+  <section class="tarjeta seccion" data-tab="monitor">
     <h2 data-t="activity"></h2>
     <ul class="lista eventos" id="eventos"></ul>
   </section>
@@ -414,7 +484,8 @@ const T = {
     rx_help: "Para que no gaste casi nada, emite la fuente a la misma resolución que la pantalla (en OBS: salida principal de DistroAV y resolución de salida 1920×1080). Las de otra resolución, o con transparencia, cuestan mucha más CPU.",
     hdmi_ndi_falta: (n) => `${n} (no está en la red)`, hdmi_ndi_buscando: "Buscando fuentes NDI…",
     hdmi_rx_conectando: (n) => `Conectando con ${n}…`,
-    hdmi_rx_recibiendo: (r) => `${r.ancho}×${r.alto} · ${r.fps ? r.fps + " fps" : "imagen fija"}` + (r.audio_activo ? " · con audio" : r.audio_fallido ? " · sin audio (falló la salida de sonido)" : ""),
+    hdmi_rx_recibiendo: (r) => `${r.ancho}×${r.alto} · ${r.fps ? r.fps + " fps" : "imagen fija"}` + (r.audio_activo ? " · con audio" : r.audio_fallido ? " · sin audio (falló la salida de sonido)" : "") + (r.latencia_ms != null ? ` · retardo interno ${Math.round(r.latencia_ms)} ms` : ""),
+    latency: "Retardo interno", latency_value: (ms) => `${Math.round(ms)} ms (cámara → NDI)`,
     hdmi_rx_error: (n) => `${n} no responde; reintentando…`,
     st_recibiendo: "Recibiendo", st_conectando: "Conectando", st_sin_fuente: "Sin fuente", st_sin_monitor: "Sin monitor", st_rx_error: "Sin señal", st_pausada: "En pausa",
     sub_sin_fuente: "Elige qué fuente NDI mostrar.", sub_sin_monitor: "Conecta un monitor al HDMI del equipo.",
@@ -430,6 +501,8 @@ const T = {
     ap_banner_t: "Estás en la WiFi de configuración",
     ap_banner_p: "Elige abajo la red WiFi a la que debe conectarse el equipo.",
     traffic: "tráfico Mbit/s", cpu_pct: "CPU %", power_w: "procesador W",
+    gpu: "GPU", gpu_pct: "GPU %",
+    gpu_engines: { video: "Vídeo (H.264/JPEG)", render: "3D", "video-enhance": "Escalado", copy: "Copia" },
     power: "Consumo del procesador", power_value: (p, c) => `${p.toFixed(1)} W` + (c != null ? ` (núcleos ${c.toFixed(1)} W)` : ""), sources: "Fuentes", receivers: "Receptores",
     mbit_out: "Mbit/s saliendo", mbit_in: "Mbit/s entrando", cpu: "Procesador", network: "Red", link_use: "Uso de la conexión",
     connection: "Conexión", band: "Banda", link_speed: "Velocidad del enlace", ip: "Dirección IP",
@@ -453,7 +526,12 @@ const T = {
     ip_applying: "Aplicando… comprobando la conexión con la nueva dirección (hasta 30 s).",
     ip_ok: (c) => `Listo. El equipo responde en http://${c.direccion}/ (y en http://${c.equipo}.local).`,
     ip_errors: { sin_conexion: "Con esa configuración no había conexión: se ha vuelto a la anterior.", generico: "No se pudo aplicar: se ha vuelto a la anterior." },
+    vu_label: (p, r) => `pico ${p.toFixed(1)} dBFS` + (r != null ? ` · medio ${r.toFixed(1)}` : ""),
+    tally_program: "EN EL AIRE", tally_preview: "PREVIO",
+    tab_monitor: "Monitor", tab_config: "Configuración", preview: "Vista previa",
+    preview_none: "Sin vista previa: la cámara no entrega MJPEG", preview_wait: "Esperando imagen…",
     device_settings: "Equipo", device_name: "Nombre del equipo",
+    screen_lang: "Idioma de la pantalla HDMI", screen_lang_help: "La pantalla de ayuda que sale por HDMI cuando no hay nada que mostrar: estado, red y un QR a este panel.",
     device_name_help: "También es el prefijo de las fuentes NDI y la dirección <nombre>.local. Cambiarlo reinicia el servicio.",
     transport_help: "TCP es lo más compatible. UDP es el modo por defecto de NDI 6. Cambiarlo reinicia el servicio.",
     deco_label: "Decodificación JPEG", deco_auto: "Automática", deco_hilos: (n) => `${n} hilos`,
@@ -485,10 +563,41 @@ const T = {
     none: "Ninguno", in_last_2s: "en 2 s", nobody_now: "ninguno ahora mismo",
     restart_all_emisor: "Reiniciar emisión", restart_all_receptor: "Reiniciar recepción",
     restarting_all: "Reiniciando… vuelve en unos segundos.",
+    gpu_out: "Salida H.264 por GPU", gpu_state: "Salida GPU", gpu_no: "Desactivada",
+    gpu_grabar: "Grabar en el equipo", gpu_srt: "SRT (para OBS, vMix, VLC…)", gpu_rtmp: "RTMP (YouTube, Twitch…)",
+    gpu_quality: "Calidad", gpu_port: "Puerto SRT", gpu_url: "URL RTMP con la clave de emisión",
+    gpu_url_ph: "rtmp://a.rtmp.youtube.com/live2/tu-clave",
+    gpu_help: "La GPU convierte la imagen de la cámara a H.264 sin gastar CPU. El NDI sigue igual: si esta salida falla, no se corta.",
+    gpu_help_srt: (u) => `Ábrelo en OBS (Fuente multimedia) o VLC con: ${u}`,
+    gpu_help_grabar: "Archivos MP4 de 10 minutos. Si el disco se llena, se borran los más antiguos.",
+    gpu_unavailable: { sin_gpu: "Este equipo no tiene GPU compatible (VA-API).", sin_jpeg: "La GPU no decodifica JPEG.",
+      sin_h264: "La GPU no codifica H.264.", necesita_huc: "La GPU necesita el firmware HuC: vuelve a instalar NDIICAM y reinicia el equipo." },
+    gpu_only_mjpeg: "Solo con cámaras que entregan MJPEG.",
+    gpu_st: { iniciando: "Arrancando…", activa: "Activa", error: "Error, reintentando", en_espera: "En espera" },
+    rec_when: "Cuándo grabar", rec_siempre: "Siempre", rec_receptores: "Solo mientras haya receptores NDI",
+    rec_manual: "A mano, con el botón Grabar", rec_start: "● Grabar", rec_stop: "■ Parar grabación",
+    rec_started: "Grabando.", rec_started_restart: "Grabando. La emisión se reinicia unos 2 s para activar la salida.",
+    rec_stopped: "Grabación parada; el archivo está en Grabaciones.",
+    rec_horario: "En un horario", rec_from: "Desde", rec_to: "Hasta",
+    modo_puente: "Puente (ATEM Streaming Bridge)",
+    modo_puente_d: "Un ATEM Mini Pro, OBS o vMix emite a este equipo por la red y sale por su HDMI, con sonido.",
+    pt_title: "Puente", pt_rtmp: "Servidor RTMP (para el ATEM)", pt_key: "Clave de emisión", pt_srt: "SRT (OBS, vMix, Larix…)",
+    pt_xml: "Descargar ajustes para ATEM", pt_new_key: "Clave nueva", pt_new_key_ok: "Clave nueva: vuelve a cargar los ajustes en el ATEM.",
+    pt_confirm: "Con una clave nueva, quien emite ahora se corta y tendrá que usar la nueva. ¿Seguir?",
+    pt_help: "En ATEM Software Control: Stream › Load Streaming Settings con el archivo descargado; elige el servicio y pulsa On Air. También vale cualquier programa que emita por RTMP o SRT.",
+    pt_waiting: "Esperando a que el ATEM emita", pt_from: (d) => `${d.protocolo} desde ${d.desde || "?"}`,
+    pt_not_installed: "Falta MediaMTX: vuelve a instalar NDIICAM.", pt_dec: (d) => d === "avdec_h264" ? "decodifica FFmpeg" : "decodificador lento (instala gstreamer1.0-libav)",
+    st_esperando_atem: "Esperando señal",
+    rec_title: "Grabaciones", rec_free: (g) => `${g} libres en el disco`, rec_none: "Aún no hay grabaciones.",
+    rec_download: "Descargar", rec_delete: "Borrar", rec_confirm: (n) => `¿Borrar ${n}?`,
     restart_stream: "Reiniciar", saved_ok: "Guardado. La fuente se reinicia con los nuevos ajustes.",
     saved_restart: "Guardado. El servicio se está reiniciando: el panel vuelve en unos segundos.",
     saved_simple: "Guardado.", restarting_stream: "Reiniciando la fuente…",
     connected: "Conectada", cable: "Cable", wifi_signal: "Señal WiFi", no_connection: "Sin conexión",
+    wired: "Cable", cable_unplugged: "sin cable", no_wired_port: "este equipo no tiene puerto de red", no_wifi_card: "sin tarjeta WiFi",
+    ip_con_active: "Conexión activa", ip_con_cable: "Cable", ip_cable_unplugged: "El cable no está conectado: se guarda y se aplica al enchufarlo.",
+    ip_cable_no_profile: "Enchufa el cable una vez para que el sistema cree su perfil; después podrás fijarle la IP.",
+    ip_saved_pending: "Guardado. Se aplicará cuando conectes el cable.",
     of: "de", no_network: "Sin red", channel: "canal", cores: "núcleos",
     forget: "Olvidar", connect: "Conectar", password: "Contraseña", open: "abierta",
     in_use: "conectada", no_networks: "No se ve ninguna red", none_f: "Ninguna",
@@ -505,6 +614,10 @@ const T = {
       nombre_ndi_invalido: "Nombre NDI no válido: letras, números, espacios, puntos o guiones (máx. 48).",
       resolucion_invalida: "Resolución no válida.", fps_invalido: "Fotogramas por segundo no válidos.",
       camara_invalida: "Esa cámara ya no está conectada.", audio_invalido: "Ese dispositivo de audio ya no está.",
+      salida_gpu_invalida: "Salida GPU no válida.", gpu_no_disponible: "La GPU de este equipo no puede hacer esta salida.",
+      kbps_invalido: "Calidad no válida.", puerto_invalido: "El puerto va de 1024 a 65535.",
+      hora_invalida: "La hora va como HH:MM.",
+      url_rtmp_invalida: "Escribe la URL RTMP completa, empezando por rtmp:// o rtmps://.",
       fuente_ndi_invalida: "Esa fuente NDI no es válida.", modo_invalido: "Modo no válido.",
       transporte_invalido: "Transporte no válido.",
       ssid_invalido: "Nombre de red no válido (1 a 32 caracteres).",
@@ -538,11 +651,20 @@ const T = {
       error_emision: (d) => `${d.fuente}: error de emisión: ${d.detalle}`,
       sin_imagen: (d) => `${d.fuente}: no entrega imagen; reiniciando la emisión`,
       audio_fallo: (d) => `${d.fuente}: el audio falló (${d.detalle}); emitiendo sin audio`,
-      reinicio_manual: (d) => d.modo === "receptor" ? "Recepción reiniciada desde el panel" : "Emisión reiniciada desde el panel",
+      reinicio_manual: (d) => d.modo !== "emisor" ? "Recepción reiniciada desde el panel" : "Emisión reiniciada desde el panel",
       decodificacion_paralela: (d) => `${d.fuente}: la decodificación no da abasto; repartida en ${d.hilos} hilos`,
       aplicando: (d) => `${d.fuente}: aplicando cambios`, fallo_interno: (d) => `Fallo interno: ${d.detalle}`,
       hdmi_fallo: (d) => `${d.fuente}: la salida HDMI falló (${d.detalle}); emitiendo sin ella`,
-      modo: (d) => d.modo === "receptor" ? "Modo receptor: cámaras en pausa" : "Modo emisor",
+      gpu_activa: (d) => `${d.fuente}: salida GPU activa (${d.modo})`,
+      gpu_fallo: (d) => `${d.fuente}: la salida GPU falló (${d.detalle}); el NDI sigue, se reintenta`,
+      grabacion_borrada: (d) => `Grabación borrada: ${d.nombre}`,
+      reposo_fallo: (d) => `La pantalla de ayuda del HDMI falló: ${d.detalle}`,
+      ip_guardada: (d) => `IP del cable guardada (${d.metodo === "manual" ? "fija" : "DHCP"}) en «${d.perfil}»; se aplica al enchufarlo`,
+      tally: (d) => `${d.fuente}: ${d.programa ? "en el aire (programa)" : d.previo ? "en previo" : "fuera del aire"}`,
+      grabacion_manual: (d) => `${d.fuente}: ${d.grabar ? "grabación iniciada desde el panel" : "grabación parada desde el panel"}`,
+      modo: (d) => d.modo === "receptor" ? "Modo receptor: cámaras en pausa"
+        : d.modo === "puente" ? "Modo puente: cámaras en pausa" : "Modo emisor",
+      puente_servidor: (d) => `Puente: esperando al ATEM en el puerto ${d.puerto}`,
       rx_recibiendo: (d) => `HDMI: recibiendo «${d.fuente}» a ${d.modo}`,
       rx_perdida: (d) => `HDMI: se perdió la fuente «${d.fuente}»; reintentando`,
       rx_error: (d) => d.detalle === "sin_senal" ? `HDMI: «${d.fuente}» no emite; reintentando` : `HDMI: no se puede recibir «${d.fuente}» (${d.detalle}); reintentando`,
@@ -579,7 +701,8 @@ const T = {
     rx_help: "For it to cost almost nothing, send the source at the screen's resolution (in OBS: DistroAV main output and a 1920×1080 output resolution). Other resolutions, or sources with transparency, take a lot more CPU.",
     hdmi_ndi_falta: (n) => `${n} (not on the network)`, hdmi_ndi_buscando: "Looking for NDI sources…",
     hdmi_rx_conectando: (n) => `Connecting to ${n}…`,
-    hdmi_rx_recibiendo: (r) => `${r.ancho}×${r.alto} · ${r.fps ? r.fps + " fps" : "still image"}` + (r.audio_activo ? " · with audio" : r.audio_fallido ? " · no audio (sound output failed)" : ""),
+    hdmi_rx_recibiendo: (r) => `${r.ancho}×${r.alto} · ${r.fps ? r.fps + " fps" : "still image"}` + (r.audio_activo ? " · with audio" : r.audio_fallido ? " · no audio (sound output failed)" : "") + (r.latencia_ms != null ? ` · internal delay ${Math.round(r.latencia_ms)} ms` : ""),
+    latency: "Internal delay", latency_value: (ms) => `${Math.round(ms)} ms (camera → NDI)`,
     hdmi_rx_error: (n) => `${n} is not responding; retrying…`,
     st_recibiendo: "Receiving", st_conectando: "Connecting", st_sin_fuente: "No source", st_sin_monitor: "No monitor", st_rx_error: "No signal", st_pausada: "Paused",
     sub_sin_fuente: "Pick which NDI source to show.", sub_sin_monitor: "Plug a monitor into the device's HDMI.",
@@ -595,6 +718,8 @@ const T = {
     ap_banner_t: "You are on the setup WiFi",
     ap_banner_p: "Choose below the WiFi network this device should join.",
     traffic: "traffic Mbit/s", cpu_pct: "CPU %", power_w: "processor W",
+    gpu: "GPU", gpu_pct: "GPU %",
+    gpu_engines: { video: "Video (H.264/JPEG)", render: "3D", "video-enhance": "Scaling", copy: "Copy" },
     power: "Processor power", power_value: (p, c) => `${p.toFixed(1)} W` + (c != null ? ` (cores ${c.toFixed(1)} W)` : ""), sources: "Sources", receivers: "Receivers",
     mbit_out: "Mbit/s out", mbit_in: "Mbit/s in", cpu: "CPU", network: "Network", link_use: "Link usage",
     connection: "Connection", band: "Band", link_speed: "Link speed", ip: "IP address",
@@ -618,7 +743,12 @@ const T = {
     ip_applying: "Applying… checking connectivity with the new address (up to 30 s).",
     ip_ok: (c) => `Done. The device answers at http://${c.direccion}/ (and http://${c.equipo}.local).`,
     ip_errors: { sin_conexion: "That configuration had no connectivity: the previous one was restored.", generico: "Could not apply: the previous one was restored." },
+    vu_label: (p, r) => `peak ${p.toFixed(1)} dBFS` + (r != null ? ` · avg ${r.toFixed(1)}` : ""),
+    tally_program: "ON AIR", tally_preview: "PREVIEW",
+    tab_monitor: "Monitor", tab_config: "Settings", preview: "Preview",
+    preview_none: "No preview: the camera does not deliver MJPEG", preview_wait: "Waiting for a picture…",
     device_settings: "Device", device_name: "Device name",
+    screen_lang: "HDMI screen language", screen_lang_help: "The help screen shown on HDMI when there is nothing to display: status, network and a QR code to this panel.",
     device_name_help: "Also the NDI source prefix and the <name>.local address. Changing it restarts the service.",
     transport_help: "TCP is the most compatible. UDP is the NDI 6 default. Changing it restarts the service.",
     deco_label: "JPEG decoding", deco_auto: "Automatic", deco_hilos: (n) => `${n} threads`,
@@ -650,10 +780,41 @@ const T = {
     none: "None", in_last_2s: "in 2 s", nobody_now: "none right now",
     restart_all_emisor: "Restart streaming", restart_all_receptor: "Restart receiving",
     restarting_all: "Restarting… back in a few seconds.",
+    gpu_out: "H.264 output (GPU)", gpu_state: "GPU output", gpu_no: "Off",
+    gpu_grabar: "Record on this device", gpu_srt: "SRT (for OBS, vMix, VLC…)", gpu_rtmp: "RTMP (YouTube, Twitch…)",
+    gpu_quality: "Quality", gpu_port: "SRT port", gpu_url: "RTMP URL with the stream key",
+    gpu_url_ph: "rtmp://a.rtmp.youtube.com/live2/your-key",
+    gpu_help: "The GPU turns the camera image into H.264 without using the CPU. NDI is unchanged: if this output fails, it keeps going.",
+    gpu_help_srt: (u) => `Open it in OBS (Media Source) or VLC with: ${u}`,
+    gpu_help_grabar: "10-minute MP4 files. When the disk fills up, the oldest ones are deleted.",
+    gpu_unavailable: { sin_gpu: "This device has no compatible GPU (VA-API).", sin_jpeg: "The GPU cannot decode JPEG.",
+      sin_h264: "The GPU cannot encode H.264.", necesita_huc: "The GPU needs the HuC firmware: reinstall NDIICAM and reboot." },
+    gpu_only_mjpeg: "Only with cameras that deliver MJPEG.",
+    gpu_st: { iniciando: "Starting…", activa: "Active", error: "Error, retrying", en_espera: "Waiting" },
+    rec_when: "When to record", rec_siempre: "Always", rec_receptores: "Only while NDI receivers are connected",
+    rec_manual: "By hand, with the Record button", rec_start: "● Record", rec_stop: "■ Stop recording",
+    rec_started: "Recording.", rec_started_restart: "Recording. The stream restarts for about 2 s to enable the output.",
+    rec_stopped: "Recording stopped; the file is under Recordings.",
+    rec_horario: "On a schedule", rec_from: "From", rec_to: "To",
+    modo_puente: "Bridge (ATEM Streaming Bridge)",
+    modo_puente_d: "An ATEM Mini Pro, OBS or vMix streams to this device over the network and it plays on its HDMI, with sound.",
+    pt_title: "Bridge", pt_rtmp: "RTMP server (for the ATEM)", pt_key: "Stream key", pt_srt: "SRT (OBS, vMix, Larix…)",
+    pt_xml: "Download ATEM settings", pt_new_key: "New key", pt_new_key_ok: "New key: load the settings into the ATEM again.",
+    pt_confirm: "With a new key, whoever is streaming now is cut off and must use the new one. Continue?",
+    pt_help: "In ATEM Software Control: Stream › Load Streaming Settings with the downloaded file; pick the service and press On Air. Any software that streams over RTMP or SRT works too.",
+    pt_waiting: "Waiting for the ATEM to stream", pt_from: (d) => `${d.protocolo} from ${d.desde || "?"}`,
+    pt_not_installed: "MediaMTX is missing: reinstall NDIICAM.", pt_dec: (d) => d === "avdec_h264" ? "FFmpeg decoding" : "slow decoder (install gstreamer1.0-libav)",
+    st_esperando_atem: "Waiting for signal",
+    rec_title: "Recordings", rec_free: (g) => `${g} free on disk`, rec_none: "No recordings yet.",
+    rec_download: "Download", rec_delete: "Delete", rec_confirm: (n) => `Delete ${n}?`,
     restart_stream: "Restart", saved_ok: "Saved. The source restarts with the new settings.",
     saved_restart: "Saved. The service is restarting: the panel will be back in a few seconds.",
     saved_simple: "Saved.", restarting_stream: "Restarting the source…",
     connected: "Connected", cable: "Cable", wifi_signal: "WiFi signal", no_connection: "No connection",
+    wired: "Wired", cable_unplugged: "no cable", no_wired_port: "this device has no wired port", no_wifi_card: "no WiFi card",
+    ip_con_active: "Active connection", ip_con_cable: "Wired", ip_cable_unplugged: "The cable is unplugged: it is saved and applied when you plug it in.",
+    ip_cable_no_profile: "Plug the cable in once so the system creates its profile; then you can set its IP.",
+    ip_saved_pending: "Saved. It applies when you plug the cable in.",
     of: "of", no_network: "No network", channel: "channel", cores: "cores",
     forget: "Forget", connect: "Connect", password: "Password", open: "open",
     in_use: "connected", no_networks: "No networks in range", none_f: "None",
@@ -669,7 +830,11 @@ const T = {
     errors: {
       nombre_ndi_invalido: "Invalid NDI name: letters, numbers, spaces, dots or dashes (max 48).",
       resolucion_invalida: "Invalid resolution.", fps_invalido: "Invalid frame rate.",
-      camara_invalida: "That camera is no longer connected.", audio_invalido: "That audio device is gone.",
+      camara_invalida: "That camera is no longer connected.",
+      salida_gpu_invalida: "Invalid GPU output.", gpu_no_disponible: "This device's GPU cannot do this output.",
+      kbps_invalido: "Invalid quality.", puerto_invalido: "The port goes from 1024 to 65535.",
+      hora_invalida: "The time goes as HH:MM.",
+      url_rtmp_invalida: "Enter the full RTMP URL, starting with rtmp:// or rtmps://.", audio_invalido: "That audio device is gone.",
       fuente_ndi_invalida: "That NDI source is not valid.", modo_invalido: "Invalid mode.",
       transporte_invalido: "Invalid transport.",
       ssid_invalido: "Invalid network name (1 to 32 characters).",
@@ -703,11 +868,20 @@ const T = {
       error_emision: (d) => `${d.fuente}: stream error: ${d.detalle}`,
       sin_imagen: (d) => `${d.fuente}: no frames; restarting the stream`,
       audio_fallo: (d) => `${d.fuente}: audio failed (${d.detalle}); streaming without audio`,
-      reinicio_manual: (d) => d.modo === "receptor" ? "Receiving restarted from the panel" : "Streaming restarted from the panel",
+      reinicio_manual: (d) => d.modo !== "emisor" ? "Receiving restarted from the panel" : "Streaming restarted from the panel",
       decodificacion_paralela: (d) => `${d.fuente}: decoding cannot keep up; split across ${d.hilos} threads`,
       aplicando: (d) => `${d.fuente}: applying changes`, fallo_interno: (d) => `Internal error: ${d.detalle}`,
       hdmi_fallo: (d) => `${d.fuente}: HDMI output failed (${d.detalle}); streaming without it`,
-      modo: (d) => d.modo === "receptor" ? "Receiver mode: cameras paused" : "Sender mode",
+      gpu_activa: (d) => `${d.fuente}: GPU output active (${d.modo})`,
+      gpu_fallo: (d) => `${d.fuente}: GPU output failed (${d.detalle}); NDI keeps going, retrying`,
+      grabacion_borrada: (d) => `Recording deleted: ${d.nombre}`,
+      reposo_fallo: (d) => `The HDMI help screen failed: ${d.detalle}`,
+      ip_guardada: (d) => `Wired IP saved (${d.metodo === "manual" ? "static" : "DHCP"}) in «${d.perfil}»; applied when plugged in`,
+      tally: (d) => `${d.fuente}: ${d.programa ? "on air (program)" : d.previo ? "on preview" : "off air"}`,
+      grabacion_manual: (d) => `${d.fuente}: ${d.grabar ? "recording started from the panel" : "recording stopped from the panel"}`,
+      modo: (d) => d.modo === "receptor" ? "Receiver mode: cameras paused"
+        : d.modo === "puente" ? "Bridge mode: cameras paused" : "Sender mode",
+      puente_servidor: (d) => `Bridge: waiting for the ATEM on port ${d.puerto}`,
       rx_recibiendo: (d) => `HDMI: receiving "${d.fuente}" at ${d.modo}`,
       rx_perdida: (d) => `HDMI: lost the source "${d.fuente}"; retrying`,
       rx_error: (d) => d.detalle === "sin_senal" ? `HDMI: "${d.fuente}" is not sending; retrying` : `HDMI: cannot receive "${d.fuente}" (${d.detalle}); retrying`,
@@ -745,10 +919,24 @@ function aplicarIdioma() {
   document.documentElement.lang = lang;
   document.querySelectorAll("[data-t]").forEach((el) => { el.textContent = t(el.dataset.t); });
   document.querySelectorAll(".idioma button").forEach((b) => b.classList.toggle("activo", b.dataset.lang === lang));
-  tarjetas.forEach((c) => c.raiz.remove()); tarjetas.clear();
+  tarjetas.forEach((c) => { c.raiz.remove(); c.raizCfg.remove(); }); tarjetas.clear();
   if (ultimo) pintar(ultimo);
   cargarWifi(false);
 }
+let pestana = "monitor";
+try { pestana = localStorage.getItem("ndiicam-tab") || "monitor"; } catch (_) { /* sin almacenamiento */ }
+if (["#monitor", "#config"].includes(location.hash)) pestana = location.hash.slice(1);   // enlace directo
+function aplicarPestana() {
+  document.body.dataset.tab = pestana;
+  document.querySelectorAll("[data-tab-btn]").forEach((b) => b.classList.toggle("activo", b.dataset.tabBtn === pestana));
+}
+document.querySelectorAll("[data-tab-btn]").forEach((b) => b.addEventListener("click", () => {
+  pestana = b.dataset.tabBtn;
+  try { localStorage.setItem("ndiicam-tab", pestana); } catch (_) { /* sin almacenamiento */ }
+  aplicarPestana();
+  window.scrollTo({ top: 0 });
+}));
+aplicarPestana();
 document.querySelectorAll(".idioma button").forEach((b) => b.addEventListener("click", () => {
   lang = b.dataset.lang;
   try { localStorage.setItem("ndiicam-lang", lang); } catch (_) { /* sin almacenamiento */ }
@@ -757,8 +945,8 @@ document.querySelectorAll(".idioma button").forEach((b) => b.addEventListener("c
 
 // ------------------------------------------------------------- utilidades
 const $ = (id) => document.getElementById(id);
-const historial = { tx: [], cpu: [], w: [] };
-let ultimo = null, sondeoWifi = null, sondeoIp = null;
+const historial = { tx: [], cpu: [], w: [], gpu: [] };
+let ultimo = null, sondeoWifi = null, sondeoIp = null, vuRxCaja = null;
 const editado = new Set();          // campos que el usuario está cambiando
 const elegido = {};                 // valores de selectores sin guardar, por clave
 const tarjetas = new Map();         // id de cámara -> elementos de su tarjeta
@@ -842,29 +1030,56 @@ function rellenar(input, valor, clave) {
 
 // ----------------------------------------------------------------- fuentes
 const CLASES = { emitiendo: "ok", iniciando: "aviso", sin_camara: "aviso", error: "mal", desactivada: "",
-  recibiendo: "ok", conectando: "aviso", sin_fuente: "aviso", sin_monitor: "aviso", rx_error: "mal", pausada: "" };
+  recibiendo: "ok", conectando: "aviso", sin_fuente: "aviso", sin_monitor: "aviso", rx_error: "mal", pausada: "",
+  esperando_atem: "aviso" };
 
 function crearTarjeta(f) {
   const id = f.id, k = (campo) => `${id}|${campo}`;
   const c = { id };
   c.pastilla = el("span", { class: "pastilla" });
+  c.pastillaCfg = el("span", { class: "pastilla" });
+  c.tally = el("span", { class: "pastilla oculto", style: "margin-right:6px" });
   c.conmutador = el("input", { type: "checkbox", onchange: () => {
     api("/api/fuente", { id, activa: c.conmutador.checked }).catch((err) => mensaje(c.msg, err.message, "mal"));
   } });
+  // --- Monitor: vista previa y estado
+  c.img = el("img", { class: "preview", alt: t("preview"), onerror: () => { c.img.classList.add("oculto"); c.previewVacia.classList.remove("oculto"); },
+    onload: () => { c.img.classList.remove("oculto"); c.previewVacia.classList.add("oculto"); } });
+  c.previewVacia = el("div", { class: "preview-vacia", text: t("preview_wait") });
   c.raiz = el("section", { class: "tarjeta fuente" },
     el("div", { class: "fuente-cab" },
       el("div", null, el("h3", { text: f.camara }), c.sub = el("div", { class: "sub" })),
-      c.pastilla),
+      el("div", { style: "margin-left:auto;display:flex;align-items:center" }, c.tally, c.pastilla)),
     el("div", { class: "fuente-cuerpo" },
+      el("div", null, c.img, c.previewVacia,
+        c.btGrabar = el("button", { class: "boton", style: "margin-top:10px", onclick: async () => {
+          const grabar = !c.grabando;
+          c.btGrabar.disabled = true;
+          try {
+            const r = await api("/api/fuente/grabar", { id, grabar });
+            mensaje(c.msgMon, grabar ? (r.reinicia ? t("rec_started_restart") : t("rec_started")) : t("rec_stopped"), "ok");
+          } catch (err) { mensaje(c.msgMon, err.message, "mal"); }
+          c.btGrabar.disabled = false;
+          setTimeout(() => mensaje(c.msgMon), 6000);
+        } }),
+        c.msgMon = el("div", { class: "mensaje oculto" })),
       el("dl", null,
         el("dt", { text: t("ndi_name_net") }), c.ndi = el("dd"),
         el("dt", { text: t("mode") }), c.modo = el("dd"),
         el("dt", { text: t("cam_fps") }), c.fps = el("dd"),
         el("dt", { text: t("cam_stream") }), c.mbps = el("dd"),
         el("dt", { text: t("dropped") }), c.desc = el("dd"),
-        el("dt", { text: t("audio") }), c.audio = el("dd"),
+        el("dt", { text: t("latency") }), c.lat = el("dd"),
+        el("dt", { text: t("audio") }), c.audio = el("dd", null, c.audioTxt = el("span"), c.vu = vumetro()),
         el("dt", { text: t("receivers_conn") }), c.recep = el("dd"),
-        el("dt", { text: t("streaming_for") }), c.desde = el("dd")),
+        el("dt", { text: t("streaming_for") }), c.desde = el("dd"),
+        c.gpuDt = el("dt", { text: t("gpu_state") }), c.gpuDd = el("dd"))));
+  // --- Configuración: ajustes
+  c.raizCfg = el("section", { class: "tarjeta fuente" },
+    el("div", { class: "fuente-cab" },
+      el("div", null, el("h3", { text: f.camara }), c.subCfg = el("div", { class: "sub" })),
+      c.pastillaCfg),
+    el("div", { class: "fuente-cuerpo" },
       el("div", null,
         el("label", { class: "conmutador", style: "margin-bottom:12px" }, c.conmutador, el("span", { text: t("source_stream") })),
         el("label", { text: t("ndi_name") }),
@@ -875,50 +1090,110 @@ function crearTarjeta(f) {
         el("label", { text: t("framerate"), style: "margin-top:12px" }),
         c.segFps = el("div", { class: "segmentado" }),
         el("label", { text: t("audio"), style: "margin-top:12px" }),
-        c.selAudio = el("select", { onchange: () => editado.add(k("audio")) }),
-        el("div", { class: "botones" },
-          el("button", { class: "boton principal", text: t("save"), onclick: async (ev) => {
-            const datos = { id, ndi_nombre: c.nombre.value.trim() };
-            if (elegido[k("res")]) datos.resolucion = elegido[k("res")];
-            if (elegido[k("fps")]) datos.fps = Number(elegido[k("fps")]);
-            if (editado.has(k("audio"))) datos.audio = c.selAudio.value;
-            ev.target.disabled = true;
-            try {
-              await api("/api/fuente", datos);
-              ["nombre", "audio"].forEach((x) => editado.delete(k(x)));
-              delete elegido[k("res")]; delete elegido[k("fps")];
-              mensaje(c.msg, t("saved_ok"), "ok");
-            } catch (err) { mensaje(c.msg, err.message, "mal"); }
-            ev.target.disabled = false;
-            setTimeout(() => mensaje(c.msg), 6000);
-          } }),
-          el("button", { class: "boton", text: t("restart_stream"), onclick: async () => {
-            await api("/api/fuente/reiniciar", { id }).catch(() => {});
-            mensaje(c.msg, t("restarting_stream"), "info"); setTimeout(() => mensaje(c.msg), 4000);
-          } })),
-        c.msg = el("div", { class: "mensaje oculto" }))));
+        c.selAudio = el("select", { onchange: () => editado.add(k("audio")) })),
+      el("div", null,
+        c.gpuBloque = el("div", null,
+          el("label", { text: t("gpu_out") }),
+          c.selGpu = el("select", { onchange: () => { editado.add(k("gpu")); pintar(ultimo); } }),
+          c.gpuOpc = el("div", null,
+            el("label", { text: t("gpu_quality"), style: "margin-top:12px" }),
+            c.selKbps = el("select", { onchange: () => editado.add(k("kbps")) }),
+            c.bloqueCuando = el("div", null,
+              el("label", { text: t("rec_when"), style: "margin-top:12px" }),
+              c.selCuando = el("select", { onchange: () => { editado.add(k("cuando")); pintar(ultimo); } }),
+              c.bloqueHorario = el("div", { style: "display:flex;gap:10px;margin-top:8px" },
+                el("div", null, el("label", { text: t("rec_from") }),
+                  c.desde = el("input", { type: "time", oninput: () => editado.add(k("desde")) })),
+                el("div", null, el("label", { text: t("rec_to") }),
+                  c.hasta = el("input", { type: "time", oninput: () => editado.add(k("hasta")) })))),
+            c.bloquePuerto = el("div", null,
+              el("label", { text: t("gpu_port"), style: "margin-top:12px" }),
+              c.puerto = el("input", { type: "number", min: "1024", max: "65535",
+                oninput: () => editado.add(k("puerto")) })),
+            c.bloqueUrl = el("div", null,
+              el("label", { text: t("gpu_url"), style: "margin-top:12px" }),
+              c.url = el("input", { type: "text", autocomplete: "off", spellcheck: "false",
+                placeholder: t("gpu_url_ph"), oninput: () => editado.add(k("url")) }))),
+          c.gpuAyuda = el("div", { class: "ayuda" })))),
+    el("div", { class: "botones" },
+      el("button", { class: "boton principal", text: t("save"), onclick: async (ev) => {
+        const datos = { id, ndi_nombre: c.nombre.value.trim() };
+        if (elegido[k("res")]) datos.resolucion = elegido[k("res")];
+        if (elegido[k("fps")]) datos.fps = Number(elegido[k("fps")]);
+        if (editado.has(k("audio"))) datos.audio = c.selAudio.value;
+        if (editado.has(k("gpu"))) datos.gpu_salida = c.selGpu.value;
+        if (editado.has(k("kbps"))) datos.gpu_kbps = Number(c.selKbps.value);
+        if (editado.has(k("puerto"))) datos.srt_puerto = Number(c.puerto.value);
+        if (editado.has(k("url"))) datos.rtmp_url = c.url.value.trim();
+        if (editado.has(k("cuando"))) datos.grabar_cuando = c.selCuando.value;
+        if (editado.has(k("desde"))) datos.grabar_desde = c.desde.value;
+        if (editado.has(k("hasta"))) datos.grabar_hasta = c.hasta.value;
+        ev.target.disabled = true;
+        try {
+          await api("/api/fuente", datos);
+          ["nombre", "audio", "gpu", "kbps", "puerto", "url", "cuando", "desde", "hasta"].forEach((x) => editado.delete(k(x)));
+          delete elegido[k("res")]; delete elegido[k("fps")];
+          mensaje(c.msg, t("saved_ok"), "ok");
+        } catch (err) { mensaje(c.msg, err.message, "mal"); }
+        ev.target.disabled = false;
+        setTimeout(() => mensaje(c.msg), 6000);
+      } }),
+      el("button", { class: "boton", text: t("restart_stream"), onclick: async () => {
+        await api("/api/fuente/reiniciar", { id }).catch(() => {});
+        mensaje(c.msg, t("restarting_stream"), "info"); setTimeout(() => mensaje(c.msg), 4000);
+      } })),
+    c.msg = el("div", { class: "mensaje oculto" }));
   segmentadoEn(c.segRes, ["720p", "1080p"], null, [], (v) => { elegido[k("res")] = v; pintar(ultimo); });
   return c;
 }
 
 function pintarFuente(c, f, e) {
   const id = f.id, k = (campo) => `${id}|${campo}`, aj = f.ajustes;
-  c.pastilla.className = "pastilla " + (CLASES[f.estado] || "") + (f.estado === "emitiendo" ? " vivo" : "");
-  poner(c.pastilla, t("st_" + f.estado));
-  poner(c.sub, f.estado === "error" ? (T[lang].stream_errors[f.error] || f.error) : f.dispositivo);
+  for (const pz of [c.pastilla, c.pastillaCfg]) {
+    pz.className = "pastilla " + (CLASES[f.estado] || "") + (f.estado === "emitiendo" ? " vivo" : "");
+    poner(pz, t("st_" + f.estado));
+  }
+  const sub = f.estado === "error" ? (T[lang].stream_errors[f.error] || f.error) : f.dispositivo;
+  poner(c.sub, sub); poner(c.subCfg, sub);
+  // tally NDI: lo que los receptores dicen de esta fuente (si el plugin lo da)
+  const ty = f.tally;
+  c.tally.classList.toggle("oculto", !ty || !(ty.programa || ty.previo));
+  if (ty && (ty.programa || ty.previo)) {
+    c.tally.className = "pastilla " + (ty.programa ? "mal vivo" : "ok");
+    poner(c.tally, ty.programa ? t("tally_program") : t("tally_preview"));
+  }
+  // botón Grabar / Parar: grabación manual (se muestra si la GPU puede)
+  const g = f.gpu || {}, cap = e.gpu || {};
+  c.grabando = g.modo === "grabar" && aj.grabar_cuando === "manual" && !!aj.grabar_manual;
+  c.btGrabar.classList.toggle("oculto", !cap.disponible && !c.grabando);
+  c.btGrabar.className = "boton " + (c.grabando ? "peligro" : "");
+  c.btGrabar.style.marginTop = "10px";
+  poner(c.btGrabar, c.grabando ? t("rec_stop") : t("rec_start"));
+  // vista previa: un JPEG de la cámara cada 2 s, solo mientras se ve
+  if (pestana === "monitor" && f.estado === "emitiendo" && f.formato === "MJPG") {
+    c.img.src = `/api/fuente/preview?id=${encodeURIComponent(id)}&t=${Date.now()}`;
+  } else {
+    c.img.classList.add("oculto"); c.previewVacia.classList.remove("oculto");
+    poner(c.previewVacia, f.formato && f.formato !== "MJPG" ? t("preview_none") : t("preview_wait"));
+  }
   poner(c.ndi, f.nombre_ndi);
   poner(c.modo, f.modo ? `${f.modo.replace(" @", " · ")} · ${f.formato}` + (f.hilos > 1 ? ` · ${T[lang].deco_hilos(f.hilos)}` : "") : "—");
   const activo = f.estado === "emitiendo";
   poner(c.fps, activo ? `${f.fps_camara.toFixed(1)} / ${f.fps_enviados.toFixed(1)}` : "—");
   poner(c.mbps, activo ? `${f.mbps_camara.toFixed(1)} Mbit/s` : "—");
   poner(c.desc, activo ? (f.descartes ? `${f.descartes} ${t("in_last_2s")}` : t("none")) : "—");
+  poner(c.lat, activo && f.latencia_ms != null ? T[lang].latency_value(f.latencia_ms) : "—");
   let audio = "—";
   if (aj.audio === "off") audio = t("audio_off_state");
   else if (f.audio.fallido) audio = t("audio_failed");
   else if (f.audio.dispositivo) audio = (f.audio.activo ? t("audio_on") : t("audio_waiting")) + " · " + f.audio.dispositivo;
   else if (aj.audio === "auto" && !f.audio.disponible) audio = t("audio_none");
-  poner(c.audio, audio);
-  poner(c.recep, f.receptores.length ? f.receptores.map((r) => r.nombre || r.ip).join(", ") : t("nobody_now"));
+  poner(c.audioTxt, audio);
+  pintarVu(c.vu, f.audio.nivel);
+  const nombresRx = f.receptores.map((r) => r.nombre || r.ip);
+  // el SDK cuenta receptores que la lista por TCP no ve (UDP, multicast)
+  if (f.conexiones_ndi > nombresRx.length) nombresRx.push(`+${f.conexiones_ndi - nombresRx.length}`);
+  poner(c.recep, nombresRx.length ? nombresRx.join(", ") : t("nobody_now"));
   poner(c.desde, f.desde ? duracion(Date.now() / 1000 - f.desde) : "—");
   // ajustes, sin pisar lo que se está editando
   if (document.activeElement !== c.conmutador) c.conmutador.checked = aj.activa;
@@ -933,25 +1208,127 @@ function pintarFuente(c, f, e) {
     c.selAudio.value = aj.audio;
     if (c.selAudio.value !== aj.audio) c.selAudio.value = "auto";
   }
+  pintarGpu(c, f, e, k);
+}
+
+function pintarGpu(c, f, e, k) {
+  const aj = f.ajustes, cap = e.gpu || {}, g = f.gpu || {};
+  const usada = aj.gpu_salida !== "no";
+  // sin GPU válida solo se enseña el motivo (y se deja quitar una salida que ya estuviera puesta)
+  c.gpuBloque.classList.toggle("oculto", !cap.disponible && !usada);
+  if (!editado.has(k("gpu")) && document.activeElement !== c.selGpu) {
+    c.selGpu.replaceChildren(...["no", "grabar", "srt", "rtmp"].map((v) => new Option(t("gpu_" + v), v)));
+    c.selGpu.value = aj.gpu_salida;
+  }
+  const modo = c.selGpu.value;
+  if (!editado.has(k("kbps")) && document.activeElement !== c.selKbps) {
+    const lista = [4000, 6000, 8000, 12000, 16000, 20000];
+    if (!lista.includes(aj.gpu_kbps)) lista.push(aj.gpu_kbps);
+    c.selKbps.replaceChildren(...lista.sort((a, b) => a - b).map((v) =>
+      new Option(`${(v / 1000).toLocaleString(lang)} Mbit/s`, String(v))));
+    c.selKbps.value = String(aj.gpu_kbps);
+  }
+  rellenar(c.puerto, aj.srt_puerto, k("puerto"));
+  rellenar(c.url, aj.rtmp_url, k("url"));
+  if (!editado.has(k("cuando")) && document.activeElement !== c.selCuando) {
+    c.selCuando.replaceChildren(...["siempre", "manual", "receptores", "horario"].map((v) => new Option(t("rec_" + v), v)));
+    c.selCuando.value = aj.grabar_cuando || "siempre";
+  }
+  rellenar(c.desde, aj.grabar_desde, k("desde"));
+  rellenar(c.hasta, aj.grabar_hasta, k("hasta"));
+  c.bloqueCuando.classList.toggle("oculto", modo !== "grabar");
+  c.bloqueHorario.classList.toggle("oculto", c.selCuando.value !== "horario");
+  c.gpuOpc.classList.toggle("oculto", modo === "no");
+  c.bloquePuerto.classList.toggle("oculto", modo !== "srt");
+  c.bloqueUrl.classList.toggle("oculto", modo !== "rtmp");
+  let ayuda = t("gpu_help");
+  if (!cap.disponible) ayuda = (T[lang].gpu_unavailable[cap.motivo] || cap.motivo || "");
+  else if (f.formato && f.formato !== "MJPG") ayuda = t("gpu_only_mjpeg");
+  else if (modo === "srt") ayuda = T[lang].gpu_help_srt(`srt://${location.hostname}:${g.puerto || c.puerto.value}`);
+  else if (modo === "grabar") ayuda = t("gpu_help_grabar");
+  poner(c.gpuAyuda, ayuda);
+  // estado en la lista de datos, solo si hay salida
+  c.gpuDt.classList.toggle("oculto", g.modo === "no" || !g.modo);
+  c.gpuDd.classList.toggle("oculto", g.modo === "no" || !g.modo);
+  let st = "—";
+  if (g.estado === "activa") st = `${t("gpu_" + g.modo)} · ${g.fps.toFixed(1)} fps · ${g.mbps.toFixed(1)} Mbit/s`;
+  else if (g.estado === "error") st = `${T[lang].gpu_st.error}: ${g.error}`;
+  else if (g.estado) st = T[lang].gpu_st[g.estado] || g.estado;
+  poner(c.gpuDd, st);
+}
+
+// ------------------------------------------------------------ grabaciones
+let grabUltima = 0;
+async function pintarGrabaciones(e) {
+  const graba = (e.fuentes || []).some((f) => f.ajustes.gpu_salida === "grabar");
+  if (Date.now() - grabUltima < 10000 && !pintarGrabaciones.forzar) return;
+  pintarGrabaciones.forzar = false;
+  grabUltima = Date.now();
+  let g;
+  try { g = await api("/api/grabaciones"); } catch (_) { return; }
+  $("secGrab").classList.toggle("oculto", !graba && !g.lista.length);
+  poner($("grabSub"), g.libre != null ? T[lang].rec_free(tamano(g.libre)) : "");
+  const ul = $("grabLista");
+  ul.replaceChildren();
+  if (!g.lista.length) return vacio(ul, t("rec_none"));
+  g.lista.forEach((x) => {
+    const borrar = el("button", { class: "boton", text: t("rec_delete"), onclick: async () => {
+      if (!confirm(T[lang].rec_confirm(x.nombre))) return;
+      await api("/api/grabaciones/borrar", { nombre: x.nombre }).catch((err) => mensaje("msgGrab", err.message, "mal"));
+      pintarGrabaciones.forzar = true; pintarGrabaciones(ultimo);
+    } });
+    ul.append(el("li", null,
+      el("div", { class: "nombre" }, el("div", { text: x.nombre }),
+        el("div", { class: "meta", text: `${new Date(x.fecha * 1000).toLocaleString(lang)} · ${tamano(x.bytes)}` })),
+      el("a", { class: "boton", href: "/grabaciones/" + encodeURIComponent(x.nombre), download: x.nombre, text: t("rec_download") }),
+      borrar));
+  });
+}
+// ----------------------------------------------------------- medidor audio
+function vumetro() {
+  const v = el("div", { class: "vumetro oculto" }, el("i"), el("b"));
+  v.txt = el("div", { class: "vumetro-txt oculto" });
+  const caja = el("div", null, v, v.txt);
+  caja.vu = v;
+  return caja;
+}
+function pintarVu(caja, nivel) {
+  const v = caja.vu, hay = nivel && nivel.peak != null;
+  v.classList.toggle("oculto", !hay); v.txt.classList.toggle("oculto", !hay);
+  if (!hay) return;
+  const pct = (db) => Math.max(0, Math.min(100, (db + 60) / 60 * 100));
+  const barra = v.firstChild, marca = v.lastChild;
+  barra.style.width = pct(nivel.peak) + "%";
+  barra.className = nivel.peak > -1 ? "tope" : nivel.peak > -9 ? "alto" : "";
+  marca.style.left = `calc(${pct(nivel.rms ?? -60)}% - 1px)`;
+  poner(v.txt, `${T[lang].vu_label(nivel.peak, nivel.rms)}`);
+}
+function tamano(b) {
+  const u = ["B", "KB", "MB", "GB", "TB"];
+  let i = 0;
+  while (b >= 1024 && i < u.length - 1) { b /= 1024; i++; }
+  return `${b.toLocaleString(lang, { maximumFractionDigits: i >= 3 ? 1 : 0 })} ${u[i]}`;
 }
 
 function pintarFuentes(e) {
-  const cont = $("fuentes"), fuentes = e.fuentes || [];
+  const cont = $("fuentes"), contCfg = $("fuentesCfg"), fuentes = e.fuentes || [];
   const ids = new Set(fuentes.map((f) => f.id));
-  tarjetas.forEach((c, id) => { if (!ids.has(id)) { c.raiz.remove(); tarjetas.delete(id); } });
+  tarjetas.forEach((c, id) => { if (!ids.has(id)) { c.raiz.remove(); c.raizCfg.remove(); tarjetas.delete(id); } });
   fuentes.forEach((f) => {
     let c = tarjetas.get(f.id);
-    if (!c) { c = crearTarjeta(f); tarjetas.set(f.id, c); cont.appendChild(c.raiz); }
+    if (!c) { c = crearTarjeta(f); tarjetas.set(f.id, c); cont.appendChild(c.raiz); contCfg.appendChild(c.raizCfg); }
     pintarFuente(c, f, e);
   });
-  let vac = cont.querySelector(".vacio-fuentes");
-  if (!fuentes.length && !vac) {
-    cont.appendChild(el("section", { class: "tarjeta fuente vacio-fuentes" }, el("div", { class: "vacio", text: t("sub_sin_camara") })));
-  } else if (fuentes.length && vac) vac.remove();
+  for (const cc of [contCfg]) {
+    let vac = cc.querySelector(".vacio-fuentes");
+    if (!fuentes.length && !vac) {
+      cc.appendChild(el("section", { class: "tarjeta fuente vacio-fuentes" }, el("div", { class: "vacio", text: t("sub_sin_camara") })));
+    } else if (fuentes.length && vac) vac.remove();
+  }
 }
 
 function pintarHdmi(e) {
-  const h = e.hdmi || {}, fuentes = e.fuentes || [], receptor = e.modo === "receptor";
+  const h = e.hdmi || {}, fuentes = e.fuentes || [], receptor = ["receptor", "puente"].includes(e.modo);
   const monitor = (h.pantallas || []).find((p) => p.conectado);
   poner("hdmiSub", monitor ? T[lang].hdmi_monitor(monitor) : t("hdmi_no_monitor"));
   // en modo receptor la pantalla es del receptor: de esta tarjeta solo queda su resolución
@@ -975,10 +1352,13 @@ function pintarHdmi(e) {
 }
 
 function pintarModo(e) {
-  const receptor = e.modo === "receptor";
+  const receptor = e.modo === "receptor", puente = e.modo === "puente";
   for (const r of document.querySelectorAll("input[name=modo]")) r.checked = r.value === (e.modo || "emisor");
   $("secRx").classList.toggle("oculto", !receptor);
-  $("fuentes").classList.toggle("oculto", receptor);
+  $("secPuente").classList.toggle("oculto", !puente);
+  $("fuentes").classList.toggle("oculto", receptor || puente);
+  $("fuentesCfg").classList.toggle("oculto", receptor || puente);
+  if (puente) return pintarPuente(e);
   if (!receptor) return;
   const rc = e.receptor || {}, rx = rc.estado, red = rc.red_ndi || [], h = e.hdmi || {};
   const monitor = (h.pantallas || []).find((p) => p.conectado);
@@ -1009,6 +1389,29 @@ function pintarModo(e) {
   $("rxTam").classList.toggle("oculto", !tam);
 }
 
+function pintarPuente(e) {
+  // la IP y no el nombre .local: el ATEM puede no resolver mDNS
+  const r = e.red || {}, ip = r.modo === "ethernet" ? (r.ethernet || {}).ip : (r.wifi || {}).ip;
+  const pt = e.puente || {}, rx = (e.receptor || {}).estado, h = e.hdmi || {}, host = ip || location.hostname;
+  const monitor = (h.pantallas || []).find((p) => p.conectado);
+  const em = (e.emision || {}).estado;
+  $("ptPastilla").className = "pastilla " + (CLASES[em] || "") + (em === "recibiendo" ? " vivo" : "");
+  poner("ptPastilla", t("st_" + em));
+  poner("ptRtmp", `rtmp://${host}:${pt.puerto_rtmp || 1935}/live`);
+  poner("ptClave", pt.clave || "—");
+  poner("ptSrt", `srt://${host}:${pt.puerto_srt || 8890}?streamid=publish:live/${pt.clave || ""}`);
+  let sub = pt.decodificador ? T[lang].pt_dec(pt.decodificador) : "";
+  if (pt.publicando) sub = `${T[lang].pt_from(pt)} · ${sub}`;
+  poner("ptSub", sub);
+  let estado;
+  if (!pt.instalado) estado = t("pt_not_installed");
+  else if (!monitor) estado = t("sub_sin_monitor");
+  else if (!pt.publicando) estado = t("pt_waiting");
+  else if (rx && rx.estado === "recibiendo") estado = T[lang].hdmi_rx_recibiendo(rx);
+  else estado = T[lang].hdmi_rx_conectando("ATEM");
+  poner("ptEstado", estado);
+}
+
 // ----------------------------------------------------------------- pintar
 function pintar(e) {
   ultimo = e;
@@ -1021,7 +1424,11 @@ function pintar(e) {
   poner("estado", texto);
   let sub = "";
   const rx = (e.receptor || {}).estado;
-  if (e.modo === "receptor") sub = em.estado === "sin_monitor" ? t("sub_sin_monitor")
+  const recibe = ["receptor", "puente"].includes(e.modo);
+  if (e.modo === "puente") sub = em.estado === "sin_monitor" ? t("sub_sin_monitor")
+    : (e.puente || {}).publicando ? T[lang].pt_from(e.puente) + (rx && rx.estado === "recibiendo" ? " · " + T[lang].hdmi_rx_recibiendo(rx) : "")
+    : t("pt_waiting");
+  else if (e.modo === "receptor") sub = em.estado === "sin_monitor" ? t("sub_sin_monitor")
     : !(e.receptor || {}).fuente ? t("sub_sin_fuente")
     : (e.receptor.fuente + (rx && rx.estado === "recibiendo" ? " · " + T[lang].hdmi_rx_recibiendo(rx) : ""));
   else if (em.estado === "sin_camara") sub = t("sub_sin_camara");
@@ -1029,10 +1436,13 @@ function pintar(e) {
   else sub = T[lang].sub_emitiendo(fuentes.filter((f) => f.ajustes.activa).length,
     fuentes.filter((f) => f.nombre_ndi).map((f) => f.nombre_ndi));
   poner("estadoSub", sub);
-  poner("btReiniciarTodo", t(e.modo === "receptor" ? "restart_all_receptor" : "restart_all_emisor"));
+  if (!$("vuRx").vu) $("vuRx").replaceChildren(vuRxCaja = vumetro());
+  pintarVu(vuRxCaja, recibe && rx ? rx.nivel : null);
+  poner("btReiniciarTodo", t(recibe ? "restart_all_receptor" : "restart_all_emisor"));
   // solo si hay algo que reiniciar
-  $("btReiniciarTodo").classList.toggle("oculto", e.modo === "receptor" ? !(e.receptor || {}).fuente : !fuentes.length);
-  if (e.modo === "receptor") {
+  $("btReiniciarTodo").classList.toggle("oculto", e.modo === "puente" ? false
+    : e.modo === "receptor" ? !(e.receptor || {}).fuente : !fuentes.length);
+  if (recibe) {
     const ok = rx && rx.estado === "recibiendo";
     poner("cFuentes", ok ? String(rx.fps) : "—"); poner("cFuentesT", t("fps_recibidos"));
     poner("cRecep", ok && rx.ancho ? `${rx.ancho}×${rx.alto}` : "—"); poner("cRecepT", t("resolucion_fuente"));
@@ -1048,10 +1458,20 @@ function pintar(e) {
   historial.tx.push(trafico || 0); historial.cpu.push(eq.cpu || 0); historial.w.push(eq.potencia_w || 0);
   for (const k in historial) if (historial[k].length > 60) historial[k].shift();
   grafica("grafTx", historial.tx, 20); grafica("grafCpu", historial.cpu, 100); grafica("grafW", historial.w, 2);
+  const g = eq.gpu;
+  $("bloqueGrafGpu").classList.toggle("oculto", !g || g.ocupada == null);
+  $("bloqueCGpu").classList.toggle("oculto", !g || g.ocupada == null);
+  if (g && g.ocupada != null) {
+    historial.gpu.push(g.ocupada);
+    if (historial.gpu.length > 60) historial.gpu.shift();
+    grafica("grafGpu", historial.gpu, 100);
+    poner("cGpu", g.ocupada + "%");
+  }
   $("bloqueGrafW").classList.toggle("oculto", eq.potencia_w == null);
 
   pintarModo(e);
   pintarFuentes(e);
+  pintarGrabaciones(e);
   pintarHdmi(e);
 
   // red
@@ -1073,6 +1493,10 @@ function pintar(e) {
     barra("barraUso", uso, uso < 50 ? "ok" : uso < 80 ? "aviso" : "mal");
   } else { poner("redUso", "—"); barra("barraUso", 0); }
   poner("redModo", red.modo === "ethernet" ? t("cable") : red.modo === "wifi" ? `WiFi «${w.ssid}»` : t("no_network"));
+  const eth = red.ethernet;
+  poner("redCable", !eth ? t("no_wired_port") : eth.conectada
+    ? `${eth.velocidad ? eth.velocidad + " Mbit/s · " : ""}${eth.ip || "—"} · ${eth.mac || ""}` : `${t("cable_unplugged")} · ${eth.mac || ""}`);
+  poner("redWifi", !red.tiene_wifi ? t("no_wifi_card") : w ? `«${w.ssid}» · ${w.senal_pct}% · ${w.ip || "—"} · ${w.mac || ""}` : t("no_connection"));
   poner("redBanda", red.modo === "wifi" ? `${banda(w.banda)} · ${t("channel")} ${w.canal}` : "—");
   poner("redEnlace", red.modo === "wifi" && w.tx_mbit ? `${w.tx_mbit} Mbit/s` :
     red.modo === "ethernet" && red.ethernet.velocidad ? `${red.ethernet.velocidad} Mbit/s` : "—");
@@ -1083,6 +1507,16 @@ function pintar(e) {
   poner("eqCpu", `${eq.cpu}% · ${eq.nucleos} ${t("cores")}`);
   barra("barraCpu", eq.cpu, eq.cpu < 70 ? "ok" : eq.cpu < 90 ? "aviso" : "mal");
   poner("eqRam", eq.ram_pct + "%"); barra("barraRam", eq.ram_pct, eq.ram_pct < 80 ? "ok" : "aviso");
+  const gu = eq.gpu;
+  $("bloqueEqGpu").classList.toggle("oculto", !gu || gu.ocupada == null);
+  if (gu && gu.ocupada != null) {
+    poner("eqGpu", gu.ocupada + "%" + (gu.mhz ? ` · ${gu.mhz}${gu.mhz_max ? "/" + gu.mhz_max : ""} MHz` : ""));
+    barra("barraGpu", gu.ocupada, gu.ocupada < 70 ? "ok" : gu.ocupada < 90 ? "aviso" : "mal");
+    const nombres = T[lang].gpu_engines, m = gu.motores || {};
+    const partes = Object.keys(nombres).filter((k) => k in m).map((k) => `${nombres[k]} ${m[k]}%`);
+    if (gu.w != null) partes.push(`${gu.w.toFixed(1)} W`);
+    poner("eqGpuDetalle", partes.join(" · "));
+  }
   poner("eqPotencia", eq.potencia_w != null ? T[lang].power_value(eq.potencia_w, eq.potencia_nucleos_w) : "—");
   poner("eqTemp", eq.temp != null ? eq.temp + " °C" : "—");
   poner("eqUptime", duracion(eq.uptime));
@@ -1098,18 +1532,23 @@ function pintar(e) {
   if (a.url) $("actNotas").href = a.url;
   if (a.en_curso) mensaje("msgAct", t("updating"), "info");
 
-  // IP
-  const ip = red.ip;
+  // IP: de la conexión activa o, si el equipo tiene puerto de cable, del cable aunque no esté enchufado
+  const cableIp = red.ethernet && red.ethernet.ip_config;
+  $("segIpCon").classList.toggle("oculto", !red.ethernet);
+  if (red.ethernet && red.modo === "ethernet") elegido.ip_conexion = "activa";   // el cable ya es la activa
+  segmentadoEn($("segIpCon"), null, elegido.ip_conexion || "activa", red.modo === "ethernet" ? ["cable"] : []);
+  const porCable = elegido.ip_conexion === "cable";
+  const ip = porCable ? cableIp : red.ip;
   $("secIp").querySelectorAll("input, #segIp button, #btIp").forEach((x) => { x.disabled = !ip; });
   if (ip) {
-    poner("ipPerfil", T[lang].ip_profile(ip.perfil, ip.dispositivo));
+    poner("ipPerfil", T[lang].ip_profile(ip.perfil, ip.dispositivo) + (porCable && !ip.conectado ? " " + t("ip_cable_unplugged") : ""));
     const metodo = elegido.ip_metodo || ip.metodo;
     segmentadoEn($("segIp"), null, metodo, []);
-    const origen = ip.metodo === "manual" ? ip : ip.en_uso;
+    const origen = ip.metodo === "manual" || !ip.en_uso ? ip : ip.en_uso;
     rellenar($("ipDir"), origen.direccion, "ipDir"); rellenar($("ipPref"), origen.prefijo, "ipPref");
     rellenar($("ipGw"), origen.gateway, "ipGw"); rellenar($("ipDns"), (origen.dns || []).join(", "), "ipDns");
     ["ipDir", "ipPref", "ipGw", "ipDns"].forEach((x) => { $(x).disabled = metodo !== "manual"; });
-  } else poner("ipPerfil", t("ip_none"));
+  } else poner("ipPerfil", porCable ? t("ip_cable_no_profile") : t("ip_none"));
 
   // ajustes del equipo
   rellenar($("inEquipo"), eq.nombre, "inEquipo");
@@ -1117,6 +1556,7 @@ function pintar(e) {
   rellenar($("inApSsid"), cfg.ap_ssid, "inApSsid");
   rellenar($("inApClave"), cfg.ap_clave, "inApClave");
   rellenar($("inPais"), cfg.pais, "inPais");
+  if (!editado.has("selIdioma") && document.activeElement !== $("selIdioma")) $("selIdioma").value = cfg.idioma || "es";
   rellenar($("selDeco"), String(cfg.decodificadores ?? "auto"), "selDeco");
   poner("ayudaClavePanel", cfg.clave_panel ? t("panel_pw_on") : t("panel_pw_off"));
   $("btQuitarClave").classList.toggle("oculto", !cfg.clave_panel);
@@ -1151,12 +1591,27 @@ async function refrescar() {
   setTimeout(refrescar, 2000);
 }
 
+$("ptNueva").addEventListener("click", async () => {
+  if (!confirm(t("pt_confirm"))) return;
+  try {
+    await api("/api/config", { puente_clave_nueva: true });
+    mensaje("msgPuente", t("pt_new_key_ok"), "ok");
+  } catch (err) { mensaje("msgPuente", err.message, "mal"); }
+  setTimeout(() => mensaje("msgPuente"), 6000);
+});
+
 // --------------------------------------------------------- ajustes equipo
 ["inEquipo", "inApSsid", "inApClave", "inPais", "inClavePanel", "ipDir", "ipPref", "ipGw", "ipDns"].forEach((id) =>
   $(id).addEventListener("input", () => editado.add(id)));
 $("selDeco").addEventListener("change", () => editado.add("selDeco"));
+$("selIdioma").addEventListener("change", () => editado.add("selIdioma"));
 $("segTransp").querySelectorAll("button").forEach((b) => b.addEventListener("click", () => { elegido.transporte = b.dataset.v; pintar(ultimo); }));
 $("segIp").querySelectorAll("button").forEach((b) => b.addEventListener("click", () => { elegido.ip_metodo = b.dataset.v; pintar(ultimo); }));
+$("segIpCon").querySelectorAll("button").forEach((b) => b.addEventListener("click", () => {
+  elegido.ip_conexion = b.dataset.v; delete elegido.ip_metodo;
+  ["ipDir", "ipPref", "ipGw", "ipDns"].forEach((x) => editado.delete(x));
+  pintar(ultimo);
+}));
 
 async function guardar(boton, msg, datos, campos) {
   boton.disabled = true;
@@ -1176,10 +1631,11 @@ $("btGuardarEquipo").addEventListener("click", () => {
   if (editado.has("inApSsid")) datos.ap_ssid = $("inApSsid").value.trim();
   if (editado.has("inApClave")) datos.ap_clave = $("inApClave").value;
   if (editado.has("inPais")) datos.pais = $("inPais").value.trim();
+  if (editado.has("selIdioma")) datos.idioma = $("selIdioma").value;
   if (editado.has("selDeco")) datos.decodificadores = $("selDeco").value;
   if (editado.has("inClavePanel") && $("inClavePanel").value.trim()) datos.clave_panel = $("inClavePanel").value.trim();
   $("inClavePanel").value = "";
-  guardar($("btGuardarEquipo"), "msgEquipo", datos, ["inEquipo", "inApSsid", "inApClave", "inPais", "inClavePanel", "selDeco"]);
+  guardar($("btGuardarEquipo"), "msgEquipo", datos, ["inEquipo", "inApSsid", "inApClave", "inPais", "inClavePanel", "selDeco", "selIdioma"]);
 });
 $("btQuitarClave").addEventListener("click", () =>
   guardar($("btQuitarClave"), "msgEquipo", { clave_panel: "" }, ["inClavePanel"]));
@@ -1210,8 +1666,10 @@ $("btHdmiReboot").addEventListener("click", async () => {
 
 // ---------------------------------------------------------------------- IP
 $("btIp").addEventListener("click", async () => {
-  const metodo = elegido.ip_metodo || (ultimo && ultimo.red.ip && ultimo.red.ip.metodo) || "auto";
-  const datos = { metodo };
+  const porCable = elegido.ip_conexion === "cable";
+  const actual = ultimo && (porCable ? ultimo.red.ethernet && ultimo.red.ethernet.ip_config : ultimo.red.ip);
+  const metodo = elegido.ip_metodo || (actual && actual.metodo) || "auto";
+  const datos = { metodo, conexion: porCable ? "cable" : "activa" };
   if (metodo === "manual") {
     Object.assign(datos, { direccion: $("ipDir").value.trim(), prefijo: Number($("ipPref").value || 24),
       gateway: $("ipGw").value.trim(), dns: $("ipDns").value });
@@ -1227,7 +1685,7 @@ $("btIp").addEventListener("click", async () => {
         const ip = (await api("/api/estado")).red.ip, c = ip && ip.cambio;
         if (!c || c.estado === "aplicando") return;
         clearInterval(sondeoIp);
-        mensaje("msgIp", c.estado === "ok" ? T[lang].ip_ok(c) : (T[lang].ip_errors[c.motivo] || c.motivo), c.estado === "ok" ? "ok" : "mal");
+        mensaje("msgIp", c.estado === "ok" ? (c.pendiente ? t("ip_saved_pending") : T[lang].ip_ok(c)) : (T[lang].ip_errors[c.motivo] || c.motivo), c.estado === "ok" ? "ok" : "mal");
       } catch (_) { /* el equipo puede estar cambiando de dirección */ }
     }, 2000);
   } catch (err) { mensaje("msgIp", err.message, "mal"); }

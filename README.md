@@ -44,10 +44,32 @@ sound. Everything is managed from a web panel: no terminal needed after installa
   on the network (OBS, vMix, a phone app, another NDIICAM…) and it plays on the HDMI output with
   its audio. It reconnects by itself if the source goes away. A small Atom cannot send and receive
   at the same time, so it is one mode or the other.
+- **H.264 output on the GPU**, per camera and alongside NDI: **record** MP4 files on the device
+  (download them from the panel), serve an **SRT** stream for OBS, vMix or VLC, or **push RTMP** to
+  YouTube, Twitch and the like. The GPU decodes the camera's JPEG and encodes H.264, so it costs
+  little CPU; if it fails, NDI keeps going. Intel GPUs with VA-API.
+- **Bridge mode, like an ATEM Streaming Bridge**: an ATEM Mini Pro, OBS or vMix streams to the
+  device over RTMP or SRT and it plays on the HDMI output with its audio. The panel gives you the
+  settings file to load into ATEM Software Control.
+- **GPU usage in the panel**: how busy it is, its video engine, frequency and power.
+- **Audio meter**: peak and average level in dBFS for every camera, and for what the receiver or
+  the bridge plays. You know before going live whether a microphone is dead, low or clipping.
+- **Record on a schedule or on demand**: the GPU recording of each camera can run always, only
+  while NDI receivers are connected, or between two times of day (overnight ranges work). It
+  starts and stops without touching the NDI stream.
+- **Tally**: when a receiver such as OBS, vMix or a TriCaster puts a camera on program or
+  preview, the panel shows **ON AIR** or **PREVIEW** on that camera and logs it. It comes from the
+  NDI SDK through a small patch NDIICAM adds to the GStreamer NDI plugin (`plugin/`), which also
+  counts the receivers the SDK sees.
+- **Help screen on HDMI**: when nothing is being shown, the monitor plugged into the device shows
+  its status, mode, network, IP and a **QR code that opens the panel**, instead of a Linux login
+  prompt. In the panel's language of choice. It costs no CPU.
 - **Static IP, backup/restore, factory reset and one-click updates** from the panel.
 - **Adaptive JPEG decoding**: if the camera's pictures get too detailed for one core (night,
   crowds, foliage), decoding is split across more threads by itself, so 1080p30 holds.
-- **Light**: one Python service on top of GStreamer, no web frameworks, no database.
+- **Light**: one Python service on top of GStreamer, no web frameworks, no database. Split into
+  small modules (see the header of `ndiicam/ndiicam.py`), with tests that run without hardware
+  (`python3 -m unittest discover -s tests`).
 
 ## Requirements
 
@@ -55,8 +77,7 @@ sound. Everything is managed from a web panel: no terminal needed after installa
 |---|---|
 | CPU | x86_64 Intel or AMD. An Atom x5-Z8350 (4 cores, 1.44 GHz) handles 1080p30 using ~1.6 cores as a sender, and receives 1080p30 with ~0.6-0.9 cores |
 | OS | Ubuntu 24.04 LTS (tested). Debian 12+ should work |
-| Camera | USB UVC camera with MJPEG (most webcams, DJI Osmo Pocket 3 in webcam mode…) |
-| Network | Ethernet recommended. WiFi works: 1080p30 uses ~90 Mbit/s per receiver |
+| Camera | USB UVC camera with MJPEG (most webcams, DJI Osmo Pocket 3 in webcam mode…). Cheap HDMI-to-USB capture sticks are UVC MJPEG too and should work as a camera (not tested yet) |
 | WiFi card (optional) | Needed for the setup WiFi. Cards that support AP + client at once (e.g. Intel 3165) keep the client connection while the setup WiFi is on |
 
 ## Install
@@ -104,18 +125,23 @@ the same screen; then go back to your network and open `http://<device>.local`.
 
 ## Panel
 
-| Section | What it does |
-|---|---|
-| Status | Overall state, sources streaming, receivers, outgoing Mbit/s, CPU, last-2-minute graphs |
-| One card per camera | On/off, NDI name, mode, camera/sent fps, bitrate, dropped frames, audio, receivers by name; settings: NDI name, 720p/1080p, fps, audio (camera mic, another input or none) |
-| Device mode | Sender (cameras to NDI) or receiver (an NDI source to HDMI) |
-| NDI receiver | Receiver mode only: NDI sources found on the network, which one to show, resolution, fps and audio received |
-| HDMI output | On/off, which camera, monitor status, screen resolution at boot |
-| Network | WiFi signal, link usage against the estimated capacity, band, channel, IP, NDI transport |
-| Updates | Installed and latest version, check, install with one click |
-| WiFi networks | Saved networks (forget), scan, connect |
-| IP address | DHCP or static. If the static address has no connectivity, it reverts by itself |
-| Device | Device name, NDI transport, setup WiFi name and password, country, optional panel password, backup download/restore, factory reset, reboot |
+Two tabs: **Monitor** (what is happening) and **Settings** (what you change). `#monitor` and
+`#config` in the URL open one directly.
+
+| Tab | Section | What it does |
+|---|---|---|
+| Monitor | Status | Overall state, sources streaming, receivers, outgoing Mbit/s, CPU, GPU, last-2-minute graphs |
+| Monitor | One card per camera | Live preview (a camera JPEG every 2 s), NDI name, mode, camera/sent fps, bitrate, dropped frames, audio with level meter, receivers by name, GPU output |
+| Monitor | Recordings, Network, Device, Activity | Recorded files, WiFi signal and link usage, CPU/GPU/memory/power, event log |
+| Settings | One card per camera | On/off, NDI name, 720p/1080p, fps, audio (camera mic, another input or none), H.264 output on the GPU (record, SRT or RTMP), its quality and when to record |
+| Settings | Device mode | Sender (cameras to NDI), receiver (an NDI source to HDMI) or bridge (RTMP/SRT from an ATEM to HDMI) |
+| Settings | Bridge | Bridge mode only: RTMP server and key, SRT address, who is streaming, settings file for ATEM Software Control, new key |
+| Settings | NDI receiver | Receiver mode only: NDI sources found on the network, which one to show, resolution, fps and audio received |
+| Settings | HDMI output | On/off, which camera, monitor status, screen resolution at boot |
+| Settings | Updates | Installed and latest version, check, install with one click |
+| Settings | WiFi networks | Saved networks (forget), scan, connect |
+| Settings | IP address | DHCP or static, for the active connection or for the wired port (even unplugged: saved and applied when the cable goes in). A static address with no connectivity reverts by itself |
+| Settings | Device | Device name, NDI transport, setup WiFi name and password, country, HDMI help screen language, optional panel password, backup download/restore, factory reset, reboot |
 
 The optional panel password is not asked from the setup WiFi: anyone on it already knows
 its password, and it is the way back in if you forget the panel password.
@@ -163,9 +189,54 @@ These come from building it on real hardware, and explain some of the defaults:
   The receiver runs at low priority and leaves one core free for the system and the network.
 - **Processor power** in the panel comes from Intel RAPL and covers the SoC (CPU + GPU) only, not
   WiFi, memory, board or camera. On the Atom: 0.9 W idle, 1.7 W streaming 1080p30.
+- **H.264 output on the GPU** takes the camera's JPEG, decodes it on the GPU (`vajpegdec`) and
+  encodes H.264 there too (`vah264enc` or `vah264lpenc`), in its own pipeline fed with copies: if
+  the GPU, the network or the disk fail, NDI does not notice, and the output retries every 10 s.
+  On a Celeron J3355 it costs ~15% of one core with NDI at 1080p30 at the same time. NDI itself
+  cannot use the GPU: bringing a decoded frame back to memory costs more than decoding it on the
+  CPU on these chips (145 ms per 1080p frame on Apollo Lake, against 14 ms on the CPU).
+  Recordings are fragmented MP4 (readable even after a power cut), 10 minutes each, in
+  `/var/lib/ndiicam/grabaciones`; when less than 2 GB is left, the oldest are deleted.
+- **Intel Gen9 GPUs (Skylake to Gemini Lake) need the HuC firmware** for their low-power encoder,
+  and the kernel does not load it by default: without it, that encoder **froze the whole device**.
+  The installer adds `i915.enable_guc=2` (in `/etc/default/grub.d/80-ndiicam-huc.cfg`) and asks
+  for a reboot; until then the GPU output stays off. It also installs `intel-media-va-driver`
+  (iHD): the old i965 driver cannot hand over a decoded 4:2:0 JPEG.
+- **Bridge mode** runs [MediaMTX](https://github.com/bluenviron/mediamtx) as the RTMP (1935) and SRT
+  (8890) server, accepting only `live/<key>`, and plays it on HDMI. It decodes H.264 with FFmpeg on
+  the CPU: 1080p30 took ~45% of the CPU of a Celeron J3355, and 1080p60 decodes too. On
+  Apollo Lake the GPU decodes it with a tenth of that, but its frames cannot reach the screen
+  without copies: the video planes do not take NV12, iHD has no video processor there, i965
+  crashes in GStreamer 1.24, and OpenGL straight on KMS froze the device. A 4K screen runs at 30 Hz
+  on these chips: for 60 fps, set the screen to 1080p in the panel.
+- **The HDMI help screen** is a PNG drawn with Pillow (QR with segno) and shown with `kmssink` in
+  PAUSED state: the prerolled frame stays on the video plane and the process never works again.
+  The service restarts it when the IP, mode or state change, and stops it before a camera or the
+  receiver take the HDMI. The installer disables the text console on tty1 (`getty@tty1`) so it
+  does not fight for the screen; Alt+F2 still opens a console.
+- **Tally and the receiver count** need `NDIlib_send_get_tally` and `NDIlib_send_get_no_connections`
+  from the NDI SDK, which the GStreamer NDI plugin does not expose. `plugin/ndisink-tally.patch`
+  adds them to `ndisink` as read-only properties (`tally-program`, `tally-preview`, `connections`);
+  the CI and the installer apply it before building. With an unpatched plugin, NDIICAM simply
+  does not show tally.
+- **GPU usage** comes from the kernel with nothing else installed: the time each engine works
+  (`drm-engine-*` in each client's fdinfo), idle time (RC6), frequency (`gt_act_freq_mhz`) and the
+  RAPL `uncore` domain for power.
 - **The setup WiFi runs on a virtual `ap0` interface** when the card supports it, so the
   device keeps trying known networks meanwhile. Otherwise it alternates: AP for 3 minutes,
   then 45 s looking for networks, while nobody is connected to the AP.
+
+## Latency
+
+Measured on a Celeron J3355 over 5 GHz WiFi (October 2026). The panel shows the internal delay of
+each camera (camera → NDI) and of the receiver or bridge (→ HDMI) live.
+
+| Path | Delay | Notes |
+|---|---|---|
+| NDI, sender → receiver on the network | ~25 ms median, 10 % of frames above 200 ms | WiFi jitter; wired Ethernet is steadier. Add the camera's own delay and the internal one shown in the panel |
+| GPU H.264 output (record, SRT, RTMP) | ~200 ms to encode and mux | Plus the player's buffer: SRT is configured with 200 ms; OBS/VLC add their own |
+| Bridge, RTMP in → HDMI | 0.6 to 1.4 s inside the device | RTMP servers hand a new reader the stream from the last keyframe, so the lag depends on when it connected. Plus the ATEM's own encoder delay. Not a low-latency path |
+| Manual record button | starts with the next frame | the first time it also restarts the camera's stream (~2 s) to enable the GPU output |
 
 ## Troubleshooting
 
@@ -194,4 +265,6 @@ NDIICAM is free software under the **GNU General Public License v3.0 or later**
 NDIICAM does not include the NDI® SDK: the installer downloads it from NDI and its own
 license applies. **NDI® is a registered trademark of Vizrt NDI AB.** NDIICAM is not
 affiliated with or endorsed by Vizrt NDI AB. The GStreamer NDI plugin is part of
-gst-plugins-rs (MPL-2.0).
+gst-plugins-rs (MPL-2.0). Bridge mode uses [MediaMTX](https://github.com/bluenviron/mediamtx) (MIT),
+which the installer downloads. **ATEM is a trademark of Blackmagic Design**; NDIICAM is not
+affiliated with or endorsed by Blackmagic Design.

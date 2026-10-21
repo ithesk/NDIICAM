@@ -1,0 +1,20 @@
+# Pruebas del servicio en cada cambio: la lógica que no necesita hardware.
+name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  pruebas:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install pyyaml
+      - run: python3 -m unittest discover -s tests -v
+      - name: sintaxis de los scripts de instalación
+        run: bash -n install.sh && bash -n uninstall.sh
