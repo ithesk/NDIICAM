@@ -39,6 +39,8 @@ jobs:
           cd gst-plugins-rs
           # tally y número de receptores del emisor (ver plugin/ndisink-tally.patch)
           patch -p1 < ../plugin/ndisink-tally.patch
+          # modo de baja latencia del combinador (ver plugin/ndisinkcombiner-baja-latencia.patch)
+          patch -p1 < ../plugin/ndisinkcombiner-baja-latencia.patch
           cargo build --release --locked -p gst-plugin-ndi
           cp target/release/libgstndi.so ../libgstndi-x86_64.so
           cd ..

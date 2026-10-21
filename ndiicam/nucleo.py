@@ -22,7 +22,7 @@ ACTUALIZADOR = None    # Actualizador
 BUSCADOR = None        # BuscadorNDI
 
 
-VERSION = "0.4.0"
+VERSION = "0.4.1"
 REPO = "ithesk/NDIICAM"
 CONFIG = "/etc/ndiicam/config.json"
 DATOS = "/var/lib/ndiicam"          # el servicio apunta NDI_CONFIG_DIR a DATOS/.ndi
@@ -69,7 +69,17 @@ GRUB_NDIICAM = "/etc/default/grub.d/90-ndiicam.cfg"
 MODOS_CONSOLA = {"nativa": None, "1080p": "1920x1080@60", "720p": "1280x720@60"}
 CLAVES_FUENTE = ("activa", "ndi_nombre", "resolucion", "fps", "audio",
                  "gpu_salida", "gpu_kbps", "srt_puerto", "rtmp_url",
-                 "grabar_cuando", "grabar_desde", "grabar_hasta", "grabar_manual")
+                 "grabar_cuando", "grabar_desde", "grabar_hasta", "grabar_manual", "formato",
+                 "latencia", "srt_latencia")
+# latencia de la emisión NDI: normal (audio sincronizado), baja (la imagen sale sin
+# esperar al audio de su intervalo; plugin parcheado) o minima (sin audio). En baja y
+# minima se sube a 60 fps si la cámara los da sin comprimir. Medido en un Celeron
+# J3355 con una Cam Link 4K a 30 fps: normal ~100 ms, sin audio ~33 ms
+LATENCIAS = ("normal", "baja", "minima")
+# formato que se pide a la cámara: auto (sin comprimir si el puerto es USB 3.0 y
+# no hace falta el JPEG), mjpeg o crudo (YUYV). Medido con una Cam Link 4K en un
+# Celeron J3355, a 1080p30: MJPEG 50 % de un núcleo, sin comprimir 13 %
+FORMATOS = ("auto", "mjpeg", "crudo")
 # cuándo graba la salida GPU: siempre, solo mientras haya receptores NDI, en un
 # horario, o a mano con el botón Grabar del panel (grabar_manual)
 GRABAR_CUANDO = ("siempre", "receptores", "horario", "manual")
@@ -92,6 +102,64 @@ def sh(cmd, timeout=15):
                               timeout=timeout).stdout
     except (OSError, subprocess.SubprocessError):
         return ""
+
+def cacheado(segundos):
+    """Guarda el resultado de un método durante unos segundos (por argumentos).
+    Para consultas a nmcli/iw que se piden cada 2 s y cambian cada muchos minutos:
+    cada una es un proceso nuevo y despierta a NetworkManager y D-Bus.
+    olvidar_cache(objeto) las borra todas, tras cambiar la red."""
+    def deco(fn):
+        def envoltura(self, *args, **kwargs):
+            caches = self.__dict__.setdefault("_caches", {})
+            clave = (fn.__name__, args, tuple(sorted(kwargs.items())))
+            ahora = time.monotonic()
+            hit = caches.get(clave)
+            if hit and ahora - hit[0] < segundos:
+                return hit[1]
+            valor = fn(self, *args, **kwargs)
+            caches[clave] = (ahora, valor)
+            return valor
+        envoltura.__name__ = fn.__name__
+        envoltura.__doc__ = fn.__doc__
+        return envoltura
+    return deco
+
+
+def olvidar_cache(objeto):
+    objeto.__dict__.get("_caches", {}).clear()
+
+
+def cache_funcion(segundos):
+    """Como cacheado, para funciones sueltas (por argumentos)."""
+    def deco(fn):
+        guardado = {}
+
+        def envoltura(*args):
+            ahora = time.monotonic()
+            hit = guardado.get(args)
+            if hit and ahora - hit[0] < segundos:
+                return hit[1]
+            valor = fn(*args)
+            guardado[args] = (ahora, valor)
+            return valor
+        envoltura.__name__ = fn.__name__
+        envoltura.__doc__ = fn.__doc__
+        envoltura.olvidar = guardado.clear
+        return envoltura
+    return deco
+
+
+_PAIS = []
+
+
+def pais_regulatorio():
+    """País del dominio regulatorio WiFi (US si no hay): una vez por arranque.
+    Antes se preguntaba a 'iw reg get' en cada lectura de la configuración."""
+    if not _PAIS:
+        m = re.search(r"country (\w\w):", sh(["iw", "reg", "get"]))
+        _PAIS.append(m.group(1) if m and m.group(1) != "00" else "US")
+    return _PAIS[0]
+
 
 def leer(ruta, defecto=""):
     try:
@@ -127,6 +195,7 @@ def nm_valores(texto):
     """Valores múltiples de 'nmcli -g' (separados por ' | ')."""
     return [v.strip() for v in texto.strip().split(" | ") if v.strip()]
 
+@cache_funcion(1.5)    # se pide desde varios hilos en cada ciclo de 2 s
 def ip_de(interfaz):
     m = re.search(r"inet (\d+\.\d+\.\d+\.\d+)",
                   sh(["ip", "-4", "-o", "addr", "show", "dev", interfaz]))
@@ -145,6 +214,7 @@ def interfaz_wifi():
             return nombre
     return None
 
+@cache_funcion(1.5)    # se pide desde varios hilos en cada ciclo de 2 s
 def dispositivo_por_defecto():
     m = re.search(r"\bdev (\S+)", sh(["ip", "-4", "route", "show", "default"]))
     return m.group(1) if m else None
@@ -207,8 +277,7 @@ class Config:
             mac = leer(f"/sys/class/net/{wifi}/address") if wifi else ""
             d["ap_ssid"] = "NDIICAM-" + (mac.replace(":", "")[-4:].upper() or "SETUP")
         if not d["pais"]:
-            m = re.search(r"country (\w\w):", sh(["iw", "reg", "get"]))
-            d["pais"] = m.group(1) if m and m.group(1) != "00" else "US"
+            d["pais"] = pais_regulatorio()
         return d
 
     def fuente(self, ident):
@@ -218,7 +287,7 @@ class Config:
              "fps": d["fps"], "audio": d["audio"],
              "gpu_salida": "no", "gpu_kbps": 8000, "srt_puerto": 9000, "rtmp_url": "",
              "grabar_cuando": "siempre", "grabar_desde": "09:00", "grabar_hasta": "18:00",
-             "grabar_manual": False}
+             "grabar_manual": False, "formato": "auto", "latencia": "normal", "srt_latencia": 200}
         f.update({k: v for k, v in d["fuentes"].get(ident, {}).items() if k in CLAVES_FUENTE})
         return f
 
@@ -279,6 +348,7 @@ def nombre_de(ip):
         _nombres[ip] = out[1].removesuffix(".local") if len(out) > 1 else None
     return _nombres[ip]
 
+@cache_funcion(1.5)    # se pide desde varios hilos en cada ciclo de 2 s
 def conexiones_por_pid():
     """IPs de receptores con conexión TCP abierta, por proceso emisor."""
     res = {}

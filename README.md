@@ -133,7 +133,7 @@ Two tabs: **Monitor** (what is happening) and **Settings** (what you change). `#
 | Monitor | Status | Overall state, sources streaming, receivers, outgoing Mbit/s, CPU, GPU, last-2-minute graphs |
 | Monitor | One card per camera | Live preview (a camera JPEG every 2 s), NDI name, mode, camera/sent fps, bitrate, dropped frames, audio with level meter, receivers by name, GPU output |
 | Monitor | Recordings, Network, Device, Activity | Recorded files, WiFi signal and link usage, CPU/GPU/memory/power, event log |
-| Settings | One card per camera | On/off, NDI name, 720p/1080p, fps, audio (camera mic, another input or none), H.264 output on the GPU (record, SRT or RTMP), its quality and when to record |
+| Settings | One card per camera | On/off, NDI name, 720p/1080p, fps, audio (camera mic, another input or none), camera format (automatic, MJPEG or uncompressed), H.264 output on the GPU (record, SRT or RTMP), its quality and when to record |
 | Settings | Device mode | Sender (cameras to NDI), receiver (an NDI source to HDMI) or bridge (RTMP/SRT from an ATEM to HDMI) |
 | Settings | Bridge | Bridge mode only: RTMP server and key, SRT address, who is streaming, settings file for ATEM Software Control, new key |
 | Settings | NDI receiver | Receiver mode only: NDI sources found on the network, which one to show, resolution, fps and audio received |
@@ -197,6 +197,10 @@ These come from building it on real hardware, and explain some of the defaults:
   CPU on these chips (145 ms per 1080p frame on Apollo Lake, against 14 ms on the CPU).
   Recordings are fragmented MP4 (readable even after a power cut), 10 minutes each, in
   `/var/lib/ndiicam/grabaciones`; when less than 2 GB is left, the oldest are deleted.
+- **The GPU output needs 4:2:0 JPEG.** Its H.264 encoder only takes 4:2:0, and without a video
+  processor (Apollo Lake with iHD) nothing converts 4:2:2. Webcams and the DJI Osmo Pocket 3 send
+  4:2:0; HDMI capture cards like the Elgato Cam Link 4K send 4:2:2, so with them the GPU output
+  says so and stays off.
 - **Intel Gen9 GPUs (Skylake to Gemini Lake) need the HuC firmware** for their low-power encoder,
   and the kernel does not load it by default: without it, that encoder **froze the whole device**.
   The installer adds `i915.enable_guc=2` (in `/etc/default/grub.d/80-ndiicam-huc.cfg`) and asks
@@ -214,6 +218,13 @@ These come from building it on real hardware, and explain some of the defaults:
   The service restarts it when the IP, mode or state change, and stops it before a camera or the
   receiver take the HDMI. The installer disables the text console on tty1 (`getty@tty1`) so it
   does not fight for the screen; Alt+F2 still opens a console.
+- **Uncompressed video on USB 3.0.** On a USB 3.0 port, cameras and capture cards that offer
+  uncompressed video (YUYV) are used that way by default, which skips decoding JPEG. Measured with
+  an Elgato Cam Link 4K on a Celeron J3355 at 1080p60: the camera process went from 154 % to 104 %
+  of a core, the whole device from 93 % to 82 %, with no dropped frames and 18 ms less delay. At
+  1080p30 the gain is smaller (60 % → 55 % of the device): moving ~124 MB/s over USB costs kernel
+  time too. MJPEG is kept when the GPU output is on (it starts from the JPEG) and on USB 2.0, where
+  uncompressed 1080p does not fit. The preview then comes from a scaled frame every 2 s.
 - **Tally and the receiver count** need `NDIlib_send_get_tally` and `NDIlib_send_get_no_connections`
   from the NDI SDK, which the GStreamer NDI plugin does not expose. `plugin/ndisink-tally.patch`
   adds them to `ndisink` as read-only properties (`tally-program`, `tally-preview`, `connections`);
@@ -235,8 +246,23 @@ each camera (camera → NDI) and of the receiver or bridge (→ HDMI) live.
 |---|---|---|
 | NDI, sender → receiver on the network | ~25 ms median, 10 % of frames above 200 ms | WiFi jitter; wired Ethernet is steadier. Add the camera's own delay and the internal one shown in the panel |
 | GPU H.264 output (record, SRT, RTMP) | ~200 ms to encode and mux | Plus the player's buffer: SRT is configured with 200 ms; OBS/VLC add their own |
-| Bridge, RTMP in → HDMI | 0.6 to 1.4 s inside the device | RTMP servers hand a new reader the stream from the last keyframe, so the lag depends on when it connected. Plus the ATEM's own encoder delay. Not a low-latency path |
+| Bridge, RTMP in → HDMI | 0.6 to 1.4 s inside the device | RTMP servers hand a new reader the stream from the last keyframe, so the lag depends on when it connected; the ATEM settings file asks for a keyframe every second to cut it. Plus the ATEM's own encoder delay. Not a low-latency path |
 | Manual record button | starts with the next frame | the first time it also restarts the camera's stream (~2 s) to enable the GPU output |
+
+### Lowering the latency
+
+Each camera has a **Latency** setting:
+
+| Mode | What it does | Inside the device (Cam Link 4K, 30 fps) |
+|---|---|---|
+| Normal | Each frame waits for the audio of its interval, so audio and video are in sync | ~100 ms |
+| Low | Each frame goes out as soon as it arrives, with the audio already there; audio may trail by up to one frame. Needs the patched NDI plugin (`plugin/`) | see below |
+| Minimum | No audio | ~33 ms |
+
+Low and Minimum switch to 60 fps when the camera gives it uncompressed over USB 3.0, which halves
+every one-frame wait. The rest of the delay is outside NDIICAM: wired Ethernet instead of WiFi
+removes most of the jitter, and in OBS the NDI source's latency mode should be "Lowest". The SRT
+output's buffer (200 ms by default) can go down to 80-120 ms on a local network.
 
 ## Troubleshooting
 

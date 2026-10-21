@@ -1,0 +1,144 @@
+diff -ruN ca/net/ndi/src/ndisinkcombiner/imp.rs cb/net/ndi/src/ndisinkcombiner/imp.rs
+--- ca/net/ndi/src/ndisinkcombiner/imp.rs	2026-10-21 08:29:43
++++ cb/net/ndi/src/ndisinkcombiner/imp.rs	2026-10-21 08:45:23
+@@ -10,6 +10,7 @@
+ use once_cell::sync::Lazy;
+ 
+ use std::mem;
++use std::sync::atomic::{AtomicBool, Ordering};
+ use std::sync::Mutex;
+ 
+ static CAT: Lazy<gst::DebugCategory> = Lazy::new(|| {
+@@ -42,6 +43,7 @@
+     video_pad: gst_base::AggregatorPad,
+     audio_pad: Mutex<Option<gst_base::AggregatorPad>>,
+     state: Mutex<Option<State>>,
++    low_latency: AtomicBool,
+ }
+ 
+ #[glib::object_subclass]
+@@ -58,11 +60,41 @@
+             video_pad,
+             audio_pad: Mutex::new(None),
+             state: Mutex::new(None),
++            low_latency: AtomicBool::new(false),
+         }
+     }
+ }
+ 
+ impl ObjectImpl for NdiSinkCombiner {
++    fn properties() -> &'static [glib::ParamSpec] {
++        static PROPERTIES: Lazy<Vec<glib::ParamSpec>> = Lazy::new(|| {
++            vec![glib::ParamSpecBoolean::builder("low-latency")
++                .nick("Low latency")
++                .blurb("Send every video frame as soon as it arrives, with the audio already \
++                        queued, instead of holding it until the next frame")
++                .default_value(false)
++                .mutable_ready()
++                .build()]
++        });
++        PROPERTIES.as_ref()
++    }
++
++    fn set_property(&self, _id: usize, value: &glib::Value, pspec: &glib::ParamSpec) {
++        match pspec.name() {
++            "low-latency" => self
++                .low_latency
++                .store(value.get().unwrap_or(false), Ordering::SeqCst),
++            _ => unimplemented!(),
++        }
++    }
++
++    fn property(&self, _id: usize, pspec: &glib::ParamSpec) -> glib::Value {
++        match pspec.name() {
++            "low-latency" => self.low_latency.load(Ordering::SeqCst).to_value(),
++            _ => unimplemented!(),
++        }
++    }
++
+     fn constructed(&self) {
+         self.parent_constructed();
+ 
+@@ -312,6 +344,10 @@
+         // should be improved!
+         assert!(!timeout);
+ 
++        if self.low_latency.load(Ordering::SeqCst) {
++            return self.aggregate_low_latency();
++        }
++
+         // Because peek_buffer() can call into clip() and that would take the state lock again,
+         // first try getting buffers from both pads here
+         let video_buffer_and_segment = match self.video_pad.peek_buffer() {
+@@ -670,5 +706,71 @@
+     fn negotiate(&self) -> bool {
+         // No negotiation needed as the video caps are just passed through
+         true
++    }
++}
++
++impl NdiSinkCombiner {
++    /// Low latency: the video frame goes out as soon as it is here, carrying every audio
++    /// buffer already queued (audio that arrives later goes with the next frame). NDI
++    /// receivers place each audio frame by its own timecode.
++    fn aggregate_low_latency(&self) -> Result<gst::FlowSuccess, gst::FlowError> {
++        let video_buffer = match self.video_pad.peek_buffer() {
++            Some(buffer) => buffer,
++            None if !self.video_pad.is_eos() => return Err(gst_base::AGGREGATOR_FLOW_NEED_DATA),
++            None => return Err(gst::FlowError::Eos),
++        };
++        self.video_pad.drop_buffer();
++
++        // The queued audio is read WITHOUT the state lock: peek_buffer() can call into
++        // clip(), which takes the state lock again (same rule as aggregate()).
++        let mut queued = Vec::new();
++        if let Some(audio_pad) = self.audio_pad.lock().unwrap().clone() {
++            while let Some(audio_buffer) = audio_pad.peek_buffer() {
++                audio_pad.drop_buffer();
++                if audio_buffer.size() == 0 {
++                    continue;
++                }
++                if let Ok(segment) = audio_pad.segment().downcast::<gst::ClockTime>() {
++                    let running_time = segment.to_running_time(audio_buffer.pts());
++                    queued.push((audio_buffer, running_time));
++                }
++            }
++        }
++
++        let base_time = self.obj().base_time();
++        let (audio_buffers, pending_caps, pending_segment) = {
++            let mut state_storage = self.state.lock().unwrap();
++            let state = match &mut *state_storage {
++                Some(ref mut state) => state,
++                None => return Err(gst::FlowError::Flushing),
++            };
++            // anything held from normal mode goes out with this frame
++            let mut audio_buffers = mem::take(&mut state.current_audio_buffers);
++            state.current_video_buffer = None;
++            if let Some(audio_info) = state.audio_info.clone() {
++                for (audio_buffer, running_time) in queued {
++                    let timecode = base_time
++                        .zip(running_time)
++                        .map(|(base_time, running_time)| {
++                            ((base_time.nseconds() + running_time.nseconds()) / 100) as i64
++                        })
++                        .unwrap_or(crate::ndisys::NDIlib_send_timecode_synthesize);
++                    audio_buffers.push((audio_buffer, audio_info.clone(), timecode));
++                }
++            }
++            (audio_buffers, state.pending_caps.take(), state.pending_segment.take())
++        };
++
++        let mut video_buffer = video_buffer;
++        if !audio_buffers.is_empty() {
++            crate::ndisinkmeta::NdiSinkAudioMeta::add(video_buffer.make_mut(), audio_buffers);
++        }
++        if let Some(caps) = pending_caps {
++            self.obj().set_src_caps(&caps);
++        }
++        if let Some(segment) = pending_segment {
++            self.obj().update_segment(&segment);
++        }
++        self.obj().finish_buffer(video_buffer)
+     }
+ }

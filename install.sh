@@ -175,6 +175,7 @@ else
       https://gitlab.freedesktop.org/gstreamer/gst-plugins-rs.git "$TMP/gst-plugins-rs"
     # tally y número de receptores del emisor (plugin/ndisink-tally.patch)
     (cd "$TMP/gst-plugins-rs" && patch -p1 < "$ORIGEN/plugin/ndisink-tally.patch" \
+      && patch -p1 < "$ORIGEN/plugin/ndisinkcombiner-baja-latencia.patch" \
       && "$CARGO_HOME/bin/cargo" build --release --locked -p gst-plugin-ndi)
     cp "$TMP/gst-plugins-rs/target/release/libgstndi.so" "$TMP/libgstndi.so"
   fi

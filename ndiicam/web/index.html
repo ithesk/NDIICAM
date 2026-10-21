@@ -308,6 +308,7 @@
       </div>
       <dl>
         <dt data-t="connection"></dt><dd id="redModo">—</dd>
+        <dt class="oculto" id="redLatDt" data-t="lat_label"></dt><dd class="oculto" id="redLat"></dd>
         <dt data-t="wired"></dt><dd id="redCable">—</dd>
         <dt>WiFi</dt><dd id="redWifi">—</dd>
         <dt data-t="band"></dt><dd id="redBanda">—</dd>
@@ -528,6 +529,17 @@ const T = {
     ip_errors: { sin_conexion: "Con esa configuración no había conexión: se ha vuelto a la anterior.", generico: "No se pudo aplicar: se ha vuelto a la anterior." },
     vu_label: (p, r) => `pico ${p.toFixed(1)} dBFS` + (r != null ? ` · medio ${r.toFixed(1)}` : ""),
     tally_program: "EN EL AIRE", tally_preview: "PREVIO",
+    lat_label: "Latencia", lat_normal: "Normal (audio sincronizado)", lat_baja: "Baja (la imagen no espera al audio)",
+    lat_minima: "Mínima (sin audio)",
+    lat_help_normal: "Cada imagen espera al audio de su intervalo: ~100 ms dentro del equipo a 30 fps.",
+    lat_help_baja: "La imagen sale en cuanto llega, con el audio que ya haya; sube a 60 fps si la cámara lo da sin comprimir. El audio puede ir hasta un fotograma más tarde.",
+    lat_help_minima: "Sin audio: la imagen sale un fotograma después de capturarse (~33 ms a 30 fps). Sube a 60 fps si la cámara lo da sin comprimir.",
+    lat_wifi_hint: "Por WiFi la latencia varía: por cable es más estable.",
+    srt_latency: "Búfer SRT (ms)", srt_latency_help: "Margen para reenviar paquetes perdidos. En una red local bastan 80-120 ms; por internet, 4 veces el ping.",
+    cam_format: "Formato de la cámara", fmt_auto: "Automático (sin comprimir en USB 3.0)",
+    fmt_mjpeg: "MJPEG (comprimido)", fmt_crudo: "Sin comprimir (necesita USB 3.0)",
+    fmt_now: (f) => f === "MJPG" ? "Ahora: MJPEG. Más CPU, pero cabe por USB 2.0 y permite la salida por GPU."
+      : "Ahora: sin comprimir. Gasta mucha menos CPU; la salida por GPU necesita MJPEG.",
     tab_monitor: "Monitor", tab_config: "Configuración", preview: "Vista previa",
     preview_none: "Sin vista previa: la cámara no entrega MJPEG", preview_wait: "Esperando imagen…",
     device_settings: "Equipo", device_name: "Nombre del equipo",
@@ -574,6 +586,8 @@ const T = {
       sin_h264: "La GPU no codifica H.264.", necesita_huc: "La GPU necesita el firmware HuC: vuelve a instalar NDIICAM y reinicia el equipo." },
     gpu_only_mjpeg: "Solo con cámaras que entregan MJPEG.",
     gpu_st: { iniciando: "Arrancando…", activa: "Activa", error: "Error, reintentando", en_espera: "En espera" },
+    gpu_errors: { muestreo_no_admitido: "No disponible con esta cámara: manda JPEG 4:2:2 y la GPU de este equipo solo codifica 4:2:0.",
+      jpeg_no_admitido: "No disponible con esta cámara: su JPEG no es estándar (baseline)." },
     rec_when: "Cuándo grabar", rec_siempre: "Siempre", rec_receptores: "Solo mientras haya receptores NDI",
     rec_manual: "A mano, con el botón Grabar", rec_start: "● Grabar", rec_stop: "■ Parar grabación",
     rec_started: "Grabando.", rec_started_restart: "Grabando. La emisión se reinicia unos 2 s para activar la salida.",
@@ -616,7 +630,7 @@ const T = {
       camara_invalida: "Esa cámara ya no está conectada.", audio_invalido: "Ese dispositivo de audio ya no está.",
       salida_gpu_invalida: "Salida GPU no válida.", gpu_no_disponible: "La GPU de este equipo no puede hacer esta salida.",
       kbps_invalido: "Calidad no válida.", puerto_invalido: "El puerto va de 1024 a 65535.",
-      hora_invalida: "La hora va como HH:MM.",
+      hora_invalida: "La hora va como HH:MM.", latencia_invalida: "El búfer SRT va de 20 a 2000 ms.",
       url_rtmp_invalida: "Escribe la URL RTMP completa, empezando por rtmp:// o rtmps://.",
       fuente_ndi_invalida: "Esa fuente NDI no es válida.", modo_invalido: "Modo no válido.",
       transporte_invalido: "Transporte no válido.",
@@ -745,6 +759,17 @@ const T = {
     ip_errors: { sin_conexion: "That configuration had no connectivity: the previous one was restored.", generico: "Could not apply: the previous one was restored." },
     vu_label: (p, r) => `peak ${p.toFixed(1)} dBFS` + (r != null ? ` · avg ${r.toFixed(1)}` : ""),
     tally_program: "ON AIR", tally_preview: "PREVIEW",
+    lat_label: "Latency", lat_normal: "Normal (synced audio)", lat_baja: "Low (video does not wait for audio)",
+    lat_minima: "Minimum (no audio)",
+    lat_help_normal: "Each frame waits for the audio of its interval: ~100 ms inside the device at 30 fps.",
+    lat_help_baja: "Each frame goes out as soon as it arrives, with the audio already there; 60 fps if the camera gives it uncompressed. Audio may trail by up to one frame.",
+    lat_help_minima: "No audio: each frame goes out one frame after capture (~33 ms at 30 fps). 60 fps if the camera gives it uncompressed.",
+    lat_wifi_hint: "Latency varies over WiFi: wired is steadier.",
+    srt_latency: "SRT buffer (ms)", srt_latency_help: "Margin to resend lost packets. 80-120 ms is enough on a local network; over the internet, 4 times the ping.",
+    cam_format: "Camera format", fmt_auto: "Automatic (uncompressed on USB 3.0)",
+    fmt_mjpeg: "MJPEG (compressed)", fmt_crudo: "Uncompressed (needs USB 3.0)",
+    fmt_now: (f) => f === "MJPG" ? "Now: MJPEG. More CPU, but fits USB 2.0 and allows the GPU output."
+      : "Now: uncompressed. Much less CPU; the GPU output needs MJPEG.",
     tab_monitor: "Monitor", tab_config: "Settings", preview: "Preview",
     preview_none: "No preview: the camera does not deliver MJPEG", preview_wait: "Waiting for a picture…",
     device_settings: "Device", device_name: "Device name",
@@ -791,6 +816,8 @@ const T = {
       sin_h264: "The GPU cannot encode H.264.", necesita_huc: "The GPU needs the HuC firmware: reinstall NDIICAM and reboot." },
     gpu_only_mjpeg: "Only with cameras that deliver MJPEG.",
     gpu_st: { iniciando: "Starting…", activa: "Active", error: "Error, retrying", en_espera: "Waiting" },
+    gpu_errors: { muestreo_no_admitido: "Not available with this camera: it sends 4:2:2 JPEG and this device's GPU only encodes 4:2:0.",
+      jpeg_no_admitido: "Not available with this camera: its JPEG is not baseline." },
     rec_when: "When to record", rec_siempre: "Always", rec_receptores: "Only while NDI receivers are connected",
     rec_manual: "By hand, with the Record button", rec_start: "● Record", rec_stop: "■ Stop recording",
     rec_started: "Recording.", rec_started_restart: "Recording. The stream restarts for about 2 s to enable the output.",
@@ -833,7 +860,7 @@ const T = {
       camara_invalida: "That camera is no longer connected.",
       salida_gpu_invalida: "Invalid GPU output.", gpu_no_disponible: "This device's GPU cannot do this output.",
       kbps_invalido: "Invalid quality.", puerto_invalido: "The port goes from 1024 to 65535.",
-      hora_invalida: "The time goes as HH:MM.",
+      hora_invalida: "The time goes as HH:MM.", latencia_invalida: "The SRT buffer goes from 20 to 2000 ms.",
       url_rtmp_invalida: "Enter the full RTMP URL, starting with rtmp:// or rtmps://.", audio_invalido: "That audio device is gone.",
       fuente_ndi_invalida: "That NDI source is not valid.", modo_invalido: "Invalid mode.",
       transporte_invalido: "Invalid transport.",
@@ -1090,7 +1117,13 @@ function crearTarjeta(f) {
         el("label", { text: t("framerate"), style: "margin-top:12px" }),
         c.segFps = el("div", { class: "segmentado" }),
         el("label", { text: t("audio"), style: "margin-top:12px" }),
-        c.selAudio = el("select", { onchange: () => editado.add(k("audio")) })),
+        c.selAudio = el("select", { onchange: () => editado.add(k("audio")) }),
+        el("label", { text: t("cam_format"), style: "margin-top:12px" }),
+        c.selFormato = el("select", { onchange: () => editado.add(k("formato")) }),
+        c.ayudaFormato = el("div", { class: "ayuda" }),
+        el("label", { text: t("lat_label"), style: "margin-top:12px" }),
+        c.selLatencia = el("select", { onchange: () => { editado.add(k("latencia")); pintar(ultimo); } }),
+        c.ayudaLatencia = el("div", { class: "ayuda" })),
       el("div", null,
         c.gpuBloque = el("div", null,
           el("label", { text: t("gpu_out") }),
@@ -1109,7 +1142,11 @@ function crearTarjeta(f) {
             c.bloquePuerto = el("div", null,
               el("label", { text: t("gpu_port"), style: "margin-top:12px" }),
               c.puerto = el("input", { type: "number", min: "1024", max: "65535",
-                oninput: () => editado.add(k("puerto")) })),
+                oninput: () => editado.add(k("puerto")) }),
+              el("label", { text: t("srt_latency"), style: "margin-top:12px" }),
+              c.srtLat = el("input", { type: "number", min: "20", max: "2000", step: "10",
+                oninput: () => editado.add(k("srtlat")) }),
+              el("div", { class: "ayuda", text: t("srt_latency_help") })),
             c.bloqueUrl = el("div", null,
               el("label", { text: t("gpu_url"), style: "margin-top:12px" }),
               c.url = el("input", { type: "text", autocomplete: "off", spellcheck: "false",
@@ -1121,6 +1158,9 @@ function crearTarjeta(f) {
         if (elegido[k("res")]) datos.resolucion = elegido[k("res")];
         if (elegido[k("fps")]) datos.fps = Number(elegido[k("fps")]);
         if (editado.has(k("audio"))) datos.audio = c.selAudio.value;
+        if (editado.has(k("formato"))) datos.formato = c.selFormato.value;
+        if (editado.has(k("latencia"))) datos.latencia = c.selLatencia.value;
+        if (editado.has(k("srtlat"))) datos.srt_latencia = Number(c.srtLat.value);
         if (editado.has(k("gpu"))) datos.gpu_salida = c.selGpu.value;
         if (editado.has(k("kbps"))) datos.gpu_kbps = Number(c.selKbps.value);
         if (editado.has(k("puerto"))) datos.srt_puerto = Number(c.puerto.value);
@@ -1131,7 +1171,7 @@ function crearTarjeta(f) {
         ev.target.disabled = true;
         try {
           await api("/api/fuente", datos);
-          ["nombre", "audio", "gpu", "kbps", "puerto", "url", "cuando", "desde", "hasta"].forEach((x) => editado.delete(k(x)));
+          ["nombre", "audio", "gpu", "kbps", "puerto", "url", "cuando", "desde", "hasta", "formato", "latencia", "srtlat"].forEach((x) => editado.delete(k(x)));
           delete elegido[k("res")]; delete elegido[k("fps")];
           mensaje(c.msg, t("saved_ok"), "ok");
         } catch (err) { mensaje(c.msg, err.message, "mal"); }
@@ -1170,7 +1210,7 @@ function pintarFuente(c, f, e) {
   c.btGrabar.style.marginTop = "10px";
   poner(c.btGrabar, c.grabando ? t("rec_stop") : t("rec_start"));
   // vista previa: un JPEG de la cámara cada 2 s, solo mientras se ve
-  if (pestana === "monitor" && f.estado === "emitiendo" && f.formato === "MJPG") {
+  if (pestana === "monitor" && f.estado === "emitiendo") {
     c.img.src = `/api/fuente/preview?id=${encodeURIComponent(id)}&t=${Date.now()}`;
   } else {
     c.img.classList.add("oculto"); c.previewVacia.classList.remove("oculto");
@@ -1208,6 +1248,17 @@ function pintarFuente(c, f, e) {
     c.selAudio.value = aj.audio;
     if (c.selAudio.value !== aj.audio) c.selAudio.value = "auto";
   }
+  if (!editado.has(k("formato")) && document.activeElement !== c.selFormato) {
+    c.selFormato.replaceChildren(...["auto", "mjpeg", "crudo"].map((v) => new Option(t("fmt_" + v), v)));
+    c.selFormato.value = aj.formato || "auto";
+  }
+  poner(c.ayudaFormato, f.formato ? T[lang].fmt_now(f.formato) : "");
+  if (!editado.has(k("latencia")) && document.activeElement !== c.selLatencia) {
+    c.selLatencia.replaceChildren(...["normal", "baja", "minima"].map((v) => new Option(t("lat_" + v), v)));
+    c.selLatencia.value = aj.latencia || "normal";
+  }
+  poner(c.ayudaLatencia, t("lat_help_" + c.selLatencia.value));
+  rellenar(c.srtLat, aj.srt_latencia ?? 200, k("srtlat"));
   pintarGpu(c, f, e, k);
 }
 
@@ -1252,7 +1303,7 @@ function pintarGpu(c, f, e, k) {
   c.gpuDd.classList.toggle("oculto", g.modo === "no" || !g.modo);
   let st = "—";
   if (g.estado === "activa") st = `${t("gpu_" + g.modo)} · ${g.fps.toFixed(1)} fps · ${g.mbps.toFixed(1)} Mbit/s`;
-  else if (g.estado === "error") st = `${T[lang].gpu_st.error}: ${g.error}`;
+  else if (g.estado === "error") st = T[lang].gpu_errors[g.error] || `${T[lang].gpu_st.error}: ${g.error}`;
   else if (g.estado) st = T[lang].gpu_st[g.estado] || g.estado;
   poner(c.gpuDd, st);
 }
@@ -1493,6 +1544,10 @@ function pintar(e) {
     barra("barraUso", uso, uso < 50 ? "ok" : uso < 80 ? "aviso" : "mal");
   } else { poner("redUso", "—"); barra("barraUso", 0); }
   poner("redModo", red.modo === "ethernet" ? t("cable") : red.modo === "wifi" ? `WiFi «${w.ssid}»` : t("no_network"));
+  // por WiFi, 1 de cada 10 fotogramas llegó con más de 200 ms: el cable es lo que más la baja
+  const avisoWifi = red.modo === "wifi" && red.ethernet;
+  $("redLatDt").classList.toggle("oculto", !avisoWifi); $("redLat").classList.toggle("oculto", !avisoWifi);
+  poner("redLat", t("lat_wifi_hint"));
   const eth = red.ethernet;
   poner("redCable", !eth ? t("no_wired_port") : eth.conectada
     ? `${eth.velocidad ? eth.velocidad + " Mbit/s · " : ""}${eth.ip || "—"} · ${eth.mac || ""}` : `${t("cable_unplugged")} · ${eth.mac || ""}`);
