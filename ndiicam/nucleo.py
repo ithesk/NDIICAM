@@ -93,6 +93,64 @@ def sh(cmd, timeout=15):
     except (OSError, subprocess.SubprocessError):
         return ""
 
+def cacheado(segundos):
+    """Guarda el resultado de un método durante unos segundos (por argumentos).
+    Para consultas a nmcli/iw que se piden cada 2 s y cambian cada muchos minutos:
+    cada una es un proceso nuevo y despierta a NetworkManager y D-Bus.
+    olvidar_cache(objeto) las borra todas, tras cambiar la red."""
+    def deco(fn):
+        def envoltura(self, *args, **kwargs):
+            caches = self.__dict__.setdefault("_caches", {})
+            clave = (fn.__name__, args, tuple(sorted(kwargs.items())))
+            ahora = time.monotonic()
+            hit = caches.get(clave)
+            if hit and ahora - hit[0] < segundos:
+                return hit[1]
+            valor = fn(self, *args, **kwargs)
+            caches[clave] = (ahora, valor)
+            return valor
+        envoltura.__name__ = fn.__name__
+        envoltura.__doc__ = fn.__doc__
+        return envoltura
+    return deco
+
+
+def olvidar_cache(objeto):
+    objeto.__dict__.get("_caches", {}).clear()
+
+
+def cache_funcion(segundos):
+    """Como cacheado, para funciones sueltas (por argumentos)."""
+    def deco(fn):
+        guardado = {}
+
+        def envoltura(*args):
+            ahora = time.monotonic()
+            hit = guardado.get(args)
+            if hit and ahora - hit[0] < segundos:
+                return hit[1]
+            valor = fn(*args)
+            guardado[args] = (ahora, valor)
+            return valor
+        envoltura.__name__ = fn.__name__
+        envoltura.__doc__ = fn.__doc__
+        envoltura.olvidar = guardado.clear
+        return envoltura
+    return deco
+
+
+_PAIS = []
+
+
+def pais_regulatorio():
+    """País del dominio regulatorio WiFi (US si no hay): una vez por arranque.
+    Antes se preguntaba a 'iw reg get' en cada lectura de la configuración."""
+    if not _PAIS:
+        m = re.search(r"country (\w\w):", sh(["iw", "reg", "get"]))
+        _PAIS.append(m.group(1) if m and m.group(1) != "00" else "US")
+    return _PAIS[0]
+
+
 def leer(ruta, defecto=""):
     try:
         with open(ruta) as f:
@@ -127,6 +185,7 @@ def nm_valores(texto):
     """Valores múltiples de 'nmcli -g' (separados por ' | ')."""
     return [v.strip() for v in texto.strip().split(" | ") if v.strip()]
 
+@cache_funcion(1.5)    # se pide desde varios hilos en cada ciclo de 2 s
 def ip_de(interfaz):
     m = re.search(r"inet (\d+\.\d+\.\d+\.\d+)",
                   sh(["ip", "-4", "-o", "addr", "show", "dev", interfaz]))
@@ -145,6 +204,7 @@ def interfaz_wifi():
             return nombre
     return None
 
+@cache_funcion(1.5)    # se pide desde varios hilos en cada ciclo de 2 s
 def dispositivo_por_defecto():
     m = re.search(r"\bdev (\S+)", sh(["ip", "-4", "route", "show", "default"]))
     return m.group(1) if m else None
@@ -207,8 +267,7 @@ class Config:
             mac = leer(f"/sys/class/net/{wifi}/address") if wifi else ""
             d["ap_ssid"] = "NDIICAM-" + (mac.replace(":", "")[-4:].upper() or "SETUP")
         if not d["pais"]:
-            m = re.search(r"country (\w\w):", sh(["iw", "reg", "get"]))
-            d["pais"] = m.group(1) if m and m.group(1) != "00" else "US"
+            d["pais"] = pais_regulatorio()
         return d
 
     def fuente(self, ident):
@@ -279,6 +338,7 @@ def nombre_de(ip):
         _nombres[ip] = out[1].removesuffix(".local") if len(out) > 1 else None
     return _nombres[ip]
 
+@cache_funcion(1.5)    # se pide desde varios hilos en cada ciclo de 2 s
 def conexiones_por_pid():
     """IPs de receptores con conexión TCP abierta, por proceso emisor."""
     res = {}

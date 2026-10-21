@@ -12,7 +12,7 @@ import yaml
 
 from nucleo import (AP_IF, AP_IP, CICLO_EXCLUSIVO, ESPERA_AP, PAUSA_EXCLUSIVO,
     PERFIL_TEMPORAL, RUN, canal, dispositivo_por_defecto, escribir_privado, evento,
-    interfaz_wifi, ip_de, leer, nm_valores, partir, sh)
+    interfaz_wifi, ip_de, leer, nm_valores, partir, sh, cacheado, olvidar_cache)
 
 
 # ----------------------------------------------------------------------- red
@@ -40,6 +40,7 @@ class Red:
 
     # --- estado
 
+    @cacheado(3)     # estado de interfaces: se pide varias veces por ciclo
     def dispositivos(self):
         devs = []
         for linea in sh(["nmcli", "-t", "-f", "DEVICE,TYPE,STATE,CONNECTION",
@@ -54,6 +55,7 @@ class Red:
         return any(d["estado"] == "connected" and d["tipo"] in ("wifi", "ethernet")
                    and d["dev"] != AP_IF for d in self.dispositivos())
 
+    @cacheado(3)     # señal y enlace WiFi
     def info_wifi(self):
         if not self.wifi or (self.ap_activo and self.modo_ap == "exclusivo"):
             return None
@@ -389,6 +391,7 @@ class Red:
                 "prefijo": int(direccion.split("/")[1]) if "/" in direccion else 24,
                 "gateway": actual[1].strip(), "dns": nm_valores(actual[2])}
 
+    @cacheado(10)     # ajustes de IP: cambian solo al tocarlos (se olvida al cambiarlos)
     def ip_config(self):
         """Ajuste de IP del perfil que da la ruta por defecto y valores en uso."""
         dev = dispositivo_por_defecto()
@@ -400,6 +403,7 @@ class Red:
         return {"perfil": perfil, "dispositivo": dev, **self.ip_perfil(perfil),
                 "en_uso": self._en_uso(dev), "cambio": self.cambio_ip}
 
+    @cacheado(10)     # perfil del cable
     def perfil_cable(self):
         """Dispositivo y perfil de NetworkManager del cable, esté o no enchufado:
         si no está conectado, el primer perfil de cable (NetworkManager lo crea
@@ -419,6 +423,7 @@ class Red:
         return {"dev": eth["dev"], "perfil": perfil or None, "conectado": conectado,
                 "mac": leer(f"/sys/class/net/{eth['dev']}/address")}
 
+    @cacheado(10)     # ajustes de IP del cable
     def ip_config_cable(self):
         """Como ip_config, pero del cable, aunque no esté enchufado (sin en_uso)."""
         c = self.perfil_cable()
@@ -441,6 +446,7 @@ class Red:
     def cambiar_ip(self, nuevo, conexion="activa"):
         if self.cambio_ip and self.cambio_ip["estado"] == "aplicando":
             return False
+        olvidar_cache(self)
         if conexion == "cable":
             cfg = self.ip_config_cable()
             if not cfg:
@@ -480,6 +486,7 @@ class Red:
 
         try:
             aplicar(nuevo)
+            olvidar_cache(self)
             if funciona():
                 self.cambio_ip = {"estado": "ok", "direccion": ip_de(dev),
                                   "equipo": socket.gethostname()}
