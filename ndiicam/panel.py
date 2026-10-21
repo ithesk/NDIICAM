@@ -18,7 +18,7 @@ import nucleo
 from nucleo import (AP_IP, CLAVE_PUENTE, ESTADO, EVENTOS, FPS_VALIDOS, GRABACIONES,
     GRABAR_CUANDO, HORA, IDIOMAS, MODOS, MODOS_CONSOLA, NOMBRE_EQUIPO, NOMBRE_GRABACION,
     NOMBRE_NDI, RESOLUCIONES, SALIDAS_GPU, URL_RTMP, WEB, clave_correcta, cliente_ip,
-    configurar_ndi, evento, resumen_clave, sh, FORMATOS)
+    configurar_ndi, evento, resumen_clave, sh, FORMATOS, LATENCIAS)
 from camaras import fijar_modo_consola
 from gpu import capacidad_gpu
 from puente import clave_puente, xml_atem
@@ -332,6 +332,18 @@ class Panel(BaseHTTPRequestHandler):
             if not 1024 <= v <= 65535:
                 return self._error("puerto_invalido")
             cambios["srt_puerto"] = v
+        if "latencia" in d:
+            if d["latencia"] not in LATENCIAS:
+                return self._error("modo_invalido")
+            cambios["latencia"] = d["latencia"]
+        if "srt_latencia" in d:
+            try:
+                v = int(d["srt_latencia"])
+            except (TypeError, ValueError):
+                v = 0
+            if not 20 <= v <= 2000:
+                return self._error("latencia_invalida")
+            cambios["srt_latencia"] = v
         if "formato" in d:
             if d["formato"] not in FORMATOS:
                 return self._error("modo_invalido")

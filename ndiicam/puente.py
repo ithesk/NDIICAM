@@ -97,7 +97,9 @@ def xml_atem(ip, clave):
         f'        <config resolution="1080p" fps="{fps}">\n'
         f"          <bitrate>{bps}</bitrate>\n"
         "          <audio-bitrate>128000</audio-bitrate>\n"
-        "          <keyframe-interval>2</keyframe-interval>\n"
+        # un fotograma clave por segundo: el puente (RTMP) empieza a mostrar desde el
+        # último, así que con 1 s se recorta hasta un segundo de retardo
+        "          <keyframe-interval>1</keyframe-interval>\n"
         "        </config>\n"
         for fps, bps in (("60", 12000000), ("50", 12000000), ("30", 8000000),
                          ("25", 8000000), ("24", 8000000)))

@@ -69,7 +69,13 @@ GRUB_NDIICAM = "/etc/default/grub.d/90-ndiicam.cfg"
 MODOS_CONSOLA = {"nativa": None, "1080p": "1920x1080@60", "720p": "1280x720@60"}
 CLAVES_FUENTE = ("activa", "ndi_nombre", "resolucion", "fps", "audio",
                  "gpu_salida", "gpu_kbps", "srt_puerto", "rtmp_url",
-                 "grabar_cuando", "grabar_desde", "grabar_hasta", "grabar_manual", "formato")
+                 "grabar_cuando", "grabar_desde", "grabar_hasta", "grabar_manual", "formato",
+                 "latencia", "srt_latencia")
+# latencia de la emisión NDI: normal (audio sincronizado), baja (la imagen sale sin
+# esperar al audio de su intervalo; plugin parcheado) o minima (sin audio). En baja y
+# minima se sube a 60 fps si la cámara los da sin comprimir. Medido en un Celeron
+# J3355 con una Cam Link 4K a 30 fps: normal ~100 ms, sin audio ~33 ms
+LATENCIAS = ("normal", "baja", "minima")
 # formato que se pide a la cámara: auto (sin comprimir si el puerto es USB 3.0 y
 # no hace falta el JPEG), mjpeg o crudo (YUYV). Medido con una Cam Link 4K en un
 # Celeron J3355, a 1080p30: MJPEG 50 % de un núcleo, sin comprimir 13 %
@@ -281,7 +287,7 @@ class Config:
              "fps": d["fps"], "audio": d["audio"],
              "gpu_salida": "no", "gpu_kbps": 8000, "srt_puerto": 9000, "rtmp_url": "",
              "grabar_cuando": "siempre", "grabar_desde": "09:00", "grabar_hasta": "18:00",
-             "grabar_manual": False, "formato": "auto"}
+             "grabar_manual": False, "formato": "auto", "latencia": "normal", "srt_latencia": 200}
         f.update({k: v for k, v in d["fuentes"].get(ident, {}).items() if k in CLAVES_FUENTE})
         return f
 

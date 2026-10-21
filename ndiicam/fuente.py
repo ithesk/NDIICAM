@@ -131,7 +131,7 @@ def tramo_salida(cfg):
                   " t. ! queue name=q4 max-size-buffers=2 leaky=downstream")
     if cfg.get("audio"):
         return (f"{video} ! c.video "
-                f"alsasrc name=asrc ! queue name=qa max-size-time=500000000 leaky=downstream"
+                "alsasrc name=asrc ! queue name=qa max-size-time=500000000 leaky=downstream"
                 " ! audioconvert ! audioresample"
                 " ! capsfilter name=af caps=audio/x-raw,format=F32LE,rate=48000"
                 # 'level' mide el nivel (dBFS) cada 200 ms para el medidor del panel
@@ -387,7 +387,7 @@ class SalidaGPU:
                    ' muxer-properties="properties,fragment-duration=(uint)1000"')
         elif modo == "srt":
             mux = (f"mpegtsmux name=mux alignment=7 ! srtsink name=red uri=srt://:{int(g['puerto'])}"
-                   " mode=listener latency=200 wait-for-connection=false sync=false")
+                   f" mode=listener latency={int(g.get('latencia', 200))} wait-for-connection=false sync=false")
         else:
             mux = f"flvmux name=mux streamable=true ! rtmp2sink name=red sync=false async-connect=true"
         a = ""
@@ -409,6 +409,12 @@ class SalidaGPU:
             self.muestreo = muestreo_jpeg(self.primer_jpeg or b"")
             if not self.muestreo:
                 self._fallo("jpeg_no_admitido", "gj", reintentar=False)
+                return False
+            if self.muestreo != "YCbCr-4:2:0":
+                # el codificador H.264 de la GPU solo acepta 4:2:0 y sin procesador de
+                # vídeo (Apollo Lake con iHD) no hay quien convierta: no tiene arreglo
+                # reintentando. Pasa con capturadoras como la Elgato Cam Link 4K (4:2:2)
+                self._fallo("muestreo_no_admitido", "gj", reintentar=False)
                 return False
             p = Gst.parse_launch(self._tramo(self.muestreo))
             if self.g["modo"] == "rtmp":
@@ -503,6 +509,14 @@ def main():
     flujo = Reparto(cfg, n) if cfg["fmt"] == "MJPG" and n > 1 else Directo(cfg)
     flujo.elemento("src").set_property("device", cfg["dev"])
     flujo.elemento("sink").set_property("ndi-name", cfg["nombre"])
+    combinador = flujo.elemento("c")
+    if cfg.get("baja_latencia") and combinador is not None:
+        # la imagen sale sin esperar al audio de su intervalo (plugin parcheado:
+        # plugin/ndisinkcombiner-baja-latencia.patch); con el de serie no existe
+        if any(p.name == "low-latency" for p in combinador.list_properties()):
+            combinador.set_property("low-latency", True)
+        else:
+            informar({"aviso": "sin_baja_latencia"})
     if cfg.get("audio"):
         flujo.elemento("asrc").set_property("device", cfg["audio"])
 

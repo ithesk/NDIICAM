@@ -396,8 +396,18 @@ class Fuentes:
         mismos = [m for m in modos if m[0] == ancho and m[1] == alto]
         fps = max(m[2] for m in ([m for m in mismos if m[2] <= aj["fps"]] or mismos))
         fmt = self.formato(f, aj, [m[3] for m in mismos if m[2] == fps])
+        latencia = aj.get("latencia", "normal")
+        if latencia != "normal" and fps < 60:
+            # a 60 fps cada espera de un fotograma dura la mitad; solo sin comprimir:
+            # MJPEG a 1080p60 deja un Celeron al límite
+            fmt60 = self.formato(f, aj, [m[3] for m in mismos if m[2] == 60])
+            usb3 = velocidad_usb(f.cam.get("usb")) >= 5000     # por USB 2.0 no cabe
+            if usb3 and fmt60 == "YUYV" and any(m[2] == 60 and m[3] == "YUYV" for m in mismos):
+                fps, fmt = 60, fmt60
+        audio = None if latencia == "minima" else self.audio_para(f, aj["audio"])
         return {"dev": f.cam["dev"], "ancho": ancho, "alto": alto, "fps": fps, "fmt": fmt,
-                "nombre": aj["ndi_nombre"], "audio": self.audio_para(f, aj["audio"]),
+                "nombre": aj["ndi_nombre"], "audio": audio,
+                "baja_latencia": latencia == "baja" and audio is not None,
                 "decodificadores": self.decodificadores(f, fmt),
                 "hdmi": self.hdmi_conector if f.cam["id"] == self.hdmi_para
                 and not f.hdmi_fallido else None,
@@ -439,6 +449,7 @@ class Fuentes:
                 g["horario"] = [aj["grabar_desde"], aj["grabar_hasta"]]
         elif modo == "srt":
             g["puerto"] = int(aj["srt_puerto"])
+            g["latencia"] = int(aj.get("srt_latencia", 200))
         elif aj.get("rtmp_url"):
             g["url"] = aj["rtmp_url"]
         else:

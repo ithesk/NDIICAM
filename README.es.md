@@ -201,6 +201,10 @@ Salen de montarlo en hardware real y explican algunos valores por defecto:
   decodificarla por CPU (145 ms por imagen 1080p en Apollo Lake, frente a 14 ms por CPU). Las
   grabaciones son MP4 fragmentado (se leen aunque se corte la luz), de 10 minutos, en
   `/var/lib/ndiicam/grabaciones`; si quedan menos de 2 GB se borran las más antiguas.
+- **La salida por GPU necesita JPEG 4:2:0.** Su codificador H.264 solo acepta 4:2:0, y sin
+  procesador de vídeo (Apollo Lake con iHD) nadie convierte el 4:2:2. Las webcams y la DJI Osmo
+  Pocket 3 mandan 4:2:0; las capturadoras HDMI como la Elgato Cam Link 4K mandan 4:2:2, así que con
+  ellas la salida GPU lo indica y queda apagada.
 - **Las GPU Intel Gen9 (Skylake a Gemini Lake) necesitan el firmware HuC** para su codificador de
   bajo consumo, y el kernel no lo carga: sin él, ese codificador **colgó el equipo entero**. El
   instalador añade `i915.enable_guc=2` (en `/etc/default/grub.d/80-ndiicam-huc.cfg`) y pide
@@ -247,8 +251,23 @@ interno de cada cámara (cámara → NDI) y del receptor o el puente (→ HDMI).
 |---|---|---|
 | NDI, del emisor a un receptor de la red | ~25 ms de mediana, el 10 % de los fotogramas por encima de 200 ms | Vaivén de la WiFi; por cable es más estable. Súmale el retardo propio de la cámara y el interno que enseña el panel |
 | Salida H.264 por GPU (grabar, SRT, RTMP) | ~200 ms en codificar y empaquetar | Más el búfer del reproductor: el SRT va configurado con 200 ms; OBS y VLC añaden el suyo |
-| Puente, RTMP de entrada → HDMI | de 0,6 a 1,4 s dentro del equipo | Los servidores RTMP entregan a un lector nuevo desde el último fotograma clave, así que el desfase depende de cuándo se conectó. Más el retardo del codificador del ATEM. No es un camino de baja latencia |
+| Puente, RTMP de entrada → HDMI | de 0,6 a 1,4 s dentro del equipo | Los servidores RTMP entregan a un lector nuevo desde el último fotograma clave, así que el desfase depende de cuándo se conectó; el archivo de ajustes del ATEM pide un fotograma clave por segundo para recortarlo. Más el retardo del codificador del ATEM. No es un camino de baja latencia |
 | Botón Grabar | arranca con el siguiente fotograma | la primera vez reinicia además la emisión de la cámara (~2 s) para activar la salida GPU |
+
+### Bajar la latencia
+
+Cada cámara tiene un ajuste **Latencia**:
+
+| Modo | Qué hace | Dentro del equipo (Cam Link 4K, 30 fps) |
+|---|---|---|
+| Normal | Cada imagen espera al audio de su intervalo: audio y vídeo van sincronizados | ~100 ms |
+| Baja | La imagen sale en cuanto llega, con el audio que ya haya; el audio puede ir hasta un fotograma más tarde. Necesita el plugin NDI parcheado (`plugin/`) | ver abajo |
+| Mínima | Sin audio | ~33 ms |
+
+En Baja y Mínima se sube a 60 fps si la cámara los da sin comprimir por USB 3.0, y así cada
+espera de un fotograma dura la mitad. El resto del retardo está fuera de NDIICAM: el cable de red
+en vez de la WiFi quita casi todo el vaivén, y en OBS el modo de latencia de la fuente NDI debe ir
+en "Lowest". El búfer de la salida SRT (200 ms por defecto) puede bajar a 80-120 ms en una red local.
 
 ## Problemas frecuentes
 
