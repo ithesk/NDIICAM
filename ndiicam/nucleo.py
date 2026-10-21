@@ -22,7 +22,7 @@ ACTUALIZADOR = None    # Actualizador
 BUSCADOR = None        # BuscadorNDI
 
 
-VERSION = "0.3.0"
+VERSION = "0.4.0"
 REPO = "ithesk/NDIICAM"
 CONFIG = "/etc/ndiicam/config.json"
 DATOS = "/var/lib/ndiicam"          # el servicio apunta NDI_CONFIG_DIR a DATOS/.ndi
