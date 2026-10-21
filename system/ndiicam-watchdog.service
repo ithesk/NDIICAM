@@ -1,0 +1,14 @@
+# NDIICAM — carga el watchdog de la placa al arrancar (ver ndiicam-watchdog.sh).
+[Unit]
+Description=NDIICAM: load the hardware watchdog
+DefaultDependencies=no
+After=systemd-modules-load.service
+Before=sysinit.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/bin/sh /opt/ndiicam/ndiicam-watchdog.sh
+
+[Install]
+WantedBy=sysinit.target

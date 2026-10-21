@@ -40,6 +40,6 @@ a systemd-networkd. Registro: `/var/lib/ndiicam/red.log`.
 
 ## Finding the device / Encontrar el equipo
 
-- `http://<hostname>.local` (mDNS)
+- `https://<hostname>.local` (mDNS)
 - From the router's DHCP list / en la lista DHCP del router
 - From the setup WiFi: `http://10.42.0.1` / desde la WiFi de configuración

@@ -16,6 +16,7 @@ from gpu import (capacidad_gpu, decodificador_h264, energia_rapl, tiempos_cpu, t
     uso_gpu, vatios)
 from puente import PUENTE
 from supervisor import ocultar_clave_rtmp
+import sistema
 
 
 def medidor():
@@ -189,6 +190,8 @@ def construir_estado(tx_mbps, rx_mbps, cpu_pct, potencia, gpu_uso=None):
                    "potencia_w": potencia.get("paquete"), "potencia_nucleos_w": potencia.get("core"),
                    "gpu": gpu_uso,
                    "temp": round(max(temps), 1) if temps else None,
+                   "watchdog": sistema.watchdog(), "hora": sistema.hora(),
+                   "arranque": sistema.MOTIVO,
                    "ram_pct": round(100 * (1 - int(mem.get("MemAvailable", 0))
                                            / max(1, int(mem.get("MemTotal", 1)))))},
         "fuentes": fuentes,

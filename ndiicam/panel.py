@@ -9,13 +9,15 @@ import re
 import secrets
 import shutil
 import socket
+import ssl
 import threading
 import time
+from http.cookies import CookieError, SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
 import nucleo
-from nucleo import (AP_IP, CLAVE_PUENTE, ESTADO, EVENTOS, FPS_VALIDOS, GRABACIONES,
+from nucleo import (AP_CLAVE_DEFECTO, AP_IP, CLAVE_PUENTE, ESTADO, EVENTOS, FPS_VALIDOS, GRABACIONES,
     GRABAR_CUANDO, HORA, IDIOMAS, MODOS, MODOS_CONSOLA, NOMBRE_EQUIPO, NOMBRE_GRABACION,
     NOMBRE_NDI, RESOLUCIONES, SALIDAS_GPU, URL_RTMP, WEB, clave_correcta, cliente_ip,
     configurar_ndi, evento, resumen_clave, sh, FORMATOS, LATENCIAS)
@@ -25,10 +27,14 @@ from puente import clave_puente, xml_atem
 from actualizador import (cambiar_nombre_equipo, reiniciar_servicio, respaldo, restaurar,
     valores_fabrica)
 from estado import grabaciones
+from cortafuegos import puertos_extra
+from seguridad import CLAVE_MINIMA, COOKIE, DURACION_SESION, huella_certificado
+import sistema
 
 
 class Panel(BaseHTTPRequestHandler):
     server_version = "NDIICAM"
+    timeout = 60
 
     def log_message(self, *args):
         pass
@@ -53,29 +59,120 @@ class Panel(BaseHTTPRequestHandler):
         except ValueError:
             return {}
 
+    def end_headers(self):
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.send_header("X-Frame-Options", "DENY")
+        self.send_header("Referrer-Policy", "same-origin")
+        super().end_headers()
+
     def _desde_ap(self):
         return cliente_ip(self).startswith("10.42.0.")
 
+    def _testigo(self):
+        try:
+            c = SimpleCookie(self.headers.get("Cookie", ""))
+        except CookieError:
+            return None
+        return c[COOKIE].value if COOKIE in c else None
+
     def _autorizado(self):
-        """Contraseña opcional del panel. Desde la WiFi de configuración no se
-        pide: quien está ahí ya conoce su clave, y así sirve para recuperarla."""
+        """La contraseña del panel es obligatoria. Desde la WiFi de configuración
+        no se pide: quien está ahí ya conoce su clave, y así sirve para recuperarla.
+        Vale la cookie de sesión (el navegador) o Basic Auth (scripts, Companion)."""
+        if self._desde_ap():
+            return True
         guardada = nucleo.CONF.get()["clave_panel"]
-        if not guardada or self._desde_ap():
+        if not guardada:
+            return False        # primero hay que crearla
+        if nucleo.SESIONES.valida(self._testigo()):
             return True
         cab = self.headers.get("Authorization", "")
         if cab.startswith("Basic "):
+            ip = cliente_ip(self)
+            if nucleo.INTENTOS.espera(ip):
+                return False
             try:
                 clave = base64.b64decode(cab[6:]).decode().partition(":")[2]
             except ValueError:
-                return False
-            return clave_correcta(clave, guardada)
+                clave = ""
+            if clave_correcta(clave, guardada):
+                nucleo.INTENTOS.acierto(ip)
+                return True
+            nucleo.INTENTOS.fallo(ip)
         return False
 
     def _pedir_clave(self):
-        self.send_response(401)
-        self.send_header("WWW-Authenticate", 'Basic realm="NDIICAM"')
+        self._error("sin_sesion", 401)
+
+    def _cookie(self, testigo, edad=DURACION_SESION):
+        partes = [f"{COOKIE}={testigo}", "Path=/", "HttpOnly", "SameSite=Strict", f"Max-Age={edad}"]
+        if getattr(self.server, "tls", False):
+            partes.append("Secure")
+        return "; ".join(partes)
+
+    def _json_sesion(self, datos, testigo, edad=DURACION_SESION):
+        cuerpo = json.dumps(datos, ensure_ascii=False).encode()
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("Set-Cookie", self._cookie(testigo, edad))
+        self.send_header("Content-Length", str(len(cuerpo)))
+        self.end_headers()
+        self.wfile.write(cuerpo)
+
+    def _mismo_origen(self):
+        """Contra peticiones falsificadas desde otra web (además de SameSite)."""
+        origen = self.headers.get("Origin")
+        if not origen or origen == "null":
+            return origen is None
+        return urlparse(origen).netloc.lower() == (self.headers.get("Host") or "").lower()
+
+    def _a_https(self):
+        """Por la red, el panel va cifrado: HTTP solo redirige. Desde la WiFi de
+        configuración sigue en HTTP (el portal cautivo de los móviles no acepta
+        un certificado propio)."""
+        if getattr(self.server, "tls", False) or self._desde_ap() or not nucleo.HTTPS:
+            return False
+        host = (self.headers.get("Host") or socket.gethostname() + ".local").rsplit("]", 1)
+        host = host[0] + "]" if len(host) == 2 else host[0].split(":")[0]
+        self.send_response(301)
+        self.send_header("Location", f"https://{host}{self.path}")
         self.send_header("Content-Length", "0")
         self.end_headers()
+        return True
+
+    def _sesion_info(self):
+        cfg = nucleo.CONF.get()
+        return {"autenticado": self._autorizado(), "clave_creada": bool(cfg["clave_panel"]),
+                "desde_ap": self._desde_ap(), "espera": nucleo.INTENTOS.espera(cliente_ip(self)),
+                "https": bool(getattr(self.server, "tls", False)), "minimo": CLAVE_MINIMA,
+                "idioma": cfg["idioma"]}
+
+    def _entrar(self, d):
+        ip = cliente_ip(self)
+        espera = nucleo.INTENTOS.espera(ip)
+        if espera:
+            return self._json({"error": "demasiados_intentos", "espera": espera}, 429)
+        guardada = nucleo.CONF.get()["clave_panel"]
+        if not guardada or not clave_correcta(str(d.get("clave", "")), guardada):
+            nucleo.INTENTOS.fallo(ip)
+            evento("acceso_fallido", ip=ip)
+            espera = nucleo.INTENTOS.espera(ip)
+            return self._json({"error": "clave_incorrecta", "espera": espera}, 429 if espera else 403)
+        nucleo.INTENTOS.acierto(ip)
+        evento("acceso", ip=ip)
+        self._json_sesion({"ok": True}, nucleo.SESIONES.crear(ip))
+
+    def _crear_clave(self, d):
+        """Primera vez: se elige la contraseña (no hay ninguna por defecto)."""
+        if nucleo.CONF.get()["clave_panel"]:
+            return self._error("clave_ya_creada", 409)
+        v = str(d.get("clave", ""))
+        if len(v) < CLAVE_MINIMA or len(v) > 128:
+            return self._error("clave_panel_corta")
+        nucleo.CONF.actualizar({"clave_panel": resumen_clave(v)})
+        evento("clave_creada", ip=cliente_ip(self))
+        self._json_sesion({"ok": True}, nucleo.SESIONES.crear(cliente_ip(self)))
 
     def _redirigir_portal(self):
         """Desde el AP, cualquier otro host (detección de portal de los móviles,
@@ -90,11 +187,14 @@ class Panel(BaseHTTPRequestHandler):
         return False
 
     def do_GET(self):
-        if self._redirigir_portal():
+        if self._redirigir_portal() or self._a_https():
             return
-        if not self._autorizado():
-            return self._pedir_clave()
         url = urlparse(self.path)
+        if url.path == "/api/sesion":
+            return self._json(self._sesion_info())
+        # la página es pública (no lleva datos): sin sesión, enseña la entrada
+        if url.path not in ("/", "/index.html") and not self._autorizado():
+            return self._pedir_clave()
         if url.path in ("/", "/index.html"):
             try:
                 with open(WEB, "rb") as f:
@@ -112,9 +212,15 @@ class Panel(BaseHTTPRequestHandler):
             self._json({**ESTADO, "config": {
                 "transporte": cfg["transporte"], "ap_ssid": cfg["ap_ssid"],
                 "ap_clave": cfg["ap_clave"], "pais": cfg["pais"], "idioma": cfg["idioma"],
-                "clave_panel": bool(cfg["clave_panel"]), "decodificadores": cfg["decodificadores"]},
+                "clave_panel": bool(cfg["clave_panel"]), "decodificadores": cfg["decodificadores"],
+                "cortafuegos": cfg["cortafuegos"], "puertos_extra": cfg["puertos_extra"]},
                 "desde_ap": self._desde_ap(), "eventos": list(EVENTOS)[:40],
-                "conexion_wifi": nucleo.RED.conexion})
+                "conexion_wifi": nucleo.RED.conexion,
+                "seguridad": {"https": bool(getattr(self.server, "tls", False)),
+                              "https_disponible": bool(nucleo.HTTPS),
+                              "huella": huella_certificado() if nucleo.HTTPS else None,
+                              "ap_clave_defecto": cfg["ap_clave"] == AP_CLAVE_DEFECTO,
+                              "cortafuegos": nucleo.CORTAFUEGOS.estado(cfg)}})
         elif url.path == "/api/fuente/preview":
             ident = parse_qs(url.query).get("id", [""])[0]
             f = next((x for x in nucleo.FUENTES.lista() if x.cam["id"] == ident), None)
@@ -151,6 +257,12 @@ class Panel(BaseHTTPRequestHandler):
             self.wfile.write(cuerpo)
         elif url.path == "/api/grabaciones":
             self._json(grabaciones())
+        elif url.path == "/api/registro":
+            self._registro(parse_qs(url.query))
+        elif url.path == "/api/registro/arranques":
+            self._json({"arranques": sistema.arranques()})
+        elif url.path == "/api/sistema/zonas":
+            self._json({"zonas": sistema.zonas(), **sistema.hora()})
         elif url.path.startswith("/grabaciones/"):
             self._descargar(url.path[len("/grabaciones/"):])
         elif url.path == "/api/wifi/redes":
@@ -190,10 +302,42 @@ class Panel(BaseHTTPRequestHandler):
             except (BrokenPipeError, ConnectionResetError):
                 pass
 
+    def _registro(self, q):
+        uno = lambda k, defecto="": q.get(k, [defecto])[0]   # noqa: E731
+        try:
+            n = int(uno("n", "300"))
+        except ValueError:
+            n = 300
+        lineas = sistema.registro(uno("origen", "servicio"), uno("arranque"), uno("nivel", "todo"),
+                                  uno("buscar"), n)
+        if lineas is None:
+            return self._error("modo_invalido")
+        if uno("formato") != "txt":
+            return self._json({"lineas": lineas})
+        cuerpo = sistema.registro_texto(lineas).encode()
+        nombre = f"ndiicam-{socket.gethostname()}-{uno('origen', 'servicio')}-{datetime.date.today():%Y%m%d}.log"
+        self.send_response(200)
+        self.send_header("Content-Type", "text/plain; charset=utf-8")
+        self.send_header("Content-Disposition", f'attachment; filename="{nombre}"')
+        self.send_header("Content-Length", str(len(cuerpo)))
+        self.end_headers()
+        self.wfile.write(cuerpo)
+
     def do_POST(self):
+        if not self._mismo_origen():
+            return self._error("origen", 403)
+        ruta = urlparse(self.path).path
+        if not getattr(self.server, "tls", False) and nucleo.HTTPS and not self._desde_ap():
+            return self._error("usar_https", 403)    # nada viaja sin cifrar por la red
+        if ruta == "/api/login":
+            return self._entrar(self._cuerpo())
+        if ruta == "/api/clave/crear":
+            return self._crear_clave(self._cuerpo())
+        if ruta == "/api/logout":
+            nucleo.SESIONES.cerrar(self._testigo())
+            return self._json_sesion({"ok": True}, "", 0)
         if not self._autorizado():
             return self._pedir_clave()
-        ruta = urlparse(self.path).path
         if ruta == "/api/respaldo":
             d = self._cuerpo(maximo=262144)
             if "config" not in d and "wifi" not in d:
@@ -260,7 +404,19 @@ class Panel(BaseHTTPRequestHandler):
             return self._json({"ok": True, "reinicio": True})
         if ruta == "/api/sistema/reiniciar":
             evento("reinicio_equipo")
+            sistema.marcar_fin("reinicio_panel")
             threading.Timer(1.5, sh, args=(["systemctl", "reboot"],)).start()
+            return self._json({"ok": True})
+        if ruta == "/api/sistema/apagar":
+            evento("apagado_equipo")
+            sistema.marcar_fin("apagado_panel")
+            threading.Timer(1.5, sh, args=(["systemctl", "poweroff"],)).start()
+            return self._json({"ok": True})
+        if ruta == "/api/sistema/zona":
+            zona = str(d.get("zona", ""))
+            if not sistema.cambiar_zona(zona):
+                return self._error("zona_invalida")
+            evento("zona_horaria", zona=zona)
             return self._json({"ok": True})
         self._error("no_encontrado", 404)
 
@@ -439,10 +595,23 @@ class Panel(BaseHTTPRequestHandler):
                 return self._error("pais_invalido")
             cambios["pais"] = v
         if "clave_panel" in d:
+            # obligatoria: se cambia, no se quita. Hace falta la actual, salvo desde
+            # la WiFi de configuración (para recuperarla si se olvida)
             v = str(d["clave_panel"])
-            if v and len(v) < 4:
+            if len(v) < CLAVE_MINIMA or len(v) > 128:
                 return self._error("clave_panel_corta")
-            cambios["clave_panel"] = resumen_clave(v) if v else ""
+            if antes["clave_panel"] and not self._desde_ap() and not clave_correcta(
+                    str(d.get("clave_actual", "")), antes["clave_panel"]):
+                nucleo.INTENTOS.fallo(cliente_ip(self))
+                return self._error("clave_actual_incorrecta", 403)
+            cambios["clave_panel"] = resumen_clave(v)
+        if "cortafuegos" in d:
+            cambios["cortafuegos"] = bool(d["cortafuegos"])
+        if "puertos_extra" in d:
+            v = str(d["puertos_extra"]).strip()
+            if len(v) > 300 or puertos_extra(v) is None:
+                return self._error("puertos_invalidos")
+            cambios["puertos_extra"] = v
         nuevo_nombre = None
         if "nombre_equipo" in d:
             v = str(d["nombre_equipo"]).strip()
@@ -457,6 +626,8 @@ class Panel(BaseHTTPRequestHandler):
                 evento("modo", modo=cambios["modo"])
             if cambios.keys() - {"modo"}:
                 evento("ajustes", campos=sorted(cambios.keys() - {"modo"}))
+        if "clave_panel" in cambios:
+            nucleo.SESIONES.cerrar_todas(salvo=self._testigo())
         if {"hdmi", "hdmi_fuente"} & cambios.keys():
             for f in nucleo.FUENTES.lista():
                 f.hdmi_fallido = False      # volver a intentarlo con el ajuste nuevo
@@ -504,7 +675,32 @@ class Servidor(ThreadingHTTPServer):
     """IPv4 e IPv6 en el mismo socket (<equipo>.local resuelve a ambos)."""
     address_family = socket.AF_INET6
     daemon_threads = True
+    tls = False
 
     def server_bind(self):
         self.socket.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_V6ONLY, 0)
         super().server_bind()
+
+
+class ServidorTLS(Servidor):
+    """El panel por HTTPS. El saludo TLS se hace en el hilo de cada petición, no
+    al aceptarla: un cliente lento o que habla HTTP no frena a los demás."""
+    tls = True
+
+    def __init__(self, direccion, manejador, contexto):
+        self.contexto = contexto
+        super().__init__(direccion, manejador)
+
+    def finish_request(self, request, client_address):
+        request.settimeout(20)
+        try:
+            cifrado = self.contexto.wrap_socket(request, server_side=True)
+        except (ssl.SSLError, OSError):
+            return
+        try:
+            self.RequestHandlerClass(cifrado, client_address, self)
+        finally:
+            try:
+                cifrado.close()
+            except OSError:
+                pass
