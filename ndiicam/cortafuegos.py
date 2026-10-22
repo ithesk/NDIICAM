@@ -142,7 +142,11 @@ class Cortafuegos:
             f.get("gpu_salida") == "srt"
             or varias and f.get("gpu_salida", "no") != "no" and "srt" in (f.get("gpu_extra") or []))]
         modos = {cfg["modo"]}
-        if cfg["modo"] != "emisor" and varias:
+        if cfg.get("motor") == "rutas":
+            # con rutas puede haber de todo a la vez: emitir NDI, recibirlo y el
+            # servidor de las emisiones entrantes y del reparto (RTMP, SRT y HLS)
+            modos = {"emisor", "receptor", "puente"}
+        elif cfg["modo"] != "emisor" and varias:
             modos.add("emisor")         # las cámaras siguen emitiendo
         if varias and cfg.get("reem_fuente") and cfg.get("reem_salidas"):
             modos.add("receptor")       # la reemisión recibe NDI

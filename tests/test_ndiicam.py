@@ -1049,6 +1049,23 @@ class Rutas(unittest.TestCase):
         _, _, p = self.plan([{**a, "activa": False}])
         self.assertEqual(p["pausadas"], ["a"])
 
+    def test_cortafuegos_con_rutas(self):
+        cf = cortafuegos.Cortafuegos()
+        guiones = []
+        orig = (cortafuegos.aplicar, cortafuegos.puertos_ssh, cortafuegos.simultaneo)
+        cortafuegos.aplicar = lambda g: guiones.append(g)
+        cortafuegos.puertos_ssh = lambda: [22]
+        cortafuegos.simultaneo = lambda cfg: True
+        try:
+            cf.actualizar({"modo": "emisor", "motor": "rutas", "cortafuegos": True}, [])
+        finally:
+            cortafuegos.aplicar, cortafuegos.puertos_ssh, cortafuegos.simultaneo = orig
+        g = guiones[-1]
+        for puerto in (str(nucleo.PUERTO_RTMP), str(nucleo.PUERTO_HLS)):
+            self.assertRegex(g, rf"tcp dport \{{[^}}]*\b{puerto}\b")
+        self.assertRegex(g, rf"udp dport \{{[^}}]*\b{nucleo.PUERTO_SRT}\b")
+        self.assertIn("tcp dport 6960-7059 accept", g)     # recibir NDI
+
     def test_desde_el_modo_puente(self):
         cfg = {"modo": "puente", "puente_clave": "K9", "programa_audio": "X32", "programa_retraso": 450,
                "programa_grabar": True, "puente_hdmi": "mview", "simultaneo": True}
