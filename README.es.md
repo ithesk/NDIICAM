@@ -231,7 +231,10 @@ Salen de montarlo en hardware real y explican algunos valores por defecto:
 - **El modo receptor también muestra la fuente en un plano de vídeo de la GPU.** NDI decodifica a
   UYVY, que va al plano tal cual: recibir 1080p30 costó ~0,6-0,9 núcleos en el Atom, según la imagen.
   `kmssink` necesita `skip-vsync`, o espera dos refrescos por imagen y se queda en 30 fps en una
-  pantalla de 60 Hz. Las fuentes de otra resolución se escalan por CPU (vecino más próximo, con
+  pantalla de 60 Hz. Las fuentes de otra resolución las escala el propio plano, por hardware y
+  manteniendo la proporción: en un i3-8145U, 1080p a una pantalla de 2560×1440 gastó un 5 % de un
+  núcleo, frente al 55-75 % escalando por CPU. Si el plano no escala (Cherry Trail), `kmssink` lo
+  desactiva, el receptor lo detecta y vuelve a arrancar escalando por CPU (vecino más próximo, con
   bordes), y eso es caro: el filtro "NDI Output" por fuente de OBS manda cada fuente a su tamaño
   original **con transparencia**, y una captura de pantalla de 2530×1378 gastó ~3 núcleos y llegó a
   colgar el Atom. Manda el programa (salida principal de DistroAV, resolución de salida de OBS = la
@@ -241,26 +244,40 @@ Salen de montarlo en hardware real y explican algunos valores por defecto:
 - **La salida H.264 por la GPU** toma el JPEG de la cámara, lo decodifica en la GPU (`vajpegdec`)
   y codifica allí mismo el H.264 (`vah264enc` o `vah264lpenc`), en un pipeline propio alimentado
   con copias: si fallan la GPU, la red o el disco, el NDI no se entera, y la salida se reintenta
-  cada 10 s. En un Celeron J3355 cuesta ~15 % de un núcleo con el NDI a 1080p30 a la vez. El NDI
-  no puede usar la GPU: en estos chips devolver a memoria una imagen decodificada cuesta más que
-  decodificarla por CPU (145 ms por imagen 1080p en Apollo Lake, frente a 14 ms por CPU). Las
+  cada 10 s. En un Celeron J3355 cuesta ~15 % de un núcleo con el NDI a 1080p30 a la vez. Las
   grabaciones son MP4 fragmentado (se leen aunque se corte la luz), de 10 minutos, en
   `/var/lib/ndiicam/grabaciones`; si quedan menos de 2 GB se borran las más antiguas.
-- **La salida por GPU necesita JPEG 4:2:0.** Su codificador H.264 solo acepta 4:2:0, y sin
-  procesador de vídeo (Apollo Lake con iHD) nadie convierte el 4:2:2. Las webcams y la DJI Osmo
-  Pocket 3 mandan 4:2:0; las capturadoras HDMI como la Elgato Cam Link 4K mandan 4:2:2, así que con
-  ellas la salida GPU lo indica y queda apagada.
+- **La GPU también decodifica para el NDI y el modo puente, si compensa.** Con el procesador de
+  vídeo (`vapostproc`, en el driver `intel-media-va-driver-non-free`, que el instalador pone si
+  está), la GPU decodifica el JPEG de las cámaras y el H.264 del modo puente y los deja en UYVY; la
+  CPU solo baja la imagen a memoria. Si eso compensa depende del chip: en un i3-8145U (UHD 620) un
+  JPEG 1080p muy detallado gastó 4 veces menos CPU y el H.264 1080p60 la mitad; en un Celeron J3355
+  (Apollo Lake) bajar la imagen gastó 10 veces más que decodificar por CPU (145 ms por imagen frente
+  a 14) y, con imágenes muy detalladas, **colgó el equipo entero**. Por eso NDIICAM lo mide en cada
+  equipo: decodifica unos segundos de prueba por CPU y por GPU (en otro proceso) y usa la GPU solo
+  si gasta como mucho el 80 %. La medida se guarda en `/var/lib/ndiicam/gpu-vpp.json` y se repite
+  si cambian el kernel, el driver o la GPU. Apollo Lake, Gemini Lake y Cherry Trail ni se miden, y
+  si el equipo se reinicia a mitad de una medida esa GPU no se vuelve a probar. Si la GPU falla con
+  una cámara o una emisión, se sigue por CPU sin cortar y queda en el registro. Con
+  `decodificadores` en un número fijo, siempre por CPU.
+- **La salida por GPU necesita JPEG 4:2:0, o el procesador de vídeo.** Su codificador H.264 solo
+  acepta 4:2:0; con `vapostproc` la GPU convierte el 4:2:2 antes de codificar. Sin procesador de
+  vídeo (driver iHD libre) nadie convierte el 4:2:2. Las webcams y la DJI Osmo Pocket 3 mandan
+  4:2:0; las capturadoras HDMI como la Elgato Cam Link 4K mandan 4:2:2, así que sin `vapostproc`
+  la salida GPU lo indica y queda apagada.
 - **Las GPU Intel Gen9 (Skylake a Gemini Lake) necesitan el firmware HuC** para su codificador de
   bajo consumo, y el kernel no lo carga: sin él, ese codificador **colgó el equipo entero**. El
   instalador añade `i915.enable_guc=2` (en `/etc/default/grub.d/80-ndiicam-huc.cfg`) y pide
-  reiniciar; mientras tanto la salida GPU queda desactivada. También instala
-  `intel-media-va-driver` (iHD): el driver antiguo, i965, no entrega un JPEG 4:2:0 decodificado.
+  reiniciar; mientras tanto la salida GPU queda desactivada. También instala el driver iHD
+  (`intel-media-va-driver-non-free` si está en los repositorios, que trae el procesador de vídeo;
+  si no, `intel-media-va-driver`): el antiguo, i965, no entrega un JPEG 4:2:0 decodificado.
 - **El modo puente** usa [MediaMTX](https://github.com/bluenviron/mediamtx) como servidor RTMP (1935)
   y SRT (8890), aceptando solo `live/<clave>`, y lo saca por HDMI. Decodifica el H.264 con FFmpeg
-  por CPU: 1080p30 usó ~45 % de la CPU de un Celeron J3355, y 1080p60 también se decodifica. En
-  Apollo Lake la GPU lo decodifica con la décima parte, pero sus imágenes no llegan a la pantalla
-  sin copias: los planos de vídeo no aceptan NV12, iHD no tiene procesador de vídeo ahí, i965 falla
-  en GStreamer 1.24 y OpenGL directo sobre KMS colgó el equipo. Una pantalla 4K va a 30 Hz en
+  por CPU: 1080p30 usó ~45 % de la CPU de un Celeron J3355, y 1080p60 también se decodifica. Si la
+  medida de la GPU sale a favor (ver arriba), decodifica la GPU (`vah264dec` + `vapostproc`). En
+  Apollo Lake no: sus imágenes no llegan a la pantalla sin copias caras (los planos de vídeo no
+  aceptan NV12, bajarlas a memoria es lentísimo, i965 falla en GStreamer 1.24 y OpenGL directo
+  sobre KMS colgó el equipo). Una pantalla 4K va a 30 Hz en
   estos chips: para 60 fps, pon la pantalla a 1080p en el panel.
 - **La pantalla de ayuda del HDMI** es un PNG dibujado con Pillow (el QR con segno) y mostrado con
   `kmssink` en pausa: el fotograma de preparación se queda en el plano de vídeo y el proceso no

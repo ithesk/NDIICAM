@@ -699,7 +699,7 @@ const T = {
     device_name_help: "También es el prefijo de las fuentes NDI y la dirección <nombre>.local. Cambiarlo reinicia el servicio.",
     transport_help: "TCP es lo más compatible. UDP es el modo por defecto de NDI 6. Cambiarlo reinicia el servicio.",
     deco_label: "Decodificación JPEG", deco_auto: "Automática", deco_hilos: (n) => `${n} hilos`,
-    deco_help: "Hilos que descomprimen el vídeo de la cámara. En automático se usa uno y se añaden más si la emisión se queda por detrás de la cámara (imágenes con mucho detalle: noche, público, follaje).",
+    deco_help: "Quién descomprime el vídeo de la cámara. En automático lo hace la GPU si puede (gasta mucha menos CPU); si no, se usa un hilo y se añaden más si la emisión se queda por detrás de la cámara (imágenes con mucho detalle: noche, público, follaje). Con un número, siempre por CPU.",
     ap_name: "Nombre de la WiFi de configuración", ap_password: "Clave de la WiFi de configuración",
     country: "País (código de 2 letras)", panel_password: "Contraseña del panel",
     panel_pw_on: "Activa. Escribe una nueva para cambiarla.", remove_password: "Quitar contraseña",
@@ -752,7 +752,7 @@ const T = {
     pt_confirm: "Con una clave nueva, quien emite ahora se corta y tendrá que usar la nueva. ¿Seguir?",
     pt_help: "En ATEM Software Control: Stream › Load Streaming Settings con el archivo descargado; elige el servicio y pulsa On Air. También vale cualquier programa que emita por RTMP o SRT.",
     pt_waiting: "Esperando a que el ATEM emita", pt_from: (d) => `${d.protocolo} desde ${d.desde || "?"}`,
-    pt_not_installed: "Falta MediaMTX: vuelve a instalar NDIICAM.", pt_dec: (d) => d === "avdec_h264" ? "decodifica FFmpeg" : "decodificador lento (instala gstreamer1.0-libav)",
+    pt_not_installed: "Falta MediaMTX: vuelve a instalar NDIICAM.", pt_dec: (d) => d === "vah264dec" ? "decodifica la GPU" : d === "avdec_h264" ? "decodifica FFmpeg" : "decodificador lento (instala gstreamer1.0-libav)",
     st_esperando_atem: "Esperando señal",
     rec_title: "Grabaciones", rec_free: (g) => `${g} libres en el disco`, rec_none: "Aún no hay grabaciones.",
     rec_download: "Descargar", rec_delete: "Borrar", rec_confirm: (n) => `¿Borrar ${n}?`,
@@ -824,6 +824,11 @@ const T = {
       audio_fallo: (d) => `${d.fuente}: el audio falló (${d.detalle}); emitiendo sin audio`,
       reinicio_manual: (d) => d.modo !== "emisor" ? "Recepción reiniciada desde el panel" : "Emisión reiniciada desde el panel",
       decodificacion_paralela: (d) => `${d.fuente}: la decodificación no da abasto; repartida en ${d.hilos} hilos`,
+      deco_gpu_fallida: (d) => `${d.fuente}: la GPU no pudo decodificar su JPEG (${d.detalle}); se sigue por CPU`,
+      gpu_medida: (d) => `GPU medida: ${d.jpeg ? "decodifica las cámaras" : "las cámaras siguen por CPU (no compensa)"}; ${d.h264 ? "decodifica el modo puente" : "el modo puente sigue por CPU"}`,
+      gpu_cuelgue: () => "El equipo se reinició mientras se medía la GPU: no se usará para decodificar",
+      rx_plano_sin_escala: (d) => `HDMI: la pantalla no escala por hardware; ${d.fuente} se escala por CPU`,
+      rx_gpu_fallida: (d) => `HDMI: la GPU no pudo decodificar ${d.fuente} (${d.detalle}); se sigue por CPU`,
       aplicando: (d) => `${d.fuente}: aplicando cambios`, fallo_interno: (d) => `Fallo interno: ${d.detalle}`,
       hdmi_fallo: (d) => `${d.fuente}: la salida HDMI falló (${d.detalle}); emitiendo sin ella`,
       gpu_activa: (d) => `${d.fuente}: salida GPU activa (${d.modo})`,
@@ -978,7 +983,7 @@ const T = {
     device_name_help: "Also the NDI source prefix and the <name>.local address. Changing it restarts the service.",
     transport_help: "TCP is the most compatible. UDP is the NDI 6 default. Changing it restarts the service.",
     deco_label: "JPEG decoding", deco_auto: "Automatic", deco_hilos: (n) => `${n} threads`,
-    deco_help: "Threads that decompress the camera's video. Automatic uses one and adds more if the stream falls behind the camera (very detailed pictures: night, crowds, foliage).",
+    deco_help: "What decompresses the camera's video. Automatic uses the GPU when it can (much less CPU); otherwise one thread, adding more if the stream falls behind the camera (very detailed pictures: night, crowds, foliage). A number always means the CPU.",
     ap_name: "Setup WiFi name", ap_password: "Setup WiFi password",
     country: "Country (2-letter code)", panel_password: "Panel password",
     panel_pw_on: "Enabled. Type a new one to change it.", remove_password: "Remove password",
@@ -1031,7 +1036,7 @@ const T = {
     pt_confirm: "With a new key, whoever is streaming now is cut off and must use the new one. Continue?",
     pt_help: "In ATEM Software Control: Stream › Load Streaming Settings with the downloaded file; pick the service and press On Air. Any software that streams over RTMP or SRT works too.",
     pt_waiting: "Waiting for the ATEM to stream", pt_from: (d) => `${d.protocolo} from ${d.desde || "?"}`,
-    pt_not_installed: "MediaMTX is missing: reinstall NDIICAM.", pt_dec: (d) => d === "avdec_h264" ? "FFmpeg decoding" : "slow decoder (install gstreamer1.0-libav)",
+    pt_not_installed: "MediaMTX is missing: reinstall NDIICAM.", pt_dec: (d) => d === "vah264dec" ? "GPU decoding" : d === "avdec_h264" ? "FFmpeg decoding" : "slow decoder (install gstreamer1.0-libav)",
     st_esperando_atem: "Waiting for signal",
     rec_title: "Recordings", rec_free: (g) => `${g} free on disk`, rec_none: "No recordings yet.",
     rec_download: "Download", rec_delete: "Delete", rec_confirm: (n) => `Delete ${n}?`,
@@ -1103,6 +1108,11 @@ const T = {
       audio_fallo: (d) => `${d.fuente}: audio failed (${d.detalle}); streaming without audio`,
       reinicio_manual: (d) => d.modo !== "emisor" ? "Receiving restarted from the panel" : "Streaming restarted from the panel",
       decodificacion_paralela: (d) => `${d.fuente}: decoding cannot keep up; split across ${d.hilos} threads`,
+      deco_gpu_fallida: (d) => `${d.fuente}: the GPU could not decode its JPEG (${d.detalle}); falling back to the CPU`,
+      gpu_medida: (d) => `GPU measured: ${d.jpeg ? "it decodes the cameras" : "cameras stay on the CPU (not worth it)"}; ${d.h264 ? "it decodes bridge mode" : "bridge mode stays on the CPU"}`,
+      gpu_cuelgue: () => "The device restarted while the GPU was being measured: it will not be used for decoding",
+      rx_plano_sin_escala: (d) => `HDMI: the screen cannot scale in hardware; ${d.fuente} is scaled on the CPU`,
+      rx_gpu_fallida: (d) => `HDMI: the GPU could not decode ${d.fuente} (${d.detalle}); falling back to the CPU`,
       aplicando: (d) => `${d.fuente}: applying changes`, fallo_interno: (d) => `Internal error: ${d.detalle}`,
       hdmi_fallo: (d) => `${d.fuente}: HDMI output failed (${d.detalle}); streaming without it`,
       gpu_activa: (d) => `${d.fuente}: GPU output active (${d.modo})`,
@@ -1482,7 +1492,7 @@ function pintarFuente(c, f, e) {
     poner(c.previewVacia, f.formato && f.formato !== "MJPG" ? t("preview_none") : t("preview_wait"));
   }
   poner(c.ndi, f.nombre_ndi);
-  poner(c.modo, f.modo ? `${f.modo.replace(" @", " · ")} · ${f.formato}` + (f.hilos > 1 ? ` · ${T[lang].deco_hilos(f.hilos)}` : "") : "—");
+  poner(c.modo, f.modo ? `${f.modo.replace(" @", " · ")} · ${f.formato}` + (f.hilos === "gpu" ? " · GPU" : f.hilos > 1 ? ` · ${T[lang].deco_hilos(f.hilos)}` : "") : "—");
   const activo = f.estado === "emitiendo";
   poner(c.fps, activo ? `${f.fps_camara.toFixed(1)} / ${f.fps_enviados.toFixed(1)}` : "—");
   poner(c.mbps, activo ? `${f.mbps_camara.toFixed(1)} Mbit/s` : "—");
@@ -1695,9 +1705,9 @@ function pintarModo(e) {
   else if (!rc.fuente) estado = t("sub_sin_fuente");
   else if (rx && rx.estado === "recibiendo") {
     estado = T[lang].hdmi_rx_recibiendo(rx);
-    // la pantalla no escala sola: avisar si la fuente no tiene su resolución
+    // si el plano de vídeo no escala, se escala por CPU: avisar si la fuente no tiene su resolución
     const pantalla = { "1080p": "1920x1080", "720p": "1280x720" }[h.consola_activa] || (monitor && monitor.modo);
-    if (rx.ancho && pantalla && pantalla !== `${rx.ancho}x${rx.alto}`) tam = T[lang].hdmi_rx_tam(rx, pantalla.replace("x", "×"));
+    if (rx.escala === "cpu" && rx.ancho && pantalla && pantalla !== `${rx.ancho}x${rx.alto}`) tam = T[lang].hdmi_rx_tam(rx, pantalla.replace("x", "×"));
   } else if (rx && rx.estado === "error") estado = T[lang].hdmi_rx_error(rc.fuente);
   else estado = T[lang].hdmi_rx_conectando(rc.fuente);
   poner("rxEstado", estado);

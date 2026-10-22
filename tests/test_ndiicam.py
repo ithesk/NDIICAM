@@ -37,6 +37,7 @@ import cortafuegos  # noqa: E402
 import seguridad  # noqa: E402
 import sistema  # noqa: E402
 import panel  # noqa: E402
+import gpu  # noqa: E402
 
 
 class Utilidades(unittest.TestCase):
@@ -587,6 +588,118 @@ class AccesoAlPanel(unittest.TestCase):
         self.assertFalse(nucleo.SESIONES.valida(otra))      # las demás sesiones, fuera
         r, _ = self.pedir("GET", "/api/grabaciones", cookie=cookie)
         self.assertEqual(r.status, 200)                     # la de quien la cambió sigue
+
+
+class GpuParaDecodificar(unittest.TestCase):
+    """capacidad_vpp: la GPU decodifica solo si se midió que compensa, y nunca en
+    las GPU vetadas o en las que colgaron el equipo midiendo."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.orig = (gpu.VPP_ARCHIVO, gpu.elementos_va, gpu.ids_gpu, gpu.leer,
+                     gpu.clave_vpp, gpu._medir_aparte, gpu.evento)
+        gpu.VPP_ARCHIVO = os.path.join(self.tmp.name, "gpu-vpp.json")
+        gpu.elementos_va = lambda: frozenset({"vapostproc", "vajpegdec", "vah264dec"})
+        gpu.ids_gpu = lambda: {0x3ea0}
+        self.arranque = "arranque-1"
+        gpu.leer = lambda ruta, defecto="": self.arranque if "boot_id" in ruta else defecto
+        gpu.clave_vpp = lambda: "clave"
+        self.medidas = []
+        gpu._medir_aparte = lambda clave: self.medidas.append(clave)
+        self.eventos = []
+        gpu.evento = lambda c, **d: self.eventos.append(c)
+        gpu._VPP.clear()
+        threading_orig = gpu.threading.Thread
+        self.thread_orig = threading_orig
+
+        class Inmediato:
+            def __init__(s, target, args=(), daemon=None):
+                s.t, s.a = target, args
+
+            def start(s):
+                s.t(*s.a)
+        gpu.threading.Thread = Inmediato
+
+    def tearDown(self):
+        (gpu.VPP_ARCHIVO, gpu.elementos_va, gpu.ids_gpu, gpu.leer,
+         gpu.clave_vpp, gpu._medir_aparte, gpu.evento) = self.orig
+        gpu.threading.Thread = self.thread_orig
+        gpu._VPP.clear()
+        self.tmp.cleanup()
+
+    def guardar(self, datos):
+        with open(gpu.VPP_ARCHIVO, "w") as fh:
+            json.dump(datos, fh)
+
+    def test_sin_vpp_nada(self):
+        gpu.elementos_va = lambda: frozenset({"vajpegdec", "vah264dec"})
+        self.assertEqual(gpu.capacidad_vpp(), {"vpp": False, "jpeg": False, "h264": False})
+        self.assertEqual(self.medidas, [])
+
+    def test_gpu_vetada_ni_se_mide(self):
+        gpu.ids_gpu = lambda: {0x5a85}          # Apollo Lake (J3355): colgó el equipo
+        c = gpu.capacidad_vpp()
+        self.assertFalse(c["jpeg"] or c["h264"])
+        self.assertTrue(c["vetada"])
+        self.assertEqual(self.medidas, [])
+
+    def test_sin_medir_mide_y_mientras_va_por_cpu(self):
+        c = gpu.capacidad_vpp()
+        self.assertEqual(self.medidas, ["clave"])
+        self.assertFalse(c["jpeg"] or c["h264"])
+        self.assertTrue(c["midiendo"])
+        # la marca queda en disco antes de medir, con el arranque
+        with open(gpu.VPP_ARCHIVO) as fh:
+            marca = json.load(fh)
+        self.assertTrue(marca["midiendo"])
+        self.assertEqual(marca["arranque"], "arranque-1")
+
+    def test_usa_lo_medido(self):
+        self.guardar({"clave": "clave", "jpeg": True, "h264": False})
+        self.assertEqual(gpu.capacidad_vpp(), {"vpp": True, "jpeg": True, "h264": False})
+        self.assertEqual(self.medidas, [])
+
+    def test_otro_driver_o_kernel_mide_otra_vez(self):
+        self.guardar({"clave": "otra", "jpeg": True, "h264": True})
+        self.assertFalse(gpu.capacidad_vpp()["jpeg"])
+        self.assertEqual(self.medidas, ["clave"])
+
+    def test_medida_cortada_por_un_cuelgue_veta_la_gpu(self):
+        self.guardar({"clave": "clave", "midiendo": True, "arranque": "arranque-0"})
+        c = gpu.capacidad_vpp()
+        self.assertFalse(c["jpeg"] or c["h264"])
+        self.assertEqual(self.medidas, [])
+        self.assertEqual(self.eventos, ["gpu_cuelgue"])
+        with open(gpu.VPP_ARCHIVO) as fh:
+            self.assertEqual(json.load(fh)["error"], "cuelgue")
+        # y queda así en los siguientes arranques del servicio
+        gpu._VPP.clear()
+        self.arranque = "arranque-2"
+        self.assertFalse(gpu.capacidad_vpp()["jpeg"])
+        self.assertEqual(self.medidas, [])
+
+    def test_medida_cortada_por_reiniciar_el_servicio_se_repite(self):
+        self.guardar({"clave": "clave", "midiendo": True, "arranque": "arranque-1"})
+        gpu.capacidad_vpp()
+        self.assertEqual(self.medidas, ["clave"])
+        self.assertEqual(self.eventos, [])
+
+    def test_auto_decodifica_por_gpu_si_compensa(self):
+        self.guardar({"clave": "clave", "jpeg": True, "h264": True})
+        tmp = tempfile.TemporaryDirectory()
+        orig = nucleo.CONFIG
+        nucleo.CONFIG = os.path.join(tmp.name, "config.json")
+        try:
+            sup = supervisor.Fuentes(nucleo.Config())
+            f = supervisor.Fuente({"id": "c", "nombre": "C", "dev": "/dev/video9", "usb": "1",
+                                   "modos": []})
+            self.assertEqual(sup.decodificadores(f, "MJPG"), "gpu")
+            self.assertEqual(sup.decodificadores(f, "YUYV"), 1)
+            f.deco_gpu_fallida = True       # falló en marcha: vuelta a la CPU
+            self.assertEqual(sup.decodificadores(f, "MJPG"), 1)
+        finally:
+            nucleo.CONFIG = orig
+            tmp.cleanup()
 
 
 if __name__ == "__main__":

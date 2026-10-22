@@ -227,8 +227,11 @@ These come from building it on real hardware, and explain some of the defaults:
 - **Receiver mode plays the NDI source on a GPU video plane too.** NDI decodes to UYVY, which goes
   to the plane as is: receiving 1080p30 took ~0.6-0.9 cores on the Atom, depending on the picture.
   `kmssink` needs `skip-vsync`, or it waits two refreshes per frame and stops at 30 fps on a 60 Hz
-  screen. Sources at another resolution are scaled on the CPU (nearest neighbour, with borders),
-  and that is expensive: OBS's per-source "NDI Output" filter sends each source at its native size
+  screen. Sources at another resolution are scaled by the plane itself, in hardware and keeping
+  the aspect ratio: on an i3-8145U, 1080p to a 2560×1440 screen took 5% of one core, against
+  55-75% scaling on the CPU. If the plane cannot scale (Cherry Trail), `kmssink` turns scaling off,
+  the receiver notices and restarts scaling on the CPU (nearest neighbour, with borders), and that
+  is expensive: OBS's per-source "NDI Output" filter sends each source at its native size
   **with transparency**, and a 2530×1378 screen capture took ~3 cores and once froze the Atom.
   Send the program instead (DistroAV main output, OBS output resolution = screen resolution).
   The receiver runs at low priority and leaves one core free for the system and the network.
@@ -237,26 +240,41 @@ These come from building it on real hardware, and explain some of the defaults:
 - **H.264 output on the GPU** takes the camera's JPEG, decodes it on the GPU (`vajpegdec`) and
   encodes H.264 there too (`vah264enc` or `vah264lpenc`), in its own pipeline fed with copies: if
   the GPU, the network or the disk fail, NDI does not notice, and the output retries every 10 s.
-  On a Celeron J3355 it costs ~15% of one core with NDI at 1080p30 at the same time. NDI itself
-  cannot use the GPU: bringing a decoded frame back to memory costs more than decoding it on the
-  CPU on these chips (145 ms per 1080p frame on Apollo Lake, against 14 ms on the CPU).
+  On a Celeron J3355 it costs ~15% of one core with NDI at 1080p30 at the same time.
   Recordings are fragmented MP4 (readable even after a power cut), 10 minutes each, in
   `/var/lib/ndiicam/grabaciones`; when less than 2 GB is left, the oldest are deleted.
-- **The GPU output needs 4:2:0 JPEG.** Its H.264 encoder only takes 4:2:0, and without a video
-  processor (Apollo Lake with iHD) nothing converts 4:2:2. Webcams and the DJI Osmo Pocket 3 send
-  4:2:0; HDMI capture cards like the Elgato Cam Link 4K send 4:2:2, so with them the GPU output
-  says so and stays off.
+- **The GPU also decodes for NDI and bridge mode, when it pays off.** With the video processor
+  (`vapostproc`, in the `intel-media-va-driver-non-free` driver, which the installer adds when
+  available), the GPU decodes the cameras' JPEG and bridge mode's H.264 and hands them over as
+  UYVY; the CPU only copies the frame to memory. Whether that pays off depends on the chip: on an
+  i3-8145U (UHD 620) a very detailed 1080p JPEG took 4 times less CPU and 1080p60 H.264 half; on a
+  Celeron J3355 (Apollo Lake) copying the frame took 10 times more than decoding on the CPU (145 ms
+  per frame against 14) and, with very detailed pictures, **froze the whole device**. So NDIICAM
+  measures it on each device: it decodes a few test seconds on the CPU and on the GPU (in a
+  separate process) and uses the GPU only if it takes at most 80%. The result is kept in
+  `/var/lib/ndiicam/gpu-vpp.json` and measured again when the kernel, driver or GPU change.
+  Apollo Lake, Gemini Lake and Cherry Trail are never measured, and if the device restarts during
+  a measurement, that GPU is never tried again. If the GPU fails with a camera or a stream, it
+  carries on on the CPU without a cut and logs it. With `decodificadores` set to a fixed number,
+  always the CPU.
+- **The GPU output needs 4:2:0 JPEG, or the video processor.** Its H.264 encoder only takes 4:2:0;
+  with `vapostproc` the GPU converts 4:2:2 before encoding. Without a video processor (free iHD
+  driver) nothing converts 4:2:2. Webcams and the DJI Osmo Pocket 3 send 4:2:0; HDMI capture cards
+  like the Elgato Cam Link 4K send 4:2:2, so without `vapostproc` the GPU output says so and stays
+  off.
 - **Intel Gen9 GPUs (Skylake to Gemini Lake) need the HuC firmware** for their low-power encoder,
   and the kernel does not load it by default: without it, that encoder **froze the whole device**.
   The installer adds `i915.enable_guc=2` (in `/etc/default/grub.d/80-ndiicam-huc.cfg`) and asks
-  for a reboot; until then the GPU output stays off. It also installs `intel-media-va-driver`
-  (iHD): the old i965 driver cannot hand over a decoded 4:2:0 JPEG.
+  for a reboot; until then the GPU output stays off. It also installs the iHD driver
+  (`intel-media-va-driver-non-free` when the repositories have it, which brings the video
+  processor; otherwise `intel-media-va-driver`): the old i965 cannot hand over a decoded 4:2:0 JPEG.
 - **Bridge mode** runs [MediaMTX](https://github.com/bluenviron/mediamtx) as the RTMP (1935) and SRT
   (8890) server, accepting only `live/<key>`, and plays it on HDMI. It decodes H.264 with FFmpeg on
-  the CPU: 1080p30 took ~45% of the CPU of a Celeron J3355, and 1080p60 decodes too. On
-  Apollo Lake the GPU decodes it with a tenth of that, but its frames cannot reach the screen
-  without copies: the video planes do not take NV12, iHD has no video processor there, i965
-  crashes in GStreamer 1.24, and OpenGL straight on KMS froze the device. A 4K screen runs at 30 Hz
+  the CPU: 1080p30 took ~45% of the CPU of a Celeron J3355, and 1080p60 decodes too. If the GPU
+  measurement comes out in its favour (see above), the GPU decodes it (`vah264dec` +
+  `vapostproc`). Not on Apollo Lake: its frames cannot reach the screen without expensive copies
+  (the video planes do not take NV12, copying them to memory is very slow, i965 crashes in
+  GStreamer 1.24, and OpenGL straight on KMS froze the device). A 4K screen runs at 30 Hz
   on these chips: for 60 fps, set the screen to 1080p in the panel.
 - **The HDMI help screen** is a PNG drawn with Pillow (QR with segno) and shown with `kmssink` in
   PAUSED state: the prerolled frame stays on the video plane and the process never works again.

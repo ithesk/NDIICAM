@@ -12,8 +12,8 @@ from nucleo import (ESTADO, FPS_VALIDOS, GRABACIONES, NOMBRE_GRABACION, PUERTO_R
     PUERTO_SRT, RESOLUCIONES, VERSION, bytes_red, conexiones_por_pid, evento, ip_de, leer,
     nombre_de)
 from camaras import modo_consola_activo, pantallas
-from gpu import (capacidad_gpu, decodificador_h264, energia_rapl, tiempos_cpu, tiempos_gpu,
-    uso_gpu, vatios)
+from gpu import (capacidad_gpu, capacidad_vpp, decodificador_h264, energia_rapl, tiempos_cpu,
+    tiempos_gpu, uso_gpu, vatios)
 from puente import PUENTE
 from supervisor import ocultar_clave_rtmp
 import sistema
@@ -52,7 +52,11 @@ def estado_receptor():
             "audio_activo": rx.estado == "recibiendo" and rx.stats["audio_activo"],
             "nivel": rx.stats["audio_db"] if rx.estado == "recibiendo" and rx.stats["audio_activo"] else None,
             "latencia_ms": rx.stats["latencia_ms"] if rx.estado == "recibiendo" else None,
-            "audio_fallido": rx.audio_fallido is not None}
+            "audio_fallido": rx.audio_fallido is not None,
+            # quién escala y decodifica: el plano y la GPU, o la CPU
+            "escala": None if not (rx.obj and rx.obj.get("pantalla")) else
+            "plano" if rx.obj.get("plano") or rx.obj.get("origen") == "puente" else "cpu",
+            "gpu": bool(rx.obj and rx.obj.get("gpu_h264"))}
 
 def grabaciones():
     try:
@@ -126,7 +130,9 @@ def construir_estado(tx_mbps, rx_mbps, cpu_pct, potencia, gpu_uso=None):
     if cfg["modo"] == "puente":
         puente_info = {**PUENTE.info(), "instalado": PUENTE.disponible(),
                        "clave": cfg["puente_clave"], "puerto_rtmp": PUERTO_RTMP,
-                       "puerto_srt": PUERTO_SRT, "decodificador": decodificador_h264()}
+                       "puerto_srt": PUERTO_SRT,
+                       "decodificador": "vah264dec" if (nucleo.FUENTES.receptor.obj or {}).get("gpu_h264")
+                       else decodificador_h264()}
     if cfg["modo"] == "puente":
         if not puente_info["instalado"]:
             agregado = "rx_error"
@@ -183,7 +189,7 @@ def construir_estado(tx_mbps, rx_mbps, cpu_pct, potencia, gpu_uso=None):
              glob.glob("/sys/class/thermal/thermal_zone*/temp")]
     return {
         "version": VERSION,
-        "gpu": capacidad_gpu(),
+        "gpu": {**capacidad_gpu(), **capacidad_vpp()},
         "equipo": {"nombre": host,
                    "uptime": float(leer("/proc/uptime", "0").split()[0]),
                    "cpu": round(cpu_pct), "nucleos": os.cpu_count(),

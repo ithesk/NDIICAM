@@ -94,13 +94,15 @@ def main():
     # de 30 fps en una pantalla de 60 Hz. Los dos sumideros con async=false: si
     # la fuente no trae audio (o vídeo), el que no recibe nada dejaría el
     # pipeline esperando en pausa
-    # Los planos de vídeo no escalan (Cherry Trail no): una fuente de otra
-    # resolución se escala por CPU, con bordes para mantener la proporción y por
-    # el vecino más próximo, que cuesta mucho menos que el bilineal. Si ya
-    # coincide con la pantalla, videoscale y videoconvert no tocan nada
+    # Una fuente de otra resolución la escala el plano de vídeo de la GPU (con
+    # filtro y sin gastar CPU; kmssink mantiene la proporción). No todos pueden
+    # (Cherry Trail no): entonces kmssink lo desactiva y aquí se avisa para volver
+    # a arrancar escalando por CPU, con bordes y por el vecino más próximo, que
+    # cuesta mucho menos que el bilineal. Si ya coincide con la pantalla,
+    # videoscale y videoconvert no tocan nada
     hilos = len(os.sched_getaffinity(0))
     escala = ""
-    if cfg.get("pantalla"):
+    if cfg.get("pantalla") and not cfg.get("plano"):
         ancho, alto = cfg["pantalla"]
         escala = (f" ! videoscale n-threads={hilos} add-borders=true method=nearest-neighbour"
                   f" ! videoconvert n-threads={hilos}"
@@ -113,10 +115,15 @@ def main():
         # convierte (sin VPP), i965 falla en GStreamer 1.24 y OpenGL sobre KMS colgó
         # el equipo. Bajar la imagen a memoria cuesta más que decodificar por CPU.
         # El plano de vídeo escala a la pantalla (Gen9 sí puede): sin escalar por CPU
-        dec = cfg.get("decodificador") or "avdec_h264"
+        dec = f"{cfg.get('decodificador') or 'avdec_h264'} name=dec"
+        if cfg.get("gpu_h264"):
+            # con procesador de vídeo (driver iHD completo) la GPU decodifica y lo
+            # deja en UYVY: la CPU solo baja la imagen. Si falla, el servicio vuelve
+            # a avdec_h264
+            dec = "vah264dec name=dec ! vapostproc name=vpp ! video/x-raw,format=UYVY"
         desc = (f"rtmp2src name=src location={cfg['url']} ! flvdemux name=d "
                 "d.video ! queue name=qd max-size-time=1000000000 ! h264parse"
-                f" ! {dec} name=dec ! queue name=qv max-size-buffers=2 leaky=downstream"
+                f" ! {dec} ! queue name=qv max-size-buffers=2 leaky=downstream"
                 f" ! videoconvert n-threads={hilos} ! video/x-raw,format=UYVY"
                 " ! kmssink name=hdmi sync=false async=false skip-vsync=true"
                 f" connector-id={cfg['hdmi']}")
@@ -160,6 +167,26 @@ def main():
         return Gst.PadProbeReturn.OK
 
     p.get_by_name("qv").get_static_pad("sink").add_probe(Gst.PadProbeType.BUFFER, video)
+    hdmi = p.get_by_name("hdmi")
+    if cfg.get("plano") and cfg.get("pantalla") and not puente:
+        # tras unas imágenes, ver si el plano pudo escalar (kmssink pone can-scale
+        # a false si el hardware lo rechaza y entonces muestra la imagen sin escalar)
+        mostradas = [0]
+
+        def comprobar_plano():
+            tam = (FORMATO.get("ancho"), FORMATO.get("alto"))
+            if tam != tuple(cfg["pantalla"]) and not hdmi.get_property("can-scale"):
+                informar({"error": "plano_sin_escala", "elemento": "hdmi"})
+                salida[0] = 1
+                bucle.quit()
+            return False
+
+        def contar_mostradas(pad, info):
+            mostradas[0] += 1
+            if mostradas[0] == 10:
+                GLib.idle_add(comprobar_plano)
+            return Gst.PadProbeReturn.OK
+        hdmi.get_static_pad("sink").add_probe(Gst.PadProbeType.BUFFER, contar_mostradas)
     # retardo interno: de la llegada (marca de la fuente) a la entrada del HDMI
     retardo = {"suma": 0.0, "n": 0}
     p.get_by_name("hdmi").get_static_pad("sink").add_probe(Gst.PadProbeType.BUFFER, sonda_retardo(p, retardo))

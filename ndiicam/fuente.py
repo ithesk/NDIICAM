@@ -253,6 +253,109 @@ class Reparto:
             p.set_state(Gst.State.NULL)
 
 
+class DecoGPU(Reparto):
+    """El JPEG de la cámara lo decodifica la GPU (vajpegdec) y su procesador de
+    vídeo lo deja en UYVY (vapostproc): la CPU solo baja la imagen a memoria para
+    el NDI. Medido en un i3-8145U a 1080p: entre 1,7 y 4 veces menos CPU que
+    jpegdec, más cuanto más detallada es la imagen.
+
+    Mismo esquema que Reparto con un solo decodificador, pero este se crea con el
+    primer JPEG: vajpegdec exige el submuestreo en las caps y hay que leerlo de su
+    cabecera. Si el JPEG no le vale (progresivo) o la GPU falla, sigue con jpegdec
+    sin cortar el NDI y lo avisa."""
+
+    def __init__(self, cfg):
+        self.cfg = cfg
+        self.n = 1
+        self.seq = self.esperado = 0
+        self.orden, self.pendientes = {}, {}
+        self.caps = None
+        self.lock = threading.Lock()
+        self.modo = None            # gpu | cpu, al llegar el primer JPEG
+        self.deco = None
+        self.captura = Gst.parse_launch(
+            f"{tramo_camara(cfg)} ! appsink name=cap sync=false emit-signals=true"
+            " max-buffers=2 drop=true")
+        self.salida = Gst.parse_launch(
+            f"appsrc name=ent format=time is-live=true ! {tramo_salida(cfg)}")
+        self.entrada = self.salida.get_by_name("ent")
+        self.decos = []
+        self.captura.get_by_name("cap").connect("new-sample", self._capturado)
+        self.pipelines = [self.salida, self.captura]
+
+    def _crear_deco(self, modo, muestreo=None):
+        c = self.cfg
+        if modo == "gpu":
+            caps = (f"image/jpeg,parsed=(boolean)true,width=(int){c['ancho']},height=(int){c['alto']},"
+                    f"framerate=(fraction){c['fps']}/1,sof-marker=(int)0,colorspace=(string)sYUV,"
+                    f"sampling=(string){muestreo},interlace-mode=(string)progressive")
+            desc = (f'appsrc name=a format=time caps="{caps}" ! vajpegdec name=vdec'
+                    " ! vapostproc ! video/x-raw,format=UYVY")
+        else:
+            desc = "appsrc name=a format=time ! jpegdec"
+        p = Gst.parse_launch(f"{desc} ! appsink name=s sync=false emit-signals=true")
+        p.get_by_name("s").connect("new-sample", self._decodificado)
+        p.use_clock(self.captura.get_clock() or Gst.SystemClock.obtain())
+        p.set_start_time(Gst.CLOCK_TIME_NONE)
+        p.set_base_time(self.captura.get_base_time())
+        bus = p.get_bus()
+        bus.add_signal_watch()
+        bus.connect("message::error", self._error_deco)
+        if p.set_state(Gst.State.PLAYING) == Gst.StateChangeReturn.FAILURE:
+            p.set_state(Gst.State.NULL)
+            return None
+        return p
+
+    def _cambiar(self, modo, muestreo=None, motivo=None):
+        """Pone el decodificador pedido; si la GPU no arranca, el de CPU."""
+        viejo, self.deco = self.deco, None
+        if viejo is not None:
+            viejo.set_state(Gst.State.NULL)
+        p = self._crear_deco(modo, muestreo)
+        if p is None and modo == "gpu":
+            modo, motivo, p = "cpu", motivo or "arranque", self._crear_deco("cpu")
+        if modo == "cpu" and motivo:
+            informar({"aviso": "deco_gpu_fallida", "detalle": motivo})
+        with self.lock:
+            self.orden.clear()
+            self.pendientes.clear()
+            self.esperado = self.seq
+        self.modo, self.deco = modo, p
+        self.decos = [p] if p else []
+
+    def _error_deco(self, _bus, msg):
+        err, _ = msg.parse_error()
+        if self.modo == "gpu":
+            self._cambiar("cpu", motivo=err.message)
+        else:
+            informar({"error": err.message, "elemento": "deco"})
+
+    def _capturado(self, sink):
+        buf = sink.emit("pull-sample").get_buffer()
+        if self.modo is None:
+            ok, info = buf.map(Gst.MapFlags.READ)
+            muestreo = muestreo_jpeg(bytes(info.data[:4096])) if ok else None
+            if ok:
+                buf.unmap(info)
+            if muestreo:
+                self._cambiar("gpu", muestreo)
+            else:
+                self._cambiar("cpu", motivo="jpeg_no_admitido")
+        with self.lock:
+            k = self.seq
+            self.seq += 1
+            self.orden[buf.pts] = k
+        deco = self.deco            # puede cambiar desde el hilo principal si la GPU falla
+        if deco is not None:
+            deco.get_by_name("a").emit("push-buffer", buf)
+        return Gst.FlowReturn.OK
+
+    def parar(self):
+        super().parar()
+        if self.deco is not None:
+            self.deco.set_state(Gst.State.NULL)
+
+
 class Directo:
     """Un solo pipeline: cámara → (jpegdec) → conversión → NDI."""
 
@@ -375,8 +478,11 @@ class SalidaGPU:
         clave = 1 if modo == "srt" else 2
         pad_v = {"grabar": "mux.video", "rtmp": "mux.video", "srt": "mux."}[modo]
         pad_a = {"grabar": "mux.audio_0", "rtmp": "mux.audio", "srt": "mux."}[modo]
+        # 4:2:2 y demás: el procesador de vídeo lo pasa a 4:2:0 sin salir de la GPU
+        conv = ("" if muestreo == "YCbCr-4:2:0"
+                else " ! vapostproc ! video/x-raw(memory:VAMemory),format=NV12")
         v = (f"appsrc name=gj format=time is-live=true caps=\"{caps}\""
-             " ! queue name=qg max-size-buffers=4 leaky=downstream ! vajpegdec"
+             f" ! queue name=qg max-size-buffers=4 leaky=downstream ! vajpegdec{conv}"
              f" ! {g['codificador']} bitrate={int(g['kbps'])} key-int-max={c['fps'] * clave}"
              f" ! h264parse name=hp config-interval=-1 ! queue ! {pad_v}")
         if modo == "grabar":
@@ -410,9 +516,9 @@ class SalidaGPU:
             if not self.muestreo:
                 self._fallo("jpeg_no_admitido", "gj", reintentar=False)
                 return False
-            if self.muestreo != "YCbCr-4:2:0":
+            if self.muestreo != "YCbCr-4:2:0" and not self.g.get("vpp"):
                 # el codificador H.264 de la GPU solo acepta 4:2:0 y sin procesador de
-                # vídeo (Apollo Lake con iHD) no hay quien convierta: no tiene arreglo
+                # vídeo (driver iHD libre) no hay quien convierta: no tiene arreglo
                 # reintentando. Pasa con capturadoras como la Elgato Cam Link 4K (4:2:2)
                 self._fallo("muestreo_no_admitido", "gj", reintentar=False)
                 return False
@@ -505,8 +611,13 @@ class SalidaGPU:
 def main():
     cfg = json.loads(sys.argv[1])
     Gst.init(None)
-    n = int(cfg.get("decodificadores") or 1)
-    flujo = Reparto(cfg, n) if cfg["fmt"] == "MJPG" and n > 1 else Directo(cfg)
+    deco = cfg.get("decodificadores") or 1
+    if cfg["fmt"] == "MJPG" and deco == "gpu":
+        flujo = DecoGPU(cfg)
+    elif cfg["fmt"] == "MJPG" and int(deco) > 1:
+        flujo = Reparto(cfg, int(deco))
+    else:
+        flujo = Directo(cfg)
     flujo.elemento("src").set_property("device", cfg["dev"])
     flujo.elemento("sink").set_property("ndi-name", cfg["nombre"])
     combinador = flujo.elemento("c")
@@ -589,7 +700,8 @@ def main():
             extra["lat_ms"] = round(retardo["suma"] / retardo["n"], 1)
             retardo["suma"], retardo["n"] = 0.0, 0
         informar({**CONTADORES, **NIVEL, **extra, "t": time.monotonic(),
-                  "hilos": n if isinstance(flujo, Reparto) else 1})
+                  "hilos": ("gpu" if flujo.modo == "gpu" else 1) if isinstance(flujo, DecoGPU)
+                  else flujo.n if isinstance(flujo, Reparto) else 1})
         return True
     GLib.timeout_add(2000, tic)
 

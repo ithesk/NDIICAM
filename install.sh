@@ -75,8 +75,18 @@ apt-get install -y -qq --no-install-recommends \
 # (i965) no entrega decodificado el JPEG 4:2:0 de la mayoría de cámaras
 REINICIO_HUC=0
 if grep -qs 0x8086 /sys/class/drm/card*/device/vendor; then
-  apt-get install -y -qq --no-install-recommends intel-media-va-driver >/dev/null \
+  # El completo (non-free, en multiverse/non-free) trae además el procesador de
+  # vídeo (VPP): con él la GPU decodifica el JPEG de las cámaras y el H.264 del
+  # modo puente y los deja listos, y la CPU apenas trabaja. Si no está, el libre
+  if apt-cache show intel-media-va-driver-non-free >/dev/null 2>&1; then
+    apt-get install -y -qq --no-install-recommends intel-media-va-driver-non-free >/dev/null \
+      || aviso "intel-media-va-driver-non-free not installed / no instalado"
+  fi
+  dpkg -s intel-media-va-driver-non-free >/dev/null 2>&1 \
+    || apt-get install -y -qq --no-install-recommends intel-media-va-driver >/dev/null \
     || aviso "intel-media-va-driver not installed: no GPU output / sin salida por GPU"
+  # GStreamer guarda qué elementos VA hay: con otro driver hay que volver a mirarlo
+  rm -rf /root/.cache/gstreamer-1.0 /var/lib/ndiicam/.cache/gstreamer-1.0
   # Las Intel Gen9 (Skylake a Gemini Lake) traen HuC pero el kernel no lo carga.
   # Sin él, su codificador de bajo consumo puede colgar el equipo entero (NDIICAM
   # no lo usa sin HuC: la salida GPU queda desactivada hasta reiniciar)

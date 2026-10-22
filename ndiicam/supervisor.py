@@ -14,7 +14,7 @@ from nucleo import (AP_IF, AP_IP, FUENTE_PY, GRABACIONES, MAX_DECODIFICADORES, P
     RECEPTOR_PY, REPOSO_PY, RESOLUCIONES, VERSION, conexiones_por_pid, dispositivo_por_defecto,
     evento, ip_de, ips_propias, leer)
 from camaras import audio_dispositivos, audio_hdmi, camaras, pantallas, resolucion_pantalla
-from gpu import capacidad_gpu, decodificador_h264, entorno_va
+from gpu import capacidad_gpu, capacidad_vpp, decodificador_h264, entorno_va
 from puente import PUENTE, clave_puente
 
 
@@ -33,6 +33,7 @@ class Fuente:
         self.forzar_reinicio = False
         self.audio_fallido = None   # dispositivo de audio que hizo caer el pipeline
         self.hilos = 1              # decodificadores JPEG en modo automático
+        self.deco_gpu_fallida = False   # la GPU no pudo con su JPEG: seguir por CPU
         self.retrasos = 0           # mediciones seguidas con la emisión por detrás de la cámara
         self.hdmi_fallido = False   # el HDMI hizo caer el pipeline: seguir sin él
         self.gpu = {"estado": None, "error": ""}   # salida H.264: activa | error
@@ -85,6 +86,11 @@ class Fuente:
                 self.gpu = {"estado": d["gpu_estado"], "error": ""}
             elif "error" in d:
                 self._fallo(d["error"], d.get("elemento", ""))
+            elif "aviso" in d:
+                if d["aviso"] == "deco_gpu_fallida" and not self.deco_gpu_fallida:
+                    # fuente.py ya siguió por CPU; los próximos arranques, también
+                    self.deco_gpu_fallida = True
+                    evento("deco_gpu_fallida", fuente=self.cam["nombre"], detalle=d.get("detalle"))
             else:
                 self.c = d
                 if "tally_programa" in d:
@@ -279,6 +285,8 @@ class Receptor:
         self.reintento = 0.0
         self.fallos = 0
         self.audio_fallido = None
+        self.plano_fallido = False  # el plano de vídeo no escala: escalar por CPU
+        self.gpu_fallida = False    # la GPU no pudo decodificar el H.264: por CPU
         self.c = {}
         self.prev = None
         self.stats = {"fps": 0, "audio_activo": False, "audio_db": None, "latencia_ms": None}
@@ -317,7 +325,18 @@ class Receptor:
                 puente and self.obj and (error in ("proceso", "arranque") or "rtmp" in error.lower()
                                          or "connect" in error.lower() or "stream" in error.lower())):
             error = "sin_senal"     # así avisa ndisrc de que la fuente dejó de emitir
-        if self.obj.get("audio") and (elemento in ("asink", "qa") or "alsa" in error.lower()):
+        if error == "plano_sin_escala":
+            # se vuelve a arrancar enseguida escalando por CPU (dura lo que dure el servicio)
+            self.plano_fallido = True
+            evento("rx_plano_sin_escala", fuente=nombre)
+            espera = 1
+        elif (self.obj.get("gpu_h264") and elemento in ("dec", "vpp")
+              or self.obj.get("gpu_h264") and self.estado == "conectando"
+              and "va" in error.lower()):
+            self.gpu_fallida = True
+            evento("rx_gpu_fallida", fuente=nombre, detalle=error)
+            espera = 1
+        elif self.obj.get("audio") and (elemento in ("asink", "qa") or "alsa" in error.lower()):
             # el audio HDMI hizo caer el pipeline: seguir sin él
             self.audio_fallido = self.obj["audio"]
             evento("rx_audio_fallo", fuente=nombre, detalle=error)
@@ -441,7 +460,7 @@ class Fuentes:
         if modo == "no" or fmt != "MJPG" or not cap["disponible"]:
             return None
         g = {"modo": modo, "kbps": int(aj["gpu_kbps"]), "codificador": cap["codificador"],
-             "cuando": "siempre"}
+             "cuando": "siempre", "vpp": capacidad_vpp()["vpp"]}
         if modo == "grabar":
             g["dir"] = GRABACIONES
             g["cuando"] = aj.get("grabar_cuando", "siempre")
@@ -460,7 +479,12 @@ class Fuentes:
         if fmt != "MJPG":
             return 1
         ajuste = self.config.get()["decodificadores"]
-        return f.hilos if ajuste == "auto" else int(ajuste)
+        if ajuste != "auto":
+            return int(ajuste)
+        # en automático, la GPU si puede: gasta mucha menos CPU que cualquier reparto
+        if capacidad_vpp()["jpeg"] and not f.deco_gpu_fallida:
+            return "gpu"
+        return f.hilos
 
     def audio_para(self, f, ajuste):
         if ajuste == "off":
@@ -500,7 +524,8 @@ class Fuentes:
             rx_obj = {"origen": "puente", "nombre": "ATEM",
                       "url": f"rtmp://127.0.0.1:{PUERTO_RTMP}/live/{PUENTE.clave}",
                       "decodificador": decodificador_h264(), "hdmi": monitor["id"],
-                      "pantalla": resolucion_pantalla(monitor)}
+                      "pantalla": resolucion_pantalla(monitor),
+                      "gpu_h264": capacidad_vpp()["h264"] and not self.receptor.gpu_fallida}
             audio = audio_hdmi()
             if self.receptor.destino != "puente":
                 self.receptor.destino = "puente"
@@ -510,7 +535,8 @@ class Fuentes:
         elif receptor and not puente and monitor and cfg["rx_fuente"]:
             rx_obj = {"nombre": cfg["rx_fuente"], "hdmi": monitor["id"],
                       "equipo": f"NDIICAM {socket.gethostname()}",
-                      "pantalla": resolucion_pantalla(monitor)}
+                      "pantalla": resolucion_pantalla(monitor),
+                      "plano": not self.receptor.plano_fallido}
             audio = audio_hdmi()
             if rx_obj["nombre"] != self.receptor.destino:
                 self.receptor.destino = rx_obj["nombre"]
