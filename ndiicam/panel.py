@@ -218,7 +218,7 @@ class Panel(BaseHTTPRequestHandler):
                 "ap_clave": cfg["ap_clave"], "pais": cfg["pais"], "idioma": cfg["idioma"],
                 "clave_panel": bool(cfg["clave_panel"]), "decodificadores": cfg["decodificadores"],
                 "cortafuegos": cfg["cortafuegos"], "puertos_extra": cfg["puertos_extra"],
-                "simultaneo": cfg["simultaneo"],
+                "simultaneo": cfg["simultaneo"], "motor": cfg.get("motor", "modos"),
                 **{k: cfg[k] for k in ("programa_audio", "programa_retraso", "programa_grabar",
                                        "puente_hdmi")},
                 **{k: cfg[k] for k in ("reem_fuente", "reem_salidas", "reem_kbps", "reem_srt_puerto",
@@ -234,6 +234,9 @@ class Panel(BaseHTTPRequestHandler):
         elif url.path == "/api/fuente/preview":
             ident = parse_qs(url.query).get("id", [""])[0]
             f = next((x for x in nucleo.FUENTES.lista() if x.cam["id"] == ident), None)
+            if f is None:       # con rutas, la cámara corre dentro de su ruta
+                f = next((x for x in nucleo.FUENTES.motor.procs.values()
+                          if getattr(x, "cam", {}).get("id") == ident), None)
             ruta = (f.obj or {}).get("preview") if f else None
             try:
                 # una imagen vieja es que la cámara ya no entrega: mejor nada

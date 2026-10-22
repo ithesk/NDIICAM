@@ -80,7 +80,7 @@
     font: inherit; font-weight: 600; padding: 10px 14px; border-radius: 10px; cursor: pointer; }
   .pestanas button.activo { background: var(--acento); border-color: var(--acento); color: var(--acento-t); }
   body:not([data-tab="monitor"]) [data-tab="monitor"], body:not([data-tab="config"]) [data-tab="config"],
-  body:not([data-tab="sistema"]) [data-tab="sistema"] { display: none !important; }
+  body:not([data-tab="sistema"]) [data-tab="sistema"], body:not([data-tab="rutas"]) [data-tab="rutas"] { display: none !important; }
   /* entrada al panel: crear la contraseña la primera vez, o escribirla */
   .entrada { position: fixed; inset: 0; z-index: 10; background: var(--fondo); display: flex; align-items: center;
     justify-content: center; padding: 16px; overflow-y: auto; }
@@ -167,6 +167,96 @@
   .modo-op small { display: block; color: var(--suave); font-size: 13px; margin-top: 2px; }
   .punto { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--pista); margin-right: 6px; }
   .punto.ok { background: var(--ok); } .punto.mal { background: var(--mal); } .punto.aviso { background: var(--aviso); }
+  /* ------------------------------------------------ pestaña Rutas: lienzo, lista y ajustes */
+  .rt-obra { display: grid; grid-template-columns: minmax(0, 1fr) 330px; gap: 12px; align-items: start; }
+  .rt-obra > div { min-width: 0; }
+  .rt-barra { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 8px; }
+  .rt-barra .esp { margin-left: auto; }
+  .rt-guardado { font-size: 12.5px; color: var(--suave); }
+  .rt-marco { border: 1px solid var(--borde); border-radius: 14px; background: var(--panel); overflow: auto; position: relative; height: 620px;
+    background-image: radial-gradient(var(--pista) 1.2px, transparent 1.2px); background-size: 22px 22px; }
+  .rt-lienzo { position: relative; height: 900px; }
+  .etq { font-size: 11px; font-weight: 600; padding: 1px 7px; border-radius: 999px; background: var(--pista); color: var(--suave); white-space: nowrap; }
+  .etq.ok { background: var(--ok-f); color: var(--ok); } .etq.aviso { background: var(--aviso-f); color: var(--aviso); }
+  .etq.mal { background: var(--mal-f); color: var(--mal); }
+  #rtCables { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+  /* las rutas necesitan sitio: esta pestaña usa más ancho que el resto */
+  body[data-tab="rutas"] .envoltura { max-width: 1360px; }
+  .rt-col { position: absolute; top: 12px; font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--suave); }
+  .rt-cable { fill: none; stroke-width: 3; stroke-linecap: round; }
+  .rt-cable.v { stroke: var(--acento); } .rt-cable.a { stroke: var(--ok); } .rt-cable.p { stroke: #8b5cf6; }
+  .rt-cable.vivo { stroke-dasharray: 9 7; animation: rt-corre 1s linear infinite; }
+  .rt-cable.sel { stroke-width: 5; }
+  .rt-cable.prov { stroke: var(--suave); stroke-dasharray: 5 5; }
+  .rt-toque { fill: none; stroke: transparent; stroke-width: 16; cursor: pointer; }
+  @keyframes rt-corre { to { stroke-dashoffset: -32; } }
+  .rt-nodo { position: absolute; width: 214px; background: var(--panel); border: 1px solid var(--borde); border-radius: 12px;
+    box-shadow: 0 2px 8px rgba(0,0,0,.06); user-select: none; touch-action: none; }
+  .rt-nodo.ruta { width: 236px; border-color: color-mix(in srgb, #8b5cf6 45%, var(--borde)); }
+  .rt-nodo.sel { border-color: var(--acento); box-shadow: 0 0 0 2px var(--acento-f, rgba(37,99,235,.15)); }
+  .rt-nodo.parada { opacity: .6; }
+  .rt-nodo .cab { display: flex; align-items: center; gap: 7px; padding: 8px 10px; cursor: grab; border-bottom: 1px solid var(--borde); }
+  .rt-nodo .cab b { font-size: 13.5px; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .rt-nodo .cab .rt-ti { color: var(--acento); display: grid; } .rt-nodo.ruta .cab .rt-ti { color: #8b5cf6; }
+  .rt-ajustar { border: 0; background: none; color: var(--suave); cursor: pointer; padding: 2px; border-radius: 6px; display: grid; }
+  .rt-ajustar:hover { color: var(--acento); }
+  .rt-nodo .cuerpo { padding: 8px 10px; display: flex; flex-direction: column; gap: 6px; }
+  .rt-nodo .cuerpo small { color: var(--suave); font-size: 12px; line-height: 1.3; overflow-wrap: anywhere; }
+  .rt-vista { width: 100%; aspect-ratio: 16 / 9; border-radius: 7px; background: var(--pista); object-fit: cover; display: grid; place-items: center; color: var(--suave); }
+  .rt-puerto { position: relative; display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--suave); min-height: 20px; }
+  .rt-puerto.sal { justify-content: flex-end; }
+  .rt-enchufe { position: absolute; width: 16px; height: 16px; border-radius: 50%; border: 3px solid var(--panel); top: 50%;
+    transform: translateY(-50%); cursor: crosshair; box-shadow: 0 0 0 1px var(--borde); }
+  .rt-puerto.ent .rt-enchufe { left: -19px; } .rt-puerto.sal .rt-enchufe { right: -19px; }
+  .rt-enchufe.v { background: var(--acento); } .rt-enchufe.a { background: var(--ok); } .rt-enchufe.p { background: #8b5cf6; }
+  .rt-enchufe.destino, .rt-enchufe.elegido { transform: translateY(-50%) scale(1.35); }
+  .rt-enchufe.elegido { box-shadow: 0 0 0 3px var(--acento); }
+  .rt-enchufe.posible { animation: rt-late 1s ease-in-out infinite; }
+  .rt-enchufe.malo { background: var(--mal) !important; }
+  @keyframes rt-late { 50% { transform: translateY(-50%) scale(1.45); } }
+  .rt-ayuda { position: sticky; left: 50%; bottom: 12px; transform: translateX(-50%); display: inline-block; font-size: 12.5px; background: var(--panel);
+    border: 1px solid var(--borde); border-radius: 999px; padding: 5px 12px; color: var(--suave); white-space: nowrap; pointer-events: none; }
+  .rt-leyenda { display: flex; gap: 12px; flex-wrap: wrap; font-size: 12px; color: var(--suave); margin-top: 8px; }
+  .rt-leyenda i { width: 18px; height: 3px; border-radius: 2px; display: inline-block; vertical-align: middle; margin-right: 5px; }
+  .rt-insp { position: sticky; top: 10px; display: flex; flex-direction: column; gap: 12px; max-height: calc(100vh - 20px); overflow: auto; }
+  .rt-insp .tarjeta { display: flex; flex-direction: column; gap: 10px; }
+  .rt-insp-cab { display: flex; align-items: center; gap: 8px; }
+  .rt-insp-cab input { font-size: 16px; font-weight: 700; border: 0; padding: 2px 4px; margin-left: -4px; background: transparent; border-radius: 6px; flex: 1; min-width: 0; }
+  .rt-insp-cab input:focus, .rt-insp-cab input:hover { background: var(--fondo); outline: none; }
+  .rt-paleta { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+  .rt-paleta button { border: 1px dashed var(--borde); background: transparent; border-radius: 9px; padding: 7px 8px; cursor: pointer; text-align: left; font-size: 13px; display: flex; gap: 6px; align-items: center; color: var(--texto); }
+  .rt-paleta button:hover { border-color: var(--acento); color: var(--acento); }
+  .rt-paleta button:disabled { opacity: .45; cursor: not-allowed; }
+  .rt-desliza { display: flex; align-items: center; gap: 8px; }
+  .rt-desliza input { flex: 1; min-width: 0; accent-color: var(--acento); }
+  .rt-desliza output { font-variant-numeric: tabular-nums; font-weight: 700; font-size: 13px; min-width: 58px; text-align: right; }
+  .rt-vu { height: 7px; border-radius: 4px; background: var(--pista); overflow: hidden; position: relative; }
+  .rt-vu i { position: absolute; inset: 0 auto 0 0; width: 0; background: linear-gradient(90deg, var(--ok) 70%, var(--aviso) 88%, var(--mal)); transition: width .2s linear; }
+  .rt-lista { display: flex; flex-direction: column; gap: 12px; }
+  .rt-lista .tarjeta { display: flex; flex-direction: column; gap: 10px; }
+  .rt-bloque { background: var(--fondo); border-radius: 11px; padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; }
+  .rt-chip { display: flex; align-items: center; gap: 8px; border: 1px solid var(--borde); background: var(--panel); border-radius: 10px; padding: 7px 8px; }
+  .rt-chip .tx { flex: 1; min-width: 0; } .rt-chip b { display: block; font-size: 13.5px; } .rt-chip small { display: block; font-size: 12px; color: var(--suave); overflow-wrap: anywhere; }
+  .rt-quitar { border: 0; background: none; color: var(--suave); cursor: pointer; padding: 4px 7px; border-radius: 7px; font-size: 16px; line-height: 1; }
+  .rt-quitar:hover { color: var(--mal); }
+  .rt-fila-ent { display: flex; gap: 10px; align-items: center; padding: 8px 0; border-top: 1px solid var(--borde); }
+  .rt-fila-ent:first-of-type { border-top: 0; }
+  .rt-fila-ent .tx { flex: 1; min-width: 0; } .rt-fila-ent small { display: block; color: var(--suave); font-size: 12.5px; }
+  .rt-cerrar { display: none; }
+  .rt-velo { display: none; }
+  .rt-err { font-size: 13px; color: var(--mal); background: var(--mal-f); border-radius: 9px; padding: 7px 9px; }
+  @media (max-width: 980px) {
+    .rt-obra { grid-template-columns: minmax(0, 1fr); }
+    .rt-marco { height: 520px; }
+    .rt-insp { position: fixed; left: 0; right: 0; bottom: 0; top: auto; z-index: 40; max-height: 78vh;
+      padding: 0 8px calc(10px + env(safe-area-inset-bottom, 0px)); transform: translateY(105%); transition: transform .22s ease; }
+    .rt-insp.abierta { transform: none; }
+    .rt-insp > .tarjeta:first-child { box-shadow: 0 -6px 24px rgba(0,0,0,.18); }
+    .rt-cerrar { display: flex; justify-content: space-between; align-items: center; }
+    .rt-velo.visible { display: block; position: fixed; inset: 0; background: rgba(0,0,0,.28); z-index: 39; }
+  }
+  @media (prefers-reduced-motion: reduce) { .rt-cable.vivo, .rt-enchufe.posible { animation: none; } .rt-insp { transition: none; } }
+
   /* configuración: Entradas → Programa → Salidas */
   .grupo { margin: 22px 2px 8px; font-size: 12px; font-weight: 700; letter-spacing: .08em;
     text-transform: uppercase; color: var(--suave); display: flex; align-items: center; gap: 10px; }
@@ -223,6 +313,7 @@
 
   <nav class="pestanas" aria-label="Secciones">
     <button type="button" data-tab-btn="monitor" data-t="tab_monitor"></button>
+    <button type="button" data-tab-btn="rutas" data-t="tab_routes" hidden></button>
     <button type="button" data-tab-btn="config" data-t="tab_config"></button>
     <button type="button" data-tab-btn="sistema" data-t="tab_system"></button>
   </nav>
@@ -255,8 +346,51 @@
     </div>
   </section>
 
+  <section class="tarjeta seccion oculto" id="secRutasMonitor" data-tab="monitor"></section>
   <div id="fuentes" data-tab="monitor"></div>
 
+
+  <section id="secRutas" data-tab="rutas">
+    <div class="rt-obra">
+      <div>
+        <div class="rt-barra">
+          <button type="button" class="boton" id="rtNuevaRuta" data-t="rt_new_route"></button>
+          <button type="button" class="boton" id="rtAnadir" data-t="rt_add"></button>
+          <span class="rt-guardado" id="rtGuardado"></span>
+          <button type="button" class="boton esp" id="rtOrdenar" data-t="rt_tidy"></button>
+          <div class="segmentado" role="group" id="rtVistas">
+            <button type="button" data-v="lienzo" data-t="rt_canvas"></button>
+            <button type="button" data-v="lista" data-t="rt_list"></button>
+          </div>
+        </div>
+        <div id="rtVistaLienzo">
+          <div class="rt-marco" id="rtMarco">
+            <div class="rt-lienzo" id="rtLienzo">
+              <svg id="rtCables" aria-hidden="true"></svg>
+              <div class="rt-col" data-col="ent" data-t="g_inputs"></div>
+              <div class="rt-col" data-col="ruta" data-t="rt_routes"></div>
+              <div class="rt-col" data-col="sal" data-t="g_outputs"></div>
+            </div>
+            <span class="rt-ayuda" id="rtAyuda"></span>
+          </div>
+          <div class="rt-leyenda">
+            <span><i style="background:var(--acento)"></i><span data-t="rt_l_video"></span></span>
+            <span><i style="background:var(--ok)"></i><span data-t="rt_l_audio"></span></span>
+            <span><i style="background:#8b5cf6"></i><span data-t="rt_l_prog"></span></span>
+            <span data-t="rt_l_live"></span>
+          </div>
+        </div>
+        <div id="rtVistaLista" class="rt-lista" hidden></div>
+      </div>
+      <aside class="rt-insp" id="rtInsp" aria-live="polite"></aside>
+      <div class="rt-velo" id="rtVelo"></div>
+    </div>
+  </section>
+
+  <section class="tarjeta seccion oculto" id="secProbarRutas" data-tab="config">
+    <div class="fuente-cab"><div><h3 data-t="rt_try_title"></h3><div class="sub" data-t="rt_try_sub"></div></div>
+      <button type="button" class="boton principal" id="btProbarRutas" data-t="rt_try_btn"></button></div>
+  </section>
 
   <section class="tarjeta seccion" id="secModo" data-tab="config">
     <div class="fuente-cab"><div><h3 data-t="modo_title"></h3><div class="sub" id="modoSub"></div></div></div>
@@ -495,6 +629,7 @@
     </div>
     <div class="botones">
       <button class="boton principal" id="btZona" data-t="save"></button>
+      <button class="boton oculto" id="btVolverModos" data-t="rt_back"></button>
       <button class="boton peligro" id="btReboot" data-t="reboot"></button>
       <button class="boton peligro" id="btApagar" data-t="shutdown"></button>
     </div>
@@ -837,6 +972,8 @@ const T = {
     source_stream: "Cámara encendida", send_ndi: "Enviar por NDI",
     cam_off_help: "Apagada: no sale ni por NDI ni por el HDMI.",
     send_ndi_off_help: "Sin NDI: solo se ve en el monitor HDMI (elígela en Salida HDMI). Útil para el multiview del ATEM.",
+    st_sin_rutas: "Sin rutas", sub_sin_rutas: "Crea una ruta en la pestaña Rutas.",
+    sub_rutas: (r) => `${r.en_marcha} de ${r.total} rutas en marcha` + (r.nombres.length ? `: ${r.nombres.join(", ")}` : ""),
     st_en_hdmi: "En el HDMI", sub_en_hdmi: "Cámara en el monitor HDMI, sin NDI.",
     ndi_name: "Nombre NDI", resolution: "Resolución", framerate: "Fotogramas por segundo",
     audio: "Audio", audio_auto: "Automático (micrófono de la cámara)", audio_off: "Sin audio",
@@ -883,6 +1020,10 @@ const T = {
     reem_sub: (r) => `${r.fps.toFixed(1)} fps · ${r.mbps.toFixed(1)} Mbit/s` + (r.audio_activo ? " · audio" : ""),
     reem_st: { apagado: "Apagada", conectando: "Conectando", activa: "Activa", error: "Error, reintentando" },
     g_inputs: "Entradas", g_program: "Programa", g_outputs: "Salidas",
+    tab_routes: "Rutas", rt_new_route: "+ Nueva ruta", rt_add: "+ Añadir", rt_tidy: "Ordenar", rt_canvas: "Lienzo", rt_list: "Lista",
+    rt_routes: "Rutas", rt_l_video: "imagen", rt_l_audio: "audio", rt_l_prog: "programa (imagen + audio)", rt_l_live: "Línea en movimiento: hay señal",
+    rt_try_title: "Rutas: entradas → salidas", rt_try_sub: "Junta cualquier entrada (cámara, audio USB, NDI, ATEM) con su audio y mándala a las salidas que quieras, todo a la vez. Lo que tienes ahora se convierte en rutas.",
+    rt_try_btn: "Pasar a rutas", rt_back: "Volver a los modos", rt_motor: "Motor",
     rp_title: "Reparto del programa", rp_sub: "Lo mismo para todos: con el audio de la consola y ya sincronizado.",
     pg_record_help: "Copia exacta de lo que manda el ATEM (usa su perfil «NDIICAM edición» para más calidad), en trozos de 10 minutos.",
     pt_state: "Recepción", more_settings: "Más ajustes",
@@ -1173,6 +1314,8 @@ const T = {
     source_stream: "Camera on", send_ndi: "Send over NDI",
     cam_off_help: "Off: it goes out neither over NDI nor to HDMI.",
     send_ndi_off_help: "No NDI: it only shows on the HDMI monitor (pick it under HDMI output). Handy for the ATEM multiview.",
+    st_sin_rutas: "No routes", sub_sin_rutas: "Create a route in the Routes tab.",
+    sub_rutas: (r) => `${r.en_marcha} of ${r.total} routes running` + (r.nombres.length ? `: ${r.nombres.join(", ")}` : ""),
     st_en_hdmi: "On HDMI", sub_en_hdmi: "Camera on the HDMI monitor, no NDI.",
     ndi_name: "NDI name", resolution: "Resolution", framerate: "Frames per second",
     audio: "Audio", audio_auto: "Automatic (camera microphone)", audio_off: "No audio",
@@ -1219,6 +1362,10 @@ const T = {
     reem_sub: (r) => `${r.fps.toFixed(1)} fps · ${r.mbps.toFixed(1)} Mbit/s` + (r.audio_activo ? " · audio" : ""),
     reem_st: { apagado: "Off", conectando: "Connecting", activa: "Active", error: "Error, retrying" },
     g_inputs: "Inputs", g_program: "Program", g_outputs: "Outputs",
+    tab_routes: "Routes", rt_new_route: "+ New route", rt_add: "+ Add", rt_tidy: "Tidy up", rt_canvas: "Canvas", rt_list: "List",
+    rt_routes: "Routes", rt_l_video: "picture", rt_l_audio: "audio", rt_l_prog: "program (picture + audio)", rt_l_live: "Moving line: there is signal",
+    rt_try_title: "Routes: inputs → outputs", rt_try_sub: "Join any input (camera, USB audio, NDI, ATEM) with its audio and send it to whatever outputs you want, all at once. What you have now becomes routes.",
+    rt_try_btn: "Switch to routes", rt_back: "Back to modes", rt_motor: "Engine",
     rp_title: "Program distribution", rp_sub: "The same for everyone: with the console audio, already in sync.",
     pg_record_help: "An exact copy of what the ATEM sends (use its \u201cNDIICAM edición\u201d profile for more quality), in 10-minute pieces.",
     pt_state: "Reception", more_settings: "More settings",
@@ -1389,7 +1536,7 @@ function aplicarIdioma() {
 }
 let pestana = "monitor";
 try { pestana = localStorage.getItem("ndiicam-tab") || "monitor"; } catch (_) { /* sin almacenamiento */ }
-if (["#monitor", "#config", "#sistema"].includes(location.hash)) pestana = location.hash.slice(1);   // enlace directo
+if (["#monitor", "#config", "#sistema", "#rutas"].includes(location.hash)) pestana = location.hash.slice(1);   // enlace directo
 function aplicarPestana() {
   document.body.dataset.tab = pestana;
   document.querySelectorAll("[data-tab-btn]").forEach((b) => b.classList.toggle("activo", b.dataset.tabBtn === pestana));
@@ -1544,7 +1691,7 @@ function rellenar(input, valor, clave) {
 
 // ----------------------------------------------------------------- fuentes
 const CLASES = { emitiendo: "ok", iniciando: "aviso", sin_camara: "aviso", error: "mal", desactivada: "",
-  recibiendo: "ok", conectando: "aviso", sin_fuente: "aviso", sin_monitor: "aviso", rx_error: "mal", pausada: "", solo_monitor: "", en_hdmi: "ok",
+  recibiendo: "ok", conectando: "aviso", sin_fuente: "aviso", sin_monitor: "aviso", rx_error: "mal", pausada: "", solo_monitor: "", en_hdmi: "ok", sin_rutas: "aviso",
   esperando_atem: "aviso" };
 
 function crearTarjeta(f) {
@@ -2228,6 +2375,14 @@ function pintarPuente(e) {
 // ----------------------------------------------------------------- pintar
 function pintar(e) {
   ultimo = e;
+  // con el motor de rutas, la pestaña Rutas sustituye a Configuración
+  const conRutas = (e.config || {}).motor === "rutas";
+  document.querySelector('[data-tab-btn="rutas"]').hidden = !conRutas;
+  document.querySelector('[data-tab-btn="config"]').hidden = conRutas;
+  $("btVolverModos").classList.toggle("oculto", !conRutas);
+  $("secProbarRutas").classList.toggle("oculto", conRutas);
+  if (conRutas && pestana === "config") { pestana = "rutas"; aplicarPestana(); }
+  if (!conRutas && pestana === "rutas") { pestana = "config"; aplicarPestana(); }
   const em = e.emision || {}, red = e.red || {}, eq = e.equipo || {}, cfg = e.config || {}, fuentes = e.fuentes || [];
   const texto = t("st_" + em.estado);
   $("pastilla").className = "pastilla " + (CLASES[em.estado] || "") + (["emitiendo", "recibiendo"].includes(em.estado) ? " vivo" : "");
@@ -2242,8 +2397,9 @@ function pintar(e) {
   poner("estado", texto);
   let sub = "";
   const rx = (e.receptor || {}).estado;
-  const recibe = ["receptor", "puente"].includes(e.modo);
-  if (e.modo === "puente") sub = em.estado === "sin_monitor" ? t("sub_sin_monitor")
+  const recibe = !e.rutas && ["receptor", "puente"].includes(e.modo);
+  if (e.rutas) sub = e.rutas.total ? T[lang].sub_rutas(e.rutas) : t("sub_sin_rutas");
+  else if (e.modo === "puente") sub = em.estado === "sin_monitor" ? t("sub_sin_monitor")
     : (e.puente || {}).publicando ? T[lang].pt_from(e.puente) + (rx && rx.estado === "recibiendo" ? " · " + T[lang].hdmi_rx_recibiendo(rx) : "")
     : t("pt_waiting");
   else if (e.modo === "receptor") sub = em.estado === "sin_monitor" ? t("sub_sin_monitor")
@@ -2261,7 +2417,10 @@ function pintar(e) {
   // solo si hay algo que reiniciar
   $("btReiniciarTodo").classList.toggle("oculto", e.modo === "puente" ? false
     : e.modo === "receptor" ? !(e.receptor || {}).fuente : !fuentes.length);
-  if (recibe) {
+  if (e.rutas) {
+    poner("cFuentes", `${e.rutas.en_marcha} / ${e.rutas.total}`); poner("cFuentesT", t("rt_routes"));
+    poner("cRecep", String(em.receptores ?? 0)); poner("cRecepT", t("receivers"));
+  } else if (recibe) {
     const ok = rx && rx.estado === "recibiendo";
     poner("cFuentes", ok ? String(rx.fps) : "—"); poner("cFuentesT", t("fps_recibidos"));
     poner("cRecep", ok && rx.ancho ? `${rx.ancho}×${rx.alto}` : "—"); poner("cRecepT", t("resolucion_fuente"));
@@ -2614,6 +2773,10 @@ $("hdmiQue").addEventListener("change", () => {
   else guardarHdmi({ hdmi: true, hdmi_fuente: v === "auto" ? "auto" : v.slice(4) });
 });
 $("hdmiConsola").addEventListener("change", () => guardarHdmi({ hdmi_consola: $("hdmiConsola").value }));
+$("btVolverModos").addEventListener("click", async () => {
+  try { await api("/api/rutas/motor", { motor: "modos" }); pestana = "config"; aplicarPestana(); refrescar(); }
+  catch (err) { mensaje("msgSistema", err.message, "mal"); }
+});
 $("btHdmiReboot").addEventListener("click", async () => {
   if (!confirm(t("confirm_reboot"))) return;
   await api("/api/sistema/reiniciar", {}).catch(() => {});
@@ -2756,6 +2919,661 @@ $("btReboot").addEventListener("click", async () => {
 aplicarIdioma();
 comprobarSesion().then((dentro) => { if (dentro && pestana === "sistema") abrirSistema(); });
 refrescar();
+</script>
+<script>
+// ================================================================ pestaña Rutas
+// Entradas → rutas (imagen + audio con ganancia y retraso) → salidas. Se edita una
+// copia (borrador) y se guarda sola al cambiar algo; el servicio aplica en marcha el
+// retraso, la ganancia y el silencio. Dos vistas del mismo montaje: el lienzo (cables)
+// y la lista (el móvil). Las posiciones del lienzo son de cada navegador.
+const RT = {
+  es: {
+    ayuda: "Arrastra de un punto de color a otro, o tócalos uno tras otro · el engranaje abre los ajustes",
+    toca: "Ahora toca el punto que parpadea donde quieres conectarlo (o toca fuera para cancelar).",
+    mal_lado: "Une un punto de salida (derecha de un bloque) con uno de entrada (izquierda de otro).",
+    mal_color: "Los colores no casan: la imagen va a «imagen», el audio a «audio» y el programa a una salida.",
+    conectado: (a, b) => `Conectado: ${a} → ${b}`,
+    guardando: "Guardando…", guardado: "Guardado", sin_guardar: "No se pudo guardar: ",
+    imagen: "imagen", audio: "audio", programa: "programa", ajustes: "Ajustes", cerrar: "Cerrar", quitar: "Quitar",
+    tipos: { usb_cam: "Cámara USB", usb_audio: "Audio USB", ndi: "Fuente NDI", ingesta: "Emisión entrante" },
+    salidas: { ndi: "NDI", hdmi: "Monitor HDMI", obs: "OBS · TV · móvil", srt: "SRT", rtmp: "RTMP (YouTube…)", grabar: "Grabar" },
+    est: { en_marcha: "En marcha", esperando: "Esperando", error: "Error", pausada: "En pausa" },
+    errores: {
+      sin_imagen: "Falta la imagen: conecta un cable azul a «imagen».", imagen_no_esta: "La entrada de la imagen no está conectada.",
+      imagen_no_valida: "Esa entrada no da imagen.", audio_no_esta: "La entrada del audio no está conectada.",
+      audio_no_valido: "Esa entrada no da audio.", sin_salidas: "Sin salidas: conéctale alguna.",
+      ndi_a_ndi: "Ya es una fuente NDI: no se vuelve a sacar por NDI.", ndi_repetido: "Otra ruta usa ese nombre NDI.",
+      hdmi_ocupado: "El monitor lo tiene otra ruta.", url_rtmp_invalida: "La URL RTMP no es válida.",
+      sin_gpu: "Este equipo no puede codificar H.264 para esta salida (sin GPU útil).",
+    },
+    pausa_lite: (n) => `En la edición Lite el equipo lleva ${n} ruta a la vez: esta queda en pausa.`,
+    nueva_ruta: "Nueva ruta", sin_audio: "Sin audio", elige_imagen: "— elige la imagen —",
+    ganancia: "Ganancia", retraso: "Retraso", silenciar: "Silenciar", activa: "Ruta encendida",
+    calibrar: "Calibrar con palmadas", palmadas: "Da 3 palmadas secas delante de la cámara…",
+    medido: (ms) => `Medido: el audio va ${ms} ms por delante.`, aplicar: (ms) => `Aplicar ${ms} ms`,
+    audio_otro: "El audio viene de otra entrada y suele llegar antes que la imagen: el retraso lo iguala.",
+    copia: "El vídeo se copia sin recodificar.", sale_por: "Sale por", anadir_salida: "+ Añadir salida…",
+    sin_salidas: "Aún no sale a ningún sitio.", borrar_ruta: "Borrar ruta", lectores: (n) => `${n} leyendo`,
+    entradas: "Entradas", rutas: "Rutas", salidas_t: "Salidas", anadir: "Añadir",
+    anadir_ndi: "Fuente NDI", anadir_ingesta: "Emisión entrante (ATEM, OBS…)", anadir_red: "+ Añadir entrada de la red…",
+    usb_solas: "Las cámaras y el audio USB aparecen solos al conectarlos.",
+    elige_ruta: "Elige primero una ruta (o crea una) para añadirle salidas.",
+    fuente_red: "Fuente de la red", buscando: "Buscando fuentes NDI…",
+    atem_emite: "Que el ATEM, OBS o el móvil emitan a:", xml: "Descargar ajustes para ATEM",
+    llega: (l) => l && l.publicando ? `Llegando por ${l.protocolo || "RTMP"}${l.desde ? " desde " + l.desde : ""}` : "Esperando a que publique",
+    se_usa: (r) => "Se usa en: " + (r.length ? r.join(", ") : "ninguna ruta"),
+    nombre_ndi: "Nombre NDI", ndi_ve: (h, n) => `Aparece en la red como ${h} (${n}).`, url_rtmp: "URL de emisión (con la clave)",
+    formato: "Formato", grabar_nota: "Trozos de 10 minutos, copia exacta del programa; si el disco se llena, se borran los más antiguos.",
+    hdmi_nota: "Solo imagen. Hay un monitor: si otra ruta lo coge, deja de mostrar esta.",
+    obs_urls: "Direcciones", desconectar: "Desconectar", conexion: "Conexión", resolucion: "Resolución", fps: "Fotogramas",
+    vista_previa: "Sin vista previa", calibrando: "Midiendo…", copia_corta: "copia",
+    monitor_t: "Rutas", ver_rutas: "Ver rutas",
+  },
+  en: {
+    ayuda: "Drag from one coloured dot to another, or tap them one after the other · the gear opens the settings",
+    toca: "Now tap the blinking dot you want to connect it to (or tap outside to cancel).",
+    mal_lado: "Join an output dot (right of a block) with an input dot (left of another).",
+    mal_color: "The colours do not match: picture goes to “picture”, audio to “audio” and the program to an output.",
+    conectado: (a, b) => `Connected: ${a} → ${b}`,
+    guardando: "Saving…", guardado: "Saved", sin_guardar: "Could not save: ",
+    imagen: "picture", audio: "audio", programa: "program", ajustes: "Settings", cerrar: "Close", quitar: "Remove",
+    tipos: { usb_cam: "USB camera", usb_audio: "USB audio", ndi: "NDI source", ingesta: "Incoming stream" },
+    salidas: { ndi: "NDI", hdmi: "HDMI monitor", obs: "OBS · TV · phone", srt: "SRT", rtmp: "RTMP (YouTube…)", grabar: "Record" },
+    est: { en_marcha: "Running", esperando: "Waiting", error: "Error", pausada: "Paused" },
+    errores: {
+      sin_imagen: "No picture: connect a blue cable to “picture”.", imagen_no_esta: "The picture input is not connected.",
+      imagen_no_valida: "That input gives no picture.", audio_no_esta: "The audio input is not connected.",
+      audio_no_valido: "That input gives no audio.", sin_salidas: "No outputs: connect one.",
+      ndi_a_ndi: "It is already an NDI source: it does not go out as NDI again.", ndi_repetido: "Another route uses that NDI name.",
+      hdmi_ocupado: "Another route has the monitor.", url_rtmp_invalida: "The RTMP URL is not valid.",
+      sin_gpu: "This device cannot encode H.264 for this output (no usable GPU).",
+    },
+    pausa_lite: (n) => `On the Lite edition the device runs ${n} route at a time: this one is paused.`,
+    nueva_ruta: "New route", sin_audio: "No audio", elige_imagen: "— pick the picture —",
+    ganancia: "Gain", retraso: "Delay", silenciar: "Mute", activa: "Route on",
+    calibrar: "Calibrate with claps", palmadas: "Clap 3 times sharply in front of the camera…",
+    medido: (ms) => `Measured: audio is ${ms} ms ahead.`, aplicar: (ms) => `Apply ${ms} ms`,
+    audio_otro: "The audio comes from another input and usually arrives before the picture: the delay evens it out.",
+    copia: "The video is copied without re-encoding.", sale_por: "Goes out to", anadir_salida: "+ Add output…",
+    sin_salidas: "It does not go out anywhere yet.", borrar_ruta: "Delete route", lectores: (n) => `${n} watching`,
+    entradas: "Inputs", rutas: "Routes", salidas_t: "Outputs", anadir: "Add",
+    anadir_ndi: "NDI source", anadir_ingesta: "Incoming stream (ATEM, OBS…)", anadir_red: "+ Add a network input…",
+    usb_solas: "USB cameras and audio appear on their own when plugged in.",
+    elige_ruta: "Pick a route first (or create one) to add outputs to it.",
+    fuente_red: "Network source", buscando: "Looking for NDI sources…",
+    atem_emite: "Have the ATEM, OBS or the phone stream to:", xml: "Download settings for ATEM",
+    llega: (l) => l && l.publicando ? `Arriving over ${l.protocolo || "RTMP"}${l.desde ? " from " + l.desde : ""}` : "Waiting for it to publish",
+    se_usa: (r) => "Used in: " + (r.length ? r.join(", ") : "no route"),
+    nombre_ndi: "NDI name", ndi_ve: (h, n) => `Shows on the network as ${h} (${n}).`, url_rtmp: "Stream URL (with the key)",
+    formato: "Format", grabar_nota: "10-minute pieces, an exact copy of the program; when the disk fills up, the oldest go.",
+    hdmi_nota: "Picture only. There is one monitor: if another route takes it, this one stops showing.",
+    obs_urls: "Addresses", desconectar: "Disconnect", conexion: "Connection", resolucion: "Resolution", fps: "Frame rate",
+    vista_previa: "No preview", calibrando: "Measuring…", copia_corta: "copy",
+    monitor_t: "Routes", ver_rutas: "Open routes",
+  },
+};
+const rt = (k) => (RT[lang] || RT.es)[k];
+const RTI = {
+  usb_cam: '<path d="M15 10l5-3v10l-5-3z"/><rect x="3" y="6" width="12" height="12" rx="2"/>',
+  usb_audio: '<path d="M4 10v4M8 7v10M12 4v16M16 8v8M20 11v2"/>',
+  ndi: '<circle cx="12" cy="12" r="2.5"/><path d="M7.5 7.5a6.5 6.5 0 0 0 0 9M16.5 7.5a6.5 6.5 0 0 1 0 9M4.6 4.6a10.5 10.5 0 0 0 0 14.8M19.4 4.6a10.5 10.5 0 0 1 0 14.8"/>',
+  ingesta: '<path d="M3 12h13M12 7l5 5-5 5"/><path d="M20 5v14"/>',
+  hdmi: '<rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/>',
+  grabar: '<circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3.5" fill="currentColor"/>',
+  ruta: '<path d="M4 7h6l4 10h6M4 17h6M14 7h6"/>',
+  ajustes: '<circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M2 12h3M19 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1"/>',
+};
+RTI.obs = RTI.srt = RTI.rtmp = RTI.ingesta;
+const rtIcono = (n, t = 16) => { const s = document.createElement("span"); s.className = "rt-ti";
+  s.innerHTML = `<svg width="${t}" height="${t}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${RTI[n] || RTI.ruta}</svg>`; return s; };
+// como el() del panel, pero con atributos booleanos de verdad (false = sin atributo)
+function rel(tag, attrs, ...hijos) {
+  const n = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs || {})) {
+    if (k === "class") n.className = v;
+    else if (k === "text") n.textContent = v;
+    else if (k.startsWith("on")) n.addEventListener(k.slice(2), v);
+    else if (v === true) n.setAttribute(k, "");
+    else if (v !== false && v != null) n.setAttribute(k, v);
+  }
+  for (const h of hijos.flat()) if (h != null && h !== false) n.append(h);
+  return n;
+}
+const rtNuevoId = (p) => p + Math.random().toString(36).slice(2, 7);
+
+// --- estado
+let RD = null;               // lo último que dijo /api/rutas
+let RB = null;               // borrador: {entradas_red, rutas}
+let rtSel = null, rtCableSel = null, rtHoja = false, rtTocado = null, rtArrastre = null;
+let rtSucio = false, rtGuardarT = 0, rtVista = "";
+let rtPos = {};
+try { rtPos = JSON.parse(localStorage.getItem("ndiicam-rt-pos")) || {}; } catch (_) { rtPos = {}; }
+try { rtVista = localStorage.getItem("ndiicam-rt-vista") || ""; } catch (_) { rtVista = ""; }
+if (!["lienzo", "lista"].includes(rtVista)) rtVista = matchMedia("(max-width: 760px)").matches ? "lista" : "lienzo";
+const rtGuardarPos = () => { try { localStorage.setItem("ndiicam-rt-pos", JSON.stringify(rtPos)); } catch (_) { /* sin almacenamiento */ } };
+const rtEnt = (id) => (RD ? RD.entradas : []).find((e) => e.id === id);
+const rtRuta = (id) => RB.rutas.find((r) => r.id === id);
+const rtSalida = (sid) => { for (const r of RB.rutas) { const s = r.salidas.find((x) => x.id === sid); if (s) return [r, s]; } return [null, null]; };
+const daImagen = (e) => ["usb_cam", "ndi", "ingesta"].includes(e.tipo);
+const daAudio = (e) => e.tipo === "usb_cam" ? !!e.audio_dev : ["usb_audio", "ndi", "ingesta"].includes(e.tipo);
+const rtEstado = (rid) => ((RD || {}).estado || {})[rid] || {};
+const rtErrores = (rid) => ((RD || {}).errores || {})[rid] || [];
+const rtHost = () => location.hostname;
+
+async function rtCargar() {
+  try {
+    const d = await api("/api/rutas");
+    RD = d;
+    rtPintarMonitor();
+    if (!rtSucio) RB = { entradas_red: d.entradas.filter((e) => ["ndi", "ingesta"].includes(e.tipo)).map(({ llega, ...e }) => e),
+      rutas: JSON.parse(JSON.stringify(d.rutas)) };
+    rtPintar();
+  } catch (_) { /* sin sesión o caído: lo dice el panel */ }
+}
+function rtCambio(inmediato) {
+  rtSucio = true; poner("rtGuardado", rt("guardando"));
+  clearTimeout(rtGuardarT);
+  rtGuardarT = setTimeout(rtGuardar, inmediato ? 0 : 500);
+}
+async function rtGuardar() {
+  try {
+    const d = await api("/api/rutas", { entradas_red: RB.entradas_red, rutas: RB.rutas });
+    RD = d; rtSucio = false;
+    // las ids y caminos los fija el servicio: el borrador sigue a lo guardado
+    RB = { entradas_red: d.entradas.filter((e) => ["ndi", "ingesta"].includes(e.tipo)).map(({ llega, ...e }) => e),
+      rutas: JSON.parse(JSON.stringify(d.rutas)) };
+    poner("rtGuardado", rt("guardado"));
+    rtPintar();
+  } catch (err) { poner("rtGuardado", rt("sin_guardar") + err.message); }
+}
+
+// ---------------------------------------------------------------- lienzo
+const ANCHO = { ent: 214, ruta: 236, sal: 214 };
+const rtAnchoLienzo = () => Math.max(880, $("rtMarco").clientWidth - 2);
+const rtColumnas = (W = rtAnchoLienzo()) => ({ ent: 24, ruta: Math.round(W / 2 - ANCHO.ruta / 2), sal: W - ANCHO.sal - 28 });
+function rtNodos() {
+  // entradas, rutas y salidas como bloques del lienzo
+  const n = [];
+  for (const e of RD.entradas) n.push({ id: "e:" + e.id, clase: "ent", e });
+  for (const r of RB.rutas) n.push({ id: "r:" + r.id, clase: "ruta", r });
+  for (const r of RB.rutas) for (const s of r.salidas) n.push({ id: "s:" + s.id, clase: "sal", r, s });
+  return n;
+}
+function rtCables() {
+  const c = [];
+  for (const r of RB.rutas) {
+    if (r.video && rtEnt(r.video)) c.push({ de: "e:" + r.video, p: "v", a: "r:" + r.id, viva: rtEstado(r.id).estado === "en_marcha" });
+    if (r.audio && rtEnt(r.audio)) c.push({ de: "e:" + r.audio, p: "a", a: "r:" + r.id, viva: rtEstado(r.id).estado === "en_marcha" });
+    for (const s of r.salidas) c.push({ de: "r:" + r.id, p: "p", a: "s:" + s.id,
+      viva: ((rtEstado(r.id).salidas || {})[s.id]) === "ok" });
+  }
+  return c;
+}
+function rtColocar(nodos) {
+  // posiciones guardadas; lo que no tiene, al final de su columna
+  const W = rtAnchoLienzo(), col = rtColumnas(W);
+  const fondo = { ent: 44, ruta: 44, sal: 44 };
+  for (const n of nodos) if (rtPos[n.id]) fondo[n.clase] = Math.max(fondo[n.clase], rtPos[n.id][1] + (n.clase === "ent" ? 230 : 170));
+  for (const n of nodos) {
+    if (!rtPos[n.id]) { rtPos[n.id] = [col[n.clase], fondo[n.clase]]; fondo[n.clase] += n.clase === "ent" ? 230 : n.clase === "ruta" ? 250 : 130; }
+    rtPos[n.id][0] = Math.min(rtPos[n.id][0], W - ANCHO[n.clase] - 4);
+  }
+  rtGuardarPos();
+}
+function rtOrdenar() {
+  const col = rtColumnas();
+  const y = { ent: 44, ruta: 44, sal: 44 };
+  for (const n of rtNodos()) {
+    rtPos[n.id] = [col[n.clase], y[n.clase]];
+    y[n.clase] += n.clase === "ent" ? (n.e.tipo === "usb_cam" ? 240 : 150) : n.clase === "ruta" ? 260 : 130;
+  }
+  rtGuardarPos(); rtPintar();
+}
+function rtPuerto(nid, p, texto, lado) {
+  return rel("div", { class: "rt-puerto " + lado },
+    lado === "ent" ? rel("span", { class: "rt-enchufe " + p, "data-n": nid, "data-p": p, "data-lado": "ent", title: texto }) : null,
+    rel("span", { text: texto }),
+    lado === "sal" ? rel("span", { class: "rt-enchufe " + p, "data-n": nid, "data-p": p, "data-lado": "sal", title: texto }) : null);
+}
+function rtTextoSalida(r, s) {
+  const h = rtHost(), P = (RD || {}).puertos || {};
+  if (s.tipo === "ndi") return `${((ultimo || {}).equipo || {}).nombre?.toUpperCase() || "NDIICAM"} (${s.nombre})`;
+  if (s.tipo === "obs") return `rtmp · HLS  /live/${r.camino || "…"}`;
+  if (s.tipo === "srt") return `srt://${h}:${P.srt || 8890}`;
+  if (s.tipo === "rtmp") return s.url ? s.url.replace(/\/[^/]*$/, "/••••") : rt("errores").url_rtmp_invalida;
+  if (s.tipo === "grabar") return (s.formato || "mp4").toUpperCase();
+  return "";
+}
+function rtCrearNodo(n) {
+  const [x, y] = rtPos[n.id];
+  const est = n.clase === "ruta" ? rtEstado(n.r.id).estado : n.clase === "sal" ? (rtEstado(n.r.id).salidas || {})[n.s.id] : null;
+  const punto = n.clase === "ent" ? (n.e.tipo === "ingesta" ? (n.e.llega && n.e.llega.publicando ? "ok" : "aviso") : "ok")
+    : { en_marcha: "ok", ok: "ok", esperando: "aviso", error: "mal" }[est] || "";
+  const titulo = n.clase === "ent" ? n.e.nombre : n.clase === "ruta" ? n.r.nombre : rt("salidas")[n.s.tipo];
+  const icono = n.clase === "ent" ? n.e.tipo : n.clase === "ruta" ? "ruta" : n.s.tipo;
+  const caja = rel("div", { class: `rt-nodo ${n.clase}${rtSel === n.id ? " sel" : ""}${n.clase === "ruta" && est === "pausada" ? " parada" : ""}`,
+    "data-id": n.id, style: `left:${x}px;top:${y}px` });
+  const cab = rel("div", { class: "cab" }, rtIcono(icono), rel("b", { text: titulo }), rel("span", { class: "punto " + punto }),
+    rel("button", { class: "rt-ajustar", type: "button", title: rt("ajustes"), "aria-label": rt("ajustes") + ": " + titulo,
+      onpointerdown: (ev) => ev.stopPropagation(), onclick: () => rtSeleccionar(n.id) }, rtIcono("ajustes", 15)));
+  const cuerpo = rel("div", { class: "cuerpo" });
+  if (n.clase === "ent") {
+    if (n.e.tipo === "usb_cam") {
+      const img = rel("img", { class: "rt-vista", alt: "", src: `/api/fuente/preview?id=${encodeURIComponent(n.e.id)}&t=${Date.now()}` });
+      img.addEventListener("error", () => img.replaceWith(rel("div", { class: "rt-vista", text: rt("vista_previa") })));
+      cuerpo.append(img);
+    }
+    const sub = n.e.tipo === "ingesta" ? rt("llega")(n.e.llega) : n.e.tipo === "ndi" ? n.e.fuente : rt("tipos")[n.e.tipo];
+    cuerpo.append(rel("small", { text: sub }));
+    if (daImagen(n.e)) cuerpo.append(rtPuerto(n.id, "v", rt("imagen"), "sal"));
+    if (daAudio(n.e)) cuerpo.append(rtPuerto(n.id, "a", rt("audio"), "sal"));
+  } else if (n.clase === "ruta") {
+    const r = n.r, e = rtEstado(r.id);
+    cuerpo.append(rtPuerto(n.id, "v", rt("imagen"), "ent"), rtPuerto(n.id, "a", rt("audio"), "ent"));
+    cuerpo.append(rel("small", { text: r.audio ? `${r.ganancia > 0 ? "+" : ""}${r.ganancia} dB · ${rt("retraso").toLowerCase()} ${r.retraso} ms${r.mudo ? " · " + rt("silenciar").toLowerCase() : ""}` : rt("sin_audio") }));
+    if (r.audio) { const vu = rel("div", { class: "rt-vu" }, rel("i")); rtVu(vu.firstChild, e); cuerpo.append(vu); }
+    const etqs = rel("div", { style: "display:flex;gap:6px;flex-wrap:wrap;align-items:center" },
+      rel("span", { class: "etq " + ({ en_marcha: "ok", error: "mal", esperando: "aviso" }[e.estado] || ""), text: rt("est")[e.estado] || "—" }),
+      e.copia ? rel("span", { class: "etq ok", text: rt("copia_corta") }) : null,
+      rtErrores(r.id).length ? rel("span", { class: "etq mal", text: "!" }) : null);
+    cuerpo.append(etqs, rtPuerto(n.id, "p", rt("programa"), "sal"));
+  } else {
+    cuerpo.append(rtPuerto(n.id, "p", "«" + n.r.nombre + "»", "ent"), rel("small", { text: rtTextoSalida(n.r, n.s) }));
+  }
+  caja.append(cab, cuerpo);
+  // mover arrastrando la cabecera
+  cab.addEventListener("pointerdown", (ev) => {
+    if (ev.target.closest(".rt-ajustar")) return;
+    ev.preventDefault();
+    const p0 = rtPos[n.id], ox = ev.clientX - p0[0], oy = ev.clientY - p0[1]; let movido = false;
+    cab.setPointerCapture(ev.pointerId);
+    const mover = (e) => { movido = true;
+      rtPos[n.id] = [Math.max(0, Math.min(rtAnchoLienzo() - ANCHO[n.clase] - 4, e.clientX - ox)), Math.max(30, Math.min(900 - 80, e.clientY - oy))];
+      caja.style.left = rtPos[n.id][0] + "px"; caja.style.top = rtPos[n.id][1] + "px"; rtDibujarCables(); };
+    const soltar = () => { cab.removeEventListener("pointermove", mover); cab.removeEventListener("pointerup", soltar);
+      rtGuardarPos(); if (!movido) rtSeleccionar(n.id); };
+    cab.addEventListener("pointermove", mover); cab.addEventListener("pointerup", soltar);
+  });
+  return caja;
+}
+function rtVu(i, e) {
+  const db = e && e.audio_db && e.audio_db.peak;
+  i.style.width = db == null || db < -90 ? "0%" : Math.max(0, Math.min(100, (db + 60) / 60 * 100)) + "%";
+}
+function rtCentro(nid, p, lado) {
+  const e = $("rtLienzo").querySelector(`.rt-enchufe[data-n="${CSS.escape(nid)}"][data-p="${p}"][data-lado="${lado}"]`);
+  if (!e) return null;
+  const a = e.getBoundingClientRect(), b = $("rtLienzo").getBoundingClientRect();
+  return [a.left - b.left + a.width / 2, a.top - b.top + a.height / 2];
+}
+const rtCurva = ([x1, y1], [x2, y2]) => { const d = Math.max(60, Math.abs(x2 - x1) / 2); return `M${x1},${y1} C${x1 + d},${y1} ${x2 - d},${y2} ${x2},${y2}`; };
+function rtDibujarCables() {
+  const svg = $("rtCables"), ns = "http://www.w3.org/2000/svg";
+  svg.replaceChildren();
+  rtCables().forEach((c, i) => {
+    const a = rtCentro(c.de, c.p, "sal"), b = rtCentro(c.a, c.p, "ent");
+    if (!a || !b) return;
+    const d = rtCurva(a, b);
+    const p = document.createElementNS(ns, "path");
+    p.setAttribute("d", d); p.setAttribute("class", `rt-cable ${c.p}${c.viva ? " vivo" : ""}${rtCableSel && rtCableSel.a === c.a && rtCableSel.p === c.p ? " sel" : ""}`);
+    const t = document.createElementNS(ns, "path");
+    t.setAttribute("d", d); t.setAttribute("class", "rt-toque");
+    t.addEventListener("click", () => { rtCableSel = c; rtSel = null; rtHoja = true; rtPintar(); });
+    svg.append(p, t);
+  });
+}
+function rtPintarLienzo() {
+  const lienzo = $("rtLienzo"), W = rtAnchoLienzo();
+  lienzo.style.width = W + "px";
+  const col = rtColumnas(W);
+  for (const e of lienzo.querySelectorAll(".rt-col")) e.style.left = col[e.dataset.col] + "px";
+  const nodos = rtNodos();
+  rtColocar(nodos);
+  for (const n of lienzo.querySelectorAll(".rt-nodo")) n.remove();
+  for (const n of nodos) lienzo.append(rtCrearNodo(n));
+  rtDibujarCables();
+  if (rtTocado) rtMarcarTocado();
+}
+// --- conectar: arrastrando o tocando
+const rtDatos = (e) => ({ n: e.dataset.n, p: e.dataset.p, lado: e.dataset.lado });
+const rtValida = (a, b) => a.lado !== b.lado && a.n !== b.n && a.p === b.p;
+function rtMarcarTocado() {
+  const l = $("rtLienzo");
+  for (const x of l.querySelectorAll(".rt-enchufe.elegido, .rt-enchufe.posible")) x.classList.remove("elegido", "posible");
+  if (!rtTocado) return;
+  const e = l.querySelector(`.rt-enchufe[data-n="${CSS.escape(rtTocado.n)}"][data-p="${rtTocado.p}"][data-lado="${rtTocado.lado}"]`);
+  if (e) e.classList.add("elegido");
+  for (const x of l.querySelectorAll(".rt-enchufe")) if (rtValida(rtTocado, rtDatos(x))) x.classList.add("posible");
+}
+let rtAvisoT = 0;
+function rtAviso(txt, mal) { const a = $("rtAyuda"); a.textContent = txt; a.style.color = mal ? "var(--mal)" : "var(--acento)";
+  clearTimeout(rtAvisoT); rtAvisoT = setTimeout(() => { a.style.color = ""; a.textContent = rt("ayuda"); }, 3500); }
+function rtConectar(a, b) {
+  const [s, d] = a.lado === "sal" ? [a, b] : [b, a];
+  if (s.p === "v" || s.p === "a") {
+    const r = rtRuta(d.n.slice(2)), id = s.n.slice(2);
+    if (s.p === "v") r.video = id; else r.audio = id;
+  } else {
+    // el programa de una ruta a una salida: la salida pasa a esa ruta
+    const [viejo, sal] = rtSalida(d.n.slice(2)), nueva = rtRuta(s.n.slice(2));
+    if (viejo && sal && viejo !== nueva) { viejo.salidas = viejo.salidas.filter((x) => x !== sal); nueva.salidas.push(sal); }
+  }
+  rtAviso(rt("conectado")($("rtLienzo").querySelector(`[data-id="${CSS.escape(s.n)}"] .cab b`)?.textContent || "",
+    $("rtLienzo").querySelector(`[data-id="${CSS.escape(d.n)}"] .cab b`)?.textContent || ""));
+  rtCambio(true); rtPintar();
+}
+function rtIniciarLienzo() {
+  const l = $("rtLienzo"), svg = $("rtCables");
+  l.addEventListener("pointerdown", (ev) => {
+    const e = ev.target.closest(".rt-enchufe");
+    if (!e) { if (rtTocado && !ev.target.closest(".rt-nodo")) { rtTocado = null; rtMarcarTocado(); } return; }
+    ev.preventDefault();
+    const o = rtDatos(e), prov = document.createElementNS("http://www.w3.org/2000/svg", "path");
+    prov.setAttribute("class", "rt-cable prov"); svg.append(prov);
+    rtArrastre = { o, inicio: rtCentro(o.n, o.p, o.lado), prov, x: ev.clientX, y: ev.clientY, movido: false };
+    l.setPointerCapture(ev.pointerId);
+  });
+  l.addEventListener("pointermove", (ev) => {
+    const a = rtArrastre; if (!a) return;
+    if (Math.hypot(ev.clientX - a.x, ev.clientY - a.y) > 6) a.movido = true;
+    if (!a.movido) return;
+    const b = l.getBoundingClientRect(), pt = [ev.clientX - b.left, ev.clientY - b.top];
+    a.prov.setAttribute("d", a.o.lado === "sal" ? rtCurva(a.inicio, pt) : rtCurva(pt, a.inicio));
+    for (const x of l.querySelectorAll(".rt-enchufe.destino, .rt-enchufe.malo")) x.classList.remove("destino", "malo");
+    const e = document.elementFromPoint(ev.clientX, ev.clientY)?.closest?.(".rt-enchufe");
+    if (e) e.classList.add(rtValida(a.o, rtDatos(e)) ? "destino" : "malo");
+  });
+  l.addEventListener("pointerup", (ev) => {
+    const a = rtArrastre; if (!a) return;
+    rtArrastre = null; a.prov.remove();
+    for (const x of l.querySelectorAll(".rt-enchufe.destino, .rt-enchufe.malo")) x.classList.remove("destino", "malo");
+    const e = document.elementFromPoint(ev.clientX, ev.clientY)?.closest?.(".rt-enchufe");
+    if (!a.movido) {
+      if (rtTocado && rtValida(rtTocado, a.o)) { const t0 = rtTocado; rtTocado = null; rtConectar(t0, a.o); return; }
+      if (rtTocado && rtTocado.n === a.o.n && rtTocado.p === a.o.p) { rtTocado = null; rtMarcarTocado(); return; }
+      rtTocado = a.o; rtMarcarTocado(); rtAviso(rt("toca")); return;
+    }
+    if (e && rtValida(a.o, rtDatos(e))) rtConectar(a.o, rtDatos(e));
+    else if (e) rtAviso(a.o.lado === rtDatos(e).lado ? rt("mal_lado") : rt("mal_color"), true);
+  });
+  l.addEventListener("pointercancel", () => { if (rtArrastre) { rtArrastre.prov.remove(); rtArrastre = null; } });
+}
+
+// ---------------------------------------------------------------- ajustes (panel lateral u hoja)
+function rtSeleccionar(id) { rtSel = id; rtCableSel = null; rtHoja = true; rtPintar(); }
+function rtCerrarHoja() { rtHoja = false; rtSel = null; rtCableSel = null; rtPintar(); }
+function rtBarraHoja(t) { return rel("div", { class: "rt-cerrar" }, rel("b", { text: t }),
+  rel("button", { class: "boton", type: "button", text: rt("cerrar"), onclick: rtCerrarHoja })); }
+function rtCampo(id, etq, ...hijos) { return rel("div", null, rel("label", { for: id, text: etq }), ...hijos); }
+function rtDeslizador(id, etq, min, max, paso, valor, fmt, alCambiar) {
+  const o = rel("output", { text: fmt(valor) });
+  return rtCampo(id, etq, rel("div", { class: "rt-desliza" },
+    rel("input", { type: "range", id, min, max, step: paso, value: valor,
+      oninput: (ev) => { o.textContent = fmt(+ev.target.value); alCambiar(+ev.target.value); } }), o));
+}
+function rtAjustesRuta(r) {
+  const e = rtEstado(r.id), v = rtEnt(r.video), a = rtEnt(r.audio);
+  const errs = rtErrores(r.id);
+  const t = [];
+  t.push(rel("div", { class: "sub", text: `${rt("imagen")}: ${v ? v.nombre : "—"} · ${rt("audio")}: ${a ? a.nombre : rt("sin_audio")}` }));
+  if (e.estado === "pausada" && !errs.length && RD && !RD.pro) t.push(rel("div", { class: "rt-err", text: rt("pausa_lite")(RD.limite_lite) }));
+  for (const c of errs) t.push(rel("div", { class: "rt-err", text: rt("errores")[c] || c }));
+  t.push(rel("label", { class: "conmutador" }, rel("input", { type: "checkbox", id: "rtActiva", checked: r.activa !== false,
+    onchange: (ev) => { r.activa = ev.target.checked; rtCambio(true); } }), rel("span", { text: rt("activa") })));
+  if (r.audio) {
+    const vu = rel("div", { class: "rt-vu", id: "rtVuInsp" }, rel("i")); rtVu(vu.firstChild, e);
+    t.push(vu,
+      rtDeslizador("rtGan", rt("ganancia"), -24, 12, 1, r.ganancia, (x) => `${x > 0 ? "+" : ""}${x} dB`, (x) => { r.ganancia = x; rtCambio(); }),
+      rtDeslizador("rtRet", rt("retraso"), 0, 1000, 10, r.retraso, (x) => `${x} ms`, (x) => { r.retraso = x; rtCambio(); }),
+      rel("label", { class: "conmutador" }, rel("input", { type: "checkbox", id: "rtMudo", checked: !!r.mudo,
+        onchange: (ev) => { r.mudo = ev.target.checked; rtCambio(true); } }), rel("span", { text: rt("silenciar") })));
+    if (v && a && a.id !== v.id) {
+      t.push(rel("div", { class: "nota", text: rt("audio_otro") }));
+      if (v.tipo === "usb_cam") {
+        const cal = e.calibracion || {};
+        const res = rel("div", { class: "nota" });
+        if (cal.estado === "midiendo") res.textContent = rt("calibrando");
+        else if (cal.estado === "hecha" && cal.ms != null) res.append(rt("medido")(cal.ms), " ",
+          rel("button", { class: "boton", type: "button", text: rt("aplicar")(Math.round(cal.ms / 10) * 10),
+            onclick: () => { r.retraso = Math.max(0, Math.min(1000, Math.round(cal.ms / 10) * 10)); rtCambio(true); rtPintar(); } }));
+        t.push(rel("div", { class: "botones" }, rel("button", { class: "boton", type: "button", text: rt("calibrar"),
+          onclick: async () => { try { await api("/api/rutas/calibrar", { ruta: r.id }); rtAviso(rt("palmadas")); } catch (err) { rtAviso(err.message, true); } } })), res);
+      }
+    }
+  }
+  if (e.copia) t.push(rel("div", { class: "nota", text: rt("copia") }));
+  if (e.lectores) t.push(rel("div", { class: "nota", text: rt("lectores")(e.lectores) }));
+  t.push(rel("div", { class: "botones" }, rel("button", { class: "boton peligro", type: "button", text: rt("borrar_ruta"), onclick: () => {
+    RB.rutas = RB.rutas.filter((x) => x !== r); rtSel = null; rtCambio(true); rtPintar(); } })));
+  return t;
+}
+function rtAjustesEntrada(e) {
+  const t = [rel("div", { class: "sub", text: rt("tipos")[e.tipo] + (e.dev ? " · " + e.dev : "") })];
+  const red = RB.entradas_red.find((x) => x.id === e.id);
+  if (e.tipo === "ingesta") {
+    const P = RD.puertos || {}, h = rtHost();
+    t.push(rel("div", { class: "nota", text: rt("llega")(e.llega) }), rel("span", { class: "nota", text: rt("atem_emite") }),
+      rel("div", { class: "mono", text: `rtmp://${h}:${P.rtmp || 1935}/live · ${e.clave}` }),
+      rel("div", { class: "mono", text: `srt://${h}:${P.srt || 8890}?streamid=publish:live/${e.clave}` }),
+      rel("div", { class: "botones" }, rel("a", { class: "boton principal", href: `/api/puente/atem.xml?entrada=${encodeURIComponent(e.id)}`, text: rt("xml") })));
+  }
+  if (e.tipo === "ndi" && red) {
+    const lista = (RD.red_ndi || []).map((x) => x.nombre);
+    if (red.fuente && !lista.includes(red.fuente)) lista.unshift(red.fuente);
+    t.push(rtCampo("rtNdiF", rt("fuente_red"), rel("select", { id: "rtNdiF", onchange: (ev) => { red.fuente = ev.target.value; red.nombre = ev.target.value; rtCambio(true); } },
+      ...(lista.length ? lista : [rt("buscando")]).map((x) => rel("option", { value: x, text: x, selected: x === red.fuente })))));
+  }
+  const usos = RB.rutas.filter((r) => r.video === e.id || r.audio === e.id).map((r) => r.nombre);
+  t.push(rel("div", { class: "nota", text: rt("se_usa")(usos) }));
+  if (red) t.push(rel("div", { class: "botones" }, rel("button", { class: "boton peligro", type: "button", text: rt("quitar"), onclick: () => {
+    RB.entradas_red = RB.entradas_red.filter((x) => x !== red);
+    for (const r of RB.rutas) { if (r.video === e.id) r.video = ""; if (r.audio === e.id) r.audio = ""; }
+    rtSel = null; rtCambio(true); rtPintar(); } })));
+  return t;
+}
+function rtAjustesSalida(r, s) {
+  const t = [rel("div", { class: "sub", text: "«" + r.nombre + "»" })];
+  const errs = rtErrores(r.id).filter((c) => ({ ndi: ["ndi_repetido", "ndi_a_ndi"], hdmi: ["hdmi_ocupado"], rtmp: ["url_rtmp_invalida"] }[s.tipo] || []).includes(c));
+  for (const c of errs) t.push(rel("div", { class: "rt-err", text: rt("errores")[c] }));
+  const h = rtHost(), P = RD.puertos || {}, eq = ((ultimo || {}).equipo || {}).nombre?.toUpperCase() || "NDIICAM";
+  if (s.tipo === "ndi") t.push(rtCampo("rtNdiN", rt("nombre_ndi"), rel("input", { type: "text", id: "rtNdiN", value: s.nombre || "", maxlength: "48",
+    oninput: (ev) => { s.nombre = ev.target.value; rtCambio(); } })), rel("div", { class: "nota", text: rt("ndi_ve")(eq, s.nombre) }));
+  if (s.tipo === "obs" || s.tipo === "srt") t.push(rel("span", { class: "nota", text: rt("obs_urls") }),
+    rel("div", { class: "mono", text: `OBS: rtmp://${h}:${P.rtmp || 1935}/live/${r.camino}` }),
+    rel("div", { class: "mono", text: `TV, VLC: http://${h}:${P.hls || 8888}/live/${r.camino}/index.m3u8` }),
+    rel("div", { class: "mono", text: `${lang === "en" ? "Browser" : "Navegador"}: http://${h}:${P.hls || 8888}/live/${r.camino}/` }),
+    rel("div", { class: "mono", text: `SRT: srt://${h}:${P.srt || 8890}?streamid=read:live/${r.camino}` }));
+  if (s.tipo === "rtmp") t.push(rtCampo("rtUrl", rt("url_rtmp"), rel("input", { type: "text", id: "rtUrl", value: s.url || "", autocomplete: "off", spellcheck: "false",
+    oninput: (ev) => { s.url = ev.target.value.trim(); rtCambio(); } })));
+  if (s.tipo === "grabar") t.push(rtCampo("rtFmt", rt("formato"), rel("select", { id: "rtFmt", onchange: (ev) => { s.formato = ev.target.value; rtCambio(true); } },
+    ...["mp4", "mkv"].map((f) => rel("option", { value: f, text: f.toUpperCase(), selected: (s.formato || "mp4") === f })))), rel("div", { class: "nota", text: rt("grabar_nota") }));
+  if (s.tipo === "hdmi") t.push(rel("div", { class: "nota", text: rt("hdmi_nota") }));
+  t.push(rel("div", { class: "botones" }, rel("button", { class: "boton peligro", type: "button", text: rt("quitar"), onclick: () => {
+    r.salidas = r.salidas.filter((x) => x !== s); rtSel = null; rtCambio(true); rtPintar(); } })));
+  return t;
+}
+function rtPaleta() {
+  const sel = rtSel && rtSel.startsWith("r:") ? rtRuta(rtSel.slice(2)) : rtSel && rtSel.startsWith("s:") ? rtSalida(rtSel.slice(2))[0] : RB.rutas[0];
+  const lite = RD && !RD.pro && RB.rutas.length >= RD.limite_lite;
+  return rel("div", { class: "tarjeta" }, rel("h3", { text: rt("anadir") }),
+    rel("span", { class: "nota", text: rt("entradas") }),
+    rel("div", { class: "rt-paleta" },
+      rel("button", { type: "button", onclick: () => rtAnadirEntrada("ndi") }, rtIcono("ndi"), rt("anadir_ndi")),
+      rel("button", { type: "button", onclick: () => rtAnadirEntrada("ingesta") }, rtIcono("ingesta"), rt("anadir_ingesta"))),
+    rel("span", { class: "nota", text: rt("rutas") }),
+    rel("div", { class: "rt-paleta" }, rel("button", { type: "button", onclick: rtNuevaRuta }, rtIcono("ruta"), rt("nueva_ruta"))),
+    lite ? rel("div", { class: "nota", text: rt("pausa_lite")(RD.limite_lite) }) : null,
+    rel("span", { class: "nota", text: rt("salidas_t") + (sel ? " → «" + sel.nombre + "»" : "") }),
+    sel ? rel("div", { class: "rt-paleta" }, ...Object.keys(rt("salidas")).map((k) => rel("button", { type: "button",
+      disabled: sel.salidas.some((x) => x.tipo === k) && k !== "rtmp", onclick: () => rtAnadirSalida(sel, k) }, rtIcono(k), rt("salidas")[k])))
+      : rel("div", { class: "nota", text: rt("elige_ruta") }),
+    rel("div", { class: "nota", text: rt("usb_solas") }));
+}
+function rtPintarInspector() {
+  const ins = $("rtInsp");
+  let t = null;
+  if (rtCableSel) {
+    const c = rtCableSel;
+    t = rel("div", { class: "tarjeta" }, rtBarraHoja(rt("ajustes")), rel("h3", { text: rt("conexion") }),
+      rel("div", { class: "botones" }, rel("button", { class: "boton peligro", type: "button", text: rt("desconectar"), onclick: () => {
+        if (c.p === "p") { const [r, s] = rtSalida(c.a.slice(2)); if (r) r.salidas = r.salidas.filter((x) => x !== s); }
+        else { const r = rtRuta(c.a.slice(2)); if (c.p === "v") r.video = ""; else r.audio = ""; }
+        rtCableSel = null; rtCambio(true); rtPintar(); } })));
+  } else if (rtSel) {
+    const [clase, id] = [rtSel[0], rtSel.slice(2)];
+    let titulo = "", icono = "ruta", cuerpo = [], renombrar = null;
+    if (clase === "r" && rtRuta(id)) { const r = rtRuta(id); titulo = r.nombre; cuerpo = rtAjustesRuta(r); renombrar = (v) => { r.nombre = v; }; }
+    else if (clase === "e" && rtEnt(id)) { const e = rtEnt(id); titulo = e.nombre; icono = e.tipo; cuerpo = rtAjustesEntrada(e);
+      const red = RB.entradas_red.find((x) => x.id === id); if (red) renombrar = (v) => { red.nombre = v; }; }
+    else if (clase === "s" && rtSalida(id)[0]) { const [r, s] = rtSalida(id); titulo = rt("salidas")[s.tipo]; icono = s.tipo; cuerpo = rtAjustesSalida(r, s); }
+    else { rtSel = null; }
+    if (rtSel) {
+      const nombre = renombrar ? rel("input", { type: "text", id: "rtNombre", value: titulo, "aria-label": "Nombre",
+        oninput: (ev) => { renombrar(ev.target.value); rtCambio(); } }) : rel("b", { text: titulo });
+      t = rel("div", { class: "tarjeta" }, rtBarraHoja(rt("ajustes")), rel("div", { class: "rt-insp-cab" }, rtIcono(icono, 18), nombre), ...cuerpo);
+    }
+  }
+  const lienzo = rtVista === "lienzo";
+  ins.replaceChildren(...[t, lienzo ? rtPaleta() : null].filter(Boolean));
+  const movil = matchMedia("(max-width: 980px)").matches;
+  const abierta = movil && rtHoja && !!t;
+  ins.classList.toggle("abierta", abierta);
+  $("rtVelo").classList.toggle("visible", abierta);
+  ins.hidden = !lienzo && !movil && !t;
+}
+
+// ---------------------------------------------------------------- añadir
+function rtNuevaRuta() {
+  const n = RB.rutas.length + 1;
+  const r = { id: rtNuevoId("r"), nombre: `${rt("nueva_ruta")} ${n}`, video: "", audio: "", ganancia: 0, retraso: 0, mudo: false, activa: true, salidas: [] };
+  RB.rutas.push(r); rtSel = "r:" + r.id; rtHoja = !matchMedia("(max-width: 980px)").matches; rtCambio(true); rtPintar();
+}
+function rtAnadirEntrada(tipo) {
+  const e = tipo === "ndi"
+    ? { id: rtNuevoId("ndi"), tipo, nombre: ((RD.red_ndi || [])[0] || {}).nombre || "NDI", fuente: ((RD.red_ndi || [])[0] || {}).nombre || "" }
+    : { id: rtNuevoId("ing"), tipo, nombre: "ATEM" };
+  RB.entradas_red.push(e); rtSel = "e:" + e.id; rtHoja = true; rtCambio(true);
+}
+function rtAnadirSalida(r, tipo) {
+  if (tipo === "hdmi") for (const o of RB.rutas) o.salidas = o.salidas.filter((x) => x.tipo !== "hdmi");
+  const s = { id: rtNuevoId("s"), tipo };
+  if (tipo === "ndi") s.nombre = r.nombre;
+  if (tipo === "grabar") s.formato = "mp4";
+  if (tipo === "rtmp") s.url = "";
+  r.salidas.push(s); rtSel = "s:" + s.id; rtHoja = !matchMedia("(max-width: 980px)").matches; rtCambio(true); rtPintar();
+}
+
+// ---------------------------------------------------------------- vista lista (el móvil)
+function rtPintarLista() {
+  const cont = $("rtVistaLista"), ents = RD.entradas;
+  const tarjetas = RB.rutas.map((r) => {
+    const e = rtEstado(r.id), v = rtEnt(r.video), a = rtEnt(r.audio);
+    const selV = rel("select", { id: "lv-" + r.id, onchange: (ev) => { r.video = ev.target.value; rtCambio(true); rtPintar(); } },
+      rel("option", { value: "", text: rt("elige_imagen") }), ...ents.filter(daImagen).map((x) => rel("option", { value: x.id, text: x.nombre, selected: x.id === r.video })));
+    const selA = rel("select", { id: "la-" + r.id, onchange: (ev) => { r.audio = ev.target.value; rtCambio(true); rtPintar(); } },
+      rel("option", { value: "", text: rt("sin_audio") }), ...ents.filter(daAudio).map((x) => rel("option", { value: x.id, text: x.nombre, selected: x.id === r.audio })));
+    const audio = r.audio ? rel("div", { class: "rt-bloque" }, (() => { const vu = rel("div", { class: "rt-vu" }, rel("i")); rtVu(vu.firstChild, e); return vu; })(),
+      rtDeslizador("lg-" + r.id, rt("ganancia"), -24, 12, 1, r.ganancia, (x) => `${x > 0 ? "+" : ""}${x} dB`, (x) => { r.ganancia = x; rtCambio(); }),
+      rtDeslizador("lr-" + r.id, rt("retraso"), 0, 1000, 10, r.retraso, (x) => `${x} ms`, (x) => { r.retraso = x; rtCambio(); }),
+      rel("label", { class: "conmutador" }, rel("input", { type: "checkbox", checked: !!r.mudo, onchange: (ev) => { r.mudo = ev.target.checked; rtCambio(true); } }),
+        rel("span", { text: rt("silenciar") }))) : null;
+    const chips = r.salidas.map((s) => rel("div", { class: "rt-chip" }, rtIcono(s.tipo),
+      rel("span", { class: "tx" }, rel("b", { text: rt("salidas")[s.tipo] }), rel("small", { text: rtTextoSalida(r, s) })),
+      rel("button", { class: "boton", type: "button", text: rt("ajustes"), onclick: () => rtSeleccionar("s:" + s.id) }),
+      rel("button", { class: "rt-quitar", type: "button", "aria-label": rt("quitar"), text: "×", onclick: () => {
+        r.salidas = r.salidas.filter((x) => x !== s); rtCambio(true); rtPintar(); } })));
+    const menu = rel("select", { id: "ls-" + r.id, "aria-label": rt("anadir_salida"), onchange: (ev) => { if (ev.target.value) rtAnadirSalida(r, ev.target.value); } },
+      rel("option", { value: "", text: rt("anadir_salida") }),
+      ...Object.keys(rt("salidas")).map((k) => rel("option", { value: k, text: rt("salidas")[k], disabled: r.salidas.some((x) => x.tipo === k) && k !== "rtmp" })));
+    const errs = rtErrores(r.id).map((c) => rel("div", { class: "rt-err", text: rt("errores")[c] || c }));
+    return rel("article", { class: "tarjeta", style: e.estado === "pausada" ? "opacity:.65" : "" },
+      rel("div", { class: "rt-insp-cab" }, rtIcono("ruta", 18),
+        rel("input", { type: "text", id: "ln-" + r.id, value: r.nombre, "aria-label": "Nombre", oninput: (ev) => { r.nombre = ev.target.value; rtCambio(); } }),
+        rel("span", { class: "etq " + ({ en_marcha: "ok", error: "mal", esperando: "aviso" }[e.estado] || ""), text: rt("est")[e.estado] || "—" })),
+      ...errs,
+      rtCampo("lv-" + r.id, rt("imagen"), selV), rtCampo("la-" + r.id, rt("audio"), selA), audio,
+      rel("span", { class: "nota", text: rt("sale_por") }), ...(chips.length ? chips : [rel("div", { class: "nota", text: rt("sin_salidas") })]), menu,
+      rel("div", { class: "botones" }, rel("button", { class: "boton", type: "button", text: rt("ajustes"), onclick: () => rtSeleccionar("r:" + r.id) }),
+        rel("button", { class: "boton peligro", type: "button", text: rt("borrar_ruta"), onclick: () => { RB.rutas = RB.rutas.filter((x) => x !== r); rtCambio(true); rtPintar(); } })));
+  });
+  const anadirRed = rel("select", { id: "lAddEnt", "aria-label": rt("anadir_red"), onchange: (ev) => { if (ev.target.value) rtAnadirEntrada(ev.target.value); } },
+    rel("option", { value: "", text: rt("anadir_red") }), rel("option", { value: "ndi", text: rt("anadir_ndi") }), rel("option", { value: "ingesta", text: rt("anadir_ingesta") }));
+  cont.replaceChildren(...tarjetas,
+    rel("button", { class: "boton principal", type: "button", text: "+ " + rt("nueva_ruta"), onclick: rtNuevaRuta }),
+    rel("div", { class: "tarjeta" }, rel("h3", { text: rt("entradas") }),
+      ...ents.map((e) => rel("div", { class: "rt-fila-ent" }, rtIcono(e.tipo, 18),
+        rel("div", { class: "tx" }, rel("b", { text: e.nombre }), rel("small", { text: e.tipo === "ingesta" ? rt("llega")(e.llega) : rt("tipos")[e.tipo] })),
+        rel("button", { class: "boton", type: "button", text: rt("ajustes"), onclick: () => rtSeleccionar("e:" + e.id) }))),
+      anadirRed, rel("div", { class: "nota", text: rt("usb_solas") })));
+}
+
+// ---------------------------------------------------------------- resumen en Monitor
+function rtPintarMonitor() {
+  const sec = $("secRutasMonitor");
+  const con = RD && RD.motor === "rutas";
+  sec.classList.toggle("oculto", !con);
+  if (!con) return;
+  const filas = RD.rutas.map((r) => {
+    const e = rtEstado(r.id);
+    return rel("div", { class: "rt-fila-ent" }, rel("span", { class: "punto " + ({ en_marcha: "ok", error: "mal", esperando: "aviso" }[e.estado] || "") }),
+      rel("div", { class: "tx" }, rel("b", { text: r.nombre }),
+        rel("small", { text: r.salidas.map((s) => rt("salidas")[s.tipo] + ((e.salidas || {})[s.id] === "ok" ? " ✓" : "")).join(" · ") || rt("sin_salidas") })),
+      rel("span", { class: "nota", text: [rt("est")[e.estado] || "—", e.fps ? `${Math.round(e.fps)} fps` : "", e.lectores ? rt("lectores")(e.lectores) : ""].filter(Boolean).join(" · ") }));
+  });
+  sec.replaceChildren(rel("div", { class: "fuente-cab" }, rel("div", null, rel("h3", { text: rt("monitor_t") })),
+    rel("button", { class: "boton", type: "button", text: rt("ver_rutas"), onclick: () => { pestana = "rutas"; aplicarPestana(); rtPintar(); } })),
+    ...(filas.length ? filas : [rel("div", { class: "nota", text: rt("sin_salidas") })]));
+}
+
+// ---------------------------------------------------------------- general
+function rtPintar() {
+  if (!RD || !RB) return;
+  // mientras se arrastra un deslizador o se escribe, no se repinta lo que se está tocando
+  const foco = document.activeElement;
+  const ocupado = foco && $("secRutas").contains(foco) && ["INPUT", "SELECT"].includes(foco.tagName) && rtSucio;
+  $("rtVistaLienzo").hidden = rtVista !== "lienzo"; $("rtVistaLista").hidden = rtVista !== "lista";
+  $("rtOrdenar").hidden = rtVista !== "lienzo";
+  for (const b of $("rtVistas").querySelectorAll("button")) b.classList.toggle("activo", b.dataset.v === rtVista);
+  if (rtVista === "lienzo") rtPintarLienzo(); else if (!ocupado) rtPintarLista();
+  if (!ocupado) rtPintarInspector();
+  if (!$("rtAyuda").textContent) $("rtAyuda").textContent = rt("ayuda");
+}
+let rtCargaT = 0;
+function rtBucle() {
+  clearTimeout(rtCargaT);
+  const conRutas = ((ultimo || {}).config || {}).motor === "rutas";
+  if (conRutas && ["rutas", "monitor"].includes(pestana) && !rtArrastre) rtCargar();
+  rtCargaT = setTimeout(rtBucle, 2000);
+}
+function rtIniciar() {
+  rtIniciarLienzo();
+  $("rtNuevaRuta").addEventListener("click", rtNuevaRuta);
+  $("rtAnadir").addEventListener("click", () => { rtSel = null; rtCableSel = null; rtHoja = true;
+    if (matchMedia("(max-width: 980px)").matches) { $("rtInsp").replaceChildren(rel("div", { class: "tarjeta" }, rtBarraHoja(rt("anadir")), ...rtPaleta().childNodes));
+      $("rtInsp").classList.add("abierta"); $("rtVelo").classList.add("visible"); } else rtPintar(); });
+  $("rtOrdenar").addEventListener("click", rtOrdenar);
+  for (const b of $("rtVistas").querySelectorAll("button")) b.addEventListener("click", () => {
+    rtVista = b.dataset.v; try { localStorage.setItem("ndiicam-rt-vista", rtVista); } catch (_) { /* sin almacenamiento */ } rtPintar(); });
+  $("rtVelo").addEventListener("click", rtCerrarHoja);
+  document.addEventListener("keydown", (ev) => {
+    if (pestana !== "rutas") return;
+    if (ev.key === "Escape") { if (rtTocado) { rtTocado = null; rtMarcarTocado(); } else rtCerrarHoja(); }
+    if ((ev.key === "Delete" || ev.key === "Backspace") && rtCableSel && !["INPUT", "SELECT", "TEXTAREA"].includes(document.activeElement.tagName)) {
+      const c = rtCableSel;
+      if (c.p === "p") { const [r, s] = rtSalida(c.a.slice(2)); if (r) r.salidas = r.salidas.filter((x) => x !== s); }
+      else { const r = rtRuta(c.a.slice(2)); if (c.p === "v") r.video = ""; else r.audio = ""; }
+      rtCableSel = null; rtCambio(true); rtPintar();
+    }
+  });
+  let redim = 0;
+  window.addEventListener("resize", () => { clearTimeout(redim); redim = setTimeout(() => { if (pestana === "rutas") rtPintar(); }, 150); });
+  $("btProbarRutas").addEventListener("click", async () => {
+    try { await api("/api/rutas/motor", { motor: "rutas" }); pestana = "rutas"; aplicarPestana(); refrescar(); rtBucle(); }
+    catch (err) { mensaje("msgModo", err.message, "mal"); }
+  });
+  rtBucle();
+}
+rtIniciar();
 </script>
 </body>
 </html>

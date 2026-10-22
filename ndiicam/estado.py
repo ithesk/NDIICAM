@@ -229,6 +229,17 @@ def construir_estado(tx_mbps, rx_mbps, cpu_pct, potencia, gpu_uso=None):
         agregado = "error"
     else:
         agregado = "desactivada"
+    rutas_info = None
+    if cfg.get("motor") == "rutas":
+        # con rutas, el estado general es el de las rutas
+        mot = nucleo.FUENTES.motor
+        est = {rid: e["estado"] for rid, e in mot.estado().items()}
+        vals = list(est.values())
+        agregado = ("sin_rutas" if not vals else "emitiendo" if "en_marcha" in vals
+                    else "error" if "error" in vals else "iniciando")
+        rutas_info = {"total": len(vals), "en_marcha": vals.count("en_marcha"),
+                      "nombres": [r["nombre"] for r in getattr(mot, "limpias", [])
+                                  if est.get(r["id"]) == "en_marcha"]}
     devs = nucleo.RED.dispositivos()
     wifi = nucleo.RED.info_wifi()
     eth = next((d for d in devs if d["tipo"] == "ethernet"), None)
@@ -282,6 +293,7 @@ def construir_estado(tx_mbps, rx_mbps, cpu_pct, potencia, gpu_uso=None):
                  "pantallas": pantallas(), "consola": cfg["hdmi_consola"],
                  "consola_activa": modo_consola_activo(),
                  "reinicio_pendiente": cfg["hdmi_consola"] != modo_consola_activo()},
+        "rutas": rutas_info,
         "emision": {"estado": agregado, "emitiendo": estados.count("emitiendo"),
                     "activas": sum(1 for x in fuentes if x["ajustes"]["activa"]),
                     "receptores": total_rx},
