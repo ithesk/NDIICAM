@@ -9,6 +9,7 @@ import subprocess
 import time
 
 import nucleo
+from gpu import simultaneo
 from nucleo import PUERTO_RTMP, PUERTO_SRT, cache_funcion, evento, sh
 
 TABLA = "ndiicam"
@@ -59,19 +60,21 @@ def puertos_ssh():
 
 
 def reglas(modo, srt, extra, ssh):
-    """Guion de nft. modo: emisor | receptor | puente; srt: puertos UDP de las
+    """Guion de nft. modo: emisor | receptor | puente, o varios a la vez (en un
+    equipo potente las cámaras emiten mientras recibe); srt: puertos UDP de las
     salidas SRT de las cámaras; extra: lista de puertos_extra(); ssh: puertos."""
+    modos = {modo} if isinstance(modo, str) else set(modo)
     tcp = {*ssh, 80, 443, 53}
     udp = {53, 67, 68, 546, 5353}       # DNS y DHCP de la WiFi de configuración, clientes DHCP, mDNS
     rangos = []
-    if modo in ("emisor", "receptor"):
+    if modos & {"emisor", "receptor"}:
         rangos += [("tcp", *PUERTOS_NDI), ("udp", *PUERTOS_NDI)]
-    if modo == "receptor":
+    if "receptor" in modos:
         rangos += [("tcp", *PUERTOS_NDI_RECEPTOR), ("udp", *PUERTOS_NDI_RECEPTOR),
                    ("udp", *PUERTOS_NDI_MULTICAST)]
-    if modo == "emisor":
+    if "emisor" in modos:
         udp |= set(srt)
-    if modo == "puente":
+    if "puente" in modos:
         tcp.add(PUERTO_RTMP)
         udp.add(PUERTO_SRT)
     for proto, a, b in extra:
@@ -133,13 +136,16 @@ class Cortafuegos:
             self.error = None
             return
         srt = [f["srt_puerto"] for f in fuentes if f.get("gpu_salida") == "srt" and f.get("activa", True)]
-        guion = reglas(cfg["modo"], srt, puertos_extra(cfg.get("puertos_extra", "")) or [],
+        modos = {cfg["modo"]}
+        if cfg["modo"] != "emisor" and simultaneo(cfg):
+            modos.add("emisor")         # las cámaras siguen emitiendo
+        guion = reglas(sorted(modos), srt, puertos_extra(cfg.get("puertos_extra", "")) or [],
                        puertos_ssh())
         if guion == self.guion:
             return
         error = aplicar(guion) or None
         if error != self.error:
-            evento("cortafuegos_error" if error else "cortafuegos", detalle=error or cfg["modo"])
+            evento("cortafuegos_error" if error else "cortafuegos", detalle=error or " + ".join(sorted(modos)))
         self.error = error
         self.guion = guion if error is None else None
 

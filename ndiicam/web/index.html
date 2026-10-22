@@ -237,6 +237,10 @@
       <label class="modo-op"><input type="radio" name="modo" value="puente">
         <span><b data-t="modo_puente"></b><small data-t="modo_puente_d"></small></span></label>
     </div>
+    <div id="bloqueSimultaneo" class="oculto" style="margin-top:12px">
+      <label class="conmutador"><input type="checkbox" id="chkSimultaneo"><span data-t="simul_on"></span></label>
+      <div class="ayuda" id="simulAyuda"></div>
+    </div>
     <div class="mensaje oculto" id="msgModo"></div>
   </section>
 
@@ -594,7 +598,11 @@ const T = {
     hdmi_help: "Muestra la imagen de una cámara en el monitor conectado al equipo, para encuadrar. No consume CPU. Activarla o cambiar de cámara corta su NDI unos 2 s.",
     modo_title: "Modo del equipo", modo_sub: "Este equipo no da para emitir y recibir a la vez.",
     modo_emisor: "Emisor", modo_emisor_d: "Sus cámaras salen por NDI a la red.",
-    modo_receptor: "Receptor", modo_receptor_d: "Muestra en su monitor HDMI una fuente NDI de la red, con su sonido. Las cámaras se paran.",
+    modo_receptor: "Receptor", modo_receptor_d: "Muestra en su monitor HDMI una fuente NDI de la red, con su sonido. Las cámaras se paran, salvo en un equipo potente.",
+    simul_on: "Seguir emitiendo las cámaras mientras recibe",
+    simul_si: (c) => `Este equipo da para ello (${c.nucleos} núcleos, ${c.memoria_gb} GB${c.gpu ? ", GPU que decodifica" : ""}): en modo receptor o puente las cámaras siguen saliendo por NDI; el HDMI muestra lo recibido.`,
+    simul_no: (c) => `Este equipo es justo para ello (${c.nucleos} núcleos, ${c.memoria_gb} GB${c.gpu ? "" : ", sin GPU que decodifique"}): las cámaras se paran mientras recibe.`,
+    simul_midiendo: "Midiendo la GPU para saber si el equipo da para hacer varias cosas a la vez…",
     rx_title: "Receptor NDI", rx_source: "Fuente", rx_elegir: "Elige una fuente…",
     rx_help: "Para que no gaste casi nada, emite la fuente a la misma resolución que la pantalla (en OBS: salida principal de DistroAV y resolución de salida 1920×1080). Las de otra resolución, o con transparencia, cuestan mucha más CPU.",
     hdmi_ndi_falta: (n) => `${n} (no está en la red)`, hdmi_ndi_buscando: "Buscando fuentes NDI…",
@@ -814,7 +822,7 @@ const T = {
     stream_errors: { arranque: "No se pudo arrancar la emisión.", eos: "La cámara cerró el flujo.", sin_imagen: "La cámara no entregaba imagen.", proceso: "El proceso de la fuente terminó." },
     fields: { activa: "emitir", ndi_nombre: "nombre NDI", resolucion: "resolución", fps: "fps", audio: "audio",
       transporte: "transporte", ap_ssid: "nombre de la WiFi de configuración", ap_clave: "clave de la WiFi de configuración",
-      pais: "país", clave_panel: "contraseña del panel", hdmi: "salida HDMI", hdmi_fuente: "cámara en HDMI", rx_fuente: "fuente del receptor", hdmi_consola: "resolución de la pantalla", decodificadores: "decodificación JPEG", cortafuegos: "cortafuegos", puertos_extra: "puertos extra" },
+      pais: "país", clave_panel: "contraseña del panel", hdmi: "salida HDMI", hdmi_fuente: "cámara en HDMI", rx_fuente: "fuente del receptor", hdmi_consola: "resolución de la pantalla", decodificadores: "decodificación JPEG", cortafuegos: "cortafuegos", puertos_extra: "puertos extra", simultaneo: "cámaras mientras recibe" },
     ev: {
       inicio: (d) => `NDIICAM ${d.version} arrancado`,
       cam_detectada: (d) => `Cámara detectada: ${d.fuente}`, cam_desconectada: (d) => `Cámara desconectada: ${d.fuente}`,
@@ -838,8 +846,8 @@ const T = {
       ip_guardada: (d) => `IP del cable guardada (${d.metodo === "manual" ? "fija" : "DHCP"}) en «${d.perfil}»; se aplica al enchufarlo`,
       tally: (d) => `${d.fuente}: ${d.programa ? "en el aire (programa)" : d.previo ? "en previo" : "fuera del aire"}`,
       grabacion_manual: (d) => `${d.fuente}: ${d.grabar ? "grabación iniciada desde el panel" : "grabación parada desde el panel"}`,
-      modo: (d) => d.modo === "receptor" ? "Modo receptor: cámaras en pausa"
-        : d.modo === "puente" ? "Modo puente: cámaras en pausa" : "Modo emisor",
+      modo: (d) => (d.modo === "receptor" ? "Modo receptor" : d.modo === "puente" ? "Modo puente" : "Modo emisor")
+        + (d.modo === "emisor" ? "" : d.camaras ? ": las cámaras siguen emitiendo" : ": cámaras en pausa"),
       puente_servidor: (d) => `Puente: esperando al ATEM en el puerto ${d.puerto}`,
       rx_recibiendo: (d) => `HDMI: recibiendo «${d.fuente}» a ${d.modo}`,
       rx_perdida: (d) => `HDMI: se perdió la fuente «${d.fuente}»; reintentando`,
@@ -869,7 +877,7 @@ const T = {
       clave_creada: (d) => `Contraseña del panel creada desde ${d.ip}`,
       arranque: (d) => `Arranque: ${T.es.boot_reasons[d.motivo] || d.motivo}${d.detalle ? ` (${d.detalle})` : ""}`,
       apagado_equipo: () => "Apagado del equipo solicitado", zona_horaria: (d) => `Zona horaria: ${d.zona}`,
-      cortafuegos: (d) => `Cortafuegos aplicado (modo ${d.detalle})`, cortafuegos_error: (d) => `El cortafuegos falló: ${d.detalle}`,
+      cortafuegos: (d) => `Cortafuegos aplicado (${d.detalle})`, cortafuegos_error: (d) => `El cortafuegos falló: ${d.detalle}`,
       sin_https: () => "No se pudo crear el certificado: el panel va sin cifrar",
     },
   },
@@ -878,7 +886,11 @@ const T = {
     hdmi_help: "Shows one camera on the monitor plugged into the device, for framing. It uses no CPU. Turning it on or switching camera interrupts that camera's NDI for about 2 s.",
     modo_title: "Device mode", modo_sub: "This device cannot send and receive at the same time.",
     modo_emisor: "Sender", modo_emisor_d: "Its cameras go out to the network over NDI.",
-    modo_receptor: "Receiver", modo_receptor_d: "Shows an NDI source from the network on its HDMI monitor, with sound. Cameras are stopped.",
+    modo_receptor: "Receiver", modo_receptor_d: "Shows an NDI source from the network on its HDMI monitor, with sound. Cameras are stopped, except on a powerful device.",
+    simul_on: "Keep streaming the cameras while receiving",
+    simul_si: (c) => `This device can do it (${c.nucleos} cores, ${c.memoria_gb} GB${c.gpu ? ", GPU decoding" : ""}): in receiver or bridge mode the cameras keep going out over NDI; HDMI shows what is received.`,
+    simul_no: (c) => `This device is too tight for it (${c.nucleos} cores, ${c.memoria_gb} GB${c.gpu ? "" : ", no GPU decoding"}): cameras stop while receiving.`,
+    simul_midiendo: "Measuring the GPU to know whether this device can do several things at once…",
     rx_title: "NDI receiver", rx_source: "Source", rx_elegir: "Pick a source…",
     rx_help: "For it to cost almost nothing, send the source at the screen's resolution (in OBS: DistroAV main output and a 1920×1080 output resolution). Other resolutions, or sources with transparency, take a lot more CPU.",
     hdmi_ndi_falta: (n) => `${n} (not on the network)`, hdmi_ndi_buscando: "Looking for NDI sources…",
@@ -1098,7 +1110,7 @@ const T = {
     stream_errors: { arranque: "Could not start the stream.", eos: "The camera closed the stream.", sin_imagen: "The camera stopped sending frames.", proceso: "The source process ended." },
     fields: { activa: "stream", ndi_nombre: "NDI name", resolucion: "resolution", fps: "fps", audio: "audio",
       transporte: "transport", ap_ssid: "setup WiFi name", ap_clave: "setup WiFi password",
-      pais: "country", clave_panel: "panel password", hdmi: "HDMI output", hdmi_fuente: "HDMI camera", rx_fuente: "receiver source", hdmi_consola: "screen resolution", decodificadores: "JPEG decoding", cortafuegos: "firewall", puertos_extra: "extra ports" },
+      pais: "country", clave_panel: "panel password", hdmi: "HDMI output", hdmi_fuente: "HDMI camera", rx_fuente: "receiver source", hdmi_consola: "screen resolution", decodificadores: "JPEG decoding", cortafuegos: "firewall", puertos_extra: "extra ports", simultaneo: "cameras while receiving" },
     ev: {
       inicio: (d) => `NDIICAM ${d.version} started`,
       cam_detectada: (d) => `Camera detected: ${d.fuente}`, cam_desconectada: (d) => `Camera disconnected: ${d.fuente}`,
@@ -1122,8 +1134,8 @@ const T = {
       ip_guardada: (d) => `Wired IP saved (${d.metodo === "manual" ? "static" : "DHCP"}) in «${d.perfil}»; applied when plugged in`,
       tally: (d) => `${d.fuente}: ${d.programa ? "on air (program)" : d.previo ? "on preview" : "off air"}`,
       grabacion_manual: (d) => `${d.fuente}: ${d.grabar ? "recording started from the panel" : "recording stopped from the panel"}`,
-      modo: (d) => d.modo === "receptor" ? "Receiver mode: cameras paused"
-        : d.modo === "puente" ? "Bridge mode: cameras paused" : "Sender mode",
+      modo: (d) => (d.modo === "receptor" ? "Receiver mode" : d.modo === "puente" ? "Bridge mode" : "Sender mode")
+        + (d.modo === "emisor" ? "" : d.camaras ? ": cameras keep streaming" : ": cameras paused"),
       puente_servidor: (d) => `Bridge: waiting for the ATEM on port ${d.puerto}`,
       rx_recibiendo: (d) => `HDMI: receiving "${d.fuente}" at ${d.modo}`,
       rx_perdida: (d) => `HDMI: lost the source "${d.fuente}"; retrying`,
@@ -1153,7 +1165,7 @@ const T = {
       clave_creada: (d) => `Panel password created from ${d.ip}`,
       arranque: (d) => `Boot: ${T.en.boot_reasons[d.motivo] || d.motivo}${d.detalle ? ` (${d.detalle})` : ""}`,
       apagado_equipo: () => "Device shutdown requested", zona_horaria: (d) => `Time zone: ${d.zona}`,
-      cortafuegos: (d) => `Firewall applied (${d.detalle} mode)`, cortafuegos_error: (d) => `The firewall failed: ${d.detalle}`,
+      cortafuegos: (d) => `Firewall applied (${d.detalle})`, cortafuegos_error: (d) => `The firewall failed: ${d.detalle}`,
       sin_https: () => "Could not create the certificate: the panel is unencrypted",
     },
   },
@@ -1679,11 +1691,17 @@ function pintarHdmi(e) {
 
 function pintarModo(e) {
   const receptor = e.modo === "receptor", puente = e.modo === "puente";
+  const cap = e.capacidad || {}, camaras = !(receptor || puente) || !!cap.simultaneo;
   for (const r of document.querySelectorAll("input[name=modo]")) r.checked = r.value === (e.modo || "emisor");
   $("secRx").classList.toggle("oculto", !receptor);
   $("secPuente").classList.toggle("oculto", !puente);
-  $("fuentes").classList.toggle("oculto", receptor || puente);
-  $("fuentesCfg").classList.toggle("oculto", receptor || puente);
+  $("fuentes").classList.toggle("oculto", !camaras);
+  $("fuentesCfg").classList.toggle("oculto", !camaras);
+  // el interruptor solo en equipos que dan para ello (o mientras se mide la GPU)
+  $("bloqueSimultaneo").classList.toggle("oculto", !cap.potente && !cap.midiendo);
+  if (document.activeElement !== $("chkSimultaneo")) $("chkSimultaneo").checked = (e.config || {}).simultaneo !== false;
+  $("chkSimultaneo").disabled = !cap.potente;
+  poner("simulAyuda", cap.midiendo && !cap.potente ? t("simul_midiendo") : cap.potente ? T[lang].simul_si(cap) : T[lang].simul_no(cap));
   if (puente) return pintarPuente(e);
   if (!receptor) return;
   const rc = e.receptor || {}, rx = rc.estado, red = rc.red_ndi || [], h = e.hdmi || {};
@@ -2094,6 +2112,10 @@ async function guardarHdmi(datos) {
 }
 for (const r of document.querySelectorAll("input[name=modo]")) r.addEventListener("change", async () => {
   try { await api("/api/config", { modo: r.value }); refrescar(); } catch (err) { mensaje("msgModo", err.message, "mal"); }
+});
+$("chkSimultaneo").addEventListener("change", async () => {
+  try { await api("/api/config", { simultaneo: $("chkSimultaneo").checked }); refrescar(); }
+  catch (err) { mensaje("msgModo", err.message, "mal"); }
 });
 $("rxFuente").addEventListener("change", async () => {
   try { await api("/api/config", { rx_fuente: $("rxFuente").value }); refrescar(); } catch (err) { mensaje("msgRx", err.message, "mal"); }

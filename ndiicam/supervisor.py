@@ -14,7 +14,7 @@ from nucleo import (AP_IF, AP_IP, FUENTE_PY, GRABACIONES, MAX_DECODIFICADORES, P
     RECEPTOR_PY, REPOSO_PY, RESOLUCIONES, VERSION, conexiones_por_pid, dispositivo_por_defecto,
     evento, ip_de, ips_propias, leer)
 from camaras import audio_dispositivos, audio_hdmi, camaras, pantallas, resolucion_pantalla
-from gpu import capacidad_gpu, capacidad_vpp, decodificador_h264, entorno_va
+from gpu import capacidad_gpu, capacidad_vpp, decodificador_h264, entorno_va, simultaneo
 from puente import PUENTE, clave_puente
 
 
@@ -514,6 +514,9 @@ class Fuentes:
         self.hdmi_conector = monitor["id"] if monitor else None
         receptor = cfg["modo"] in ("receptor", "puente")
         puente = cfg["modo"] == "puente"
+        # en un equipo potente las cámaras siguen emitiendo mientras recibe (sin el
+        # HDMI, que es del receptor); en uno justo, se paran para dejarle la CPU
+        pausar = receptor and not simultaneo(cfg)
         rx_obj = None
         if puente and PUENTE.disponible():
             PUENTE.arrancar(clave_puente(self.config))
@@ -574,8 +577,8 @@ class Fuentes:
                     evento("cam_detectada", fuente=cam["nombre"])
                 f.cam = cam
                 aj = self.config.fuente(ident)
-                if receptor or not aj["activa"]:
-                    parada = "pausada" if receptor else "desactivada"
+                if pausar or not aj["activa"]:
+                    parada = "pausada" if pausar else "desactivada"
                     if f.proc is not None or f.estado != parada:
                         f.detener()
                         f.estado, f.error = parada, ""

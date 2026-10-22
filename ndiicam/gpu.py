@@ -109,6 +109,25 @@ def capacidad_vpp():
         res["midiendo"] = True
     return res
 
+def equipo_potente():
+    """Si el equipo da para hacer varias cosas a la vez (emitir las cámaras
+    mientras recibe, varias salidas por cámara...). Hacen falta 4 núcleos, algo
+    de memoria y una GPU que decodifique de verdad (medida en capacidad_vpp); sin
+    GPU útil, 8 núcleos. Un Atom o un Celeron de 2 núcleos sigue con un modo cada vez."""
+    nucleos = os.cpu_count() or 1
+    kb = re.search(r"^MemTotal:\s+(\d+)", leer("/proc/meminfo"), re.M)
+    memoria = round(int(kb.group(1)) / 1024 ** 2, 1) if kb else 0.0
+    vpp = capacidad_vpp()
+    gpu = bool(vpp["jpeg"] or vpp["h264"])
+    return {"potente": nucleos >= 4 and memoria >= 3.5 and (gpu or nucleos >= 8),
+            "nucleos": nucleos, "memoria_gb": memoria, "gpu": gpu,
+            "midiendo": bool(vpp.get("midiendo"))}
+
+def simultaneo(cfg):
+    """Las funciones simultáneas están en marcha: el equipo da para ellas y el
+    ajuste (activado por defecto) no las apaga."""
+    return bool(cfg.get("simultaneo", True)) and equipo_potente()["potente"]
+
 def ids_gpu():
     """Identificadores PCI de las GPU (0x5a85...)."""
     ids = set()

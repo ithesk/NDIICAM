@@ -22,7 +22,7 @@ from nucleo import (AP_CLAVE_DEFECTO, AP_IP, CLAVE_PUENTE, ESTADO, EVENTOS, FPS_
     NOMBRE_NDI, RESOLUCIONES, SALIDAS_GPU, URL_RTMP, WEB, clave_correcta, cliente_ip,
     configurar_ndi, evento, resumen_clave, sh, FORMATOS, LATENCIAS)
 from camaras import fijar_modo_consola
-from gpu import capacidad_gpu
+from gpu import capacidad_gpu, simultaneo
 from puente import clave_puente, xml_atem
 from actualizador import (cambiar_nombre_equipo, reiniciar_servicio, respaldo, restaurar,
     valores_fabrica)
@@ -213,7 +213,8 @@ class Panel(BaseHTTPRequestHandler):
                 "transporte": cfg["transporte"], "ap_ssid": cfg["ap_ssid"],
                 "ap_clave": cfg["ap_clave"], "pais": cfg["pais"], "idioma": cfg["idioma"],
                 "clave_panel": bool(cfg["clave_panel"]), "decodificadores": cfg["decodificadores"],
-                "cortafuegos": cfg["cortafuegos"], "puertos_extra": cfg["puertos_extra"]},
+                "cortafuegos": cfg["cortafuegos"], "puertos_extra": cfg["puertos_extra"],
+                "simultaneo": cfg["simultaneo"]},
                 "desde_ap": self._desde_ap(), "eventos": list(EVENTOS)[:40],
                 "conexion_wifi": nucleo.RED.conexion,
                 "seguridad": {"https": bool(getattr(self.server, "tls", False)),
@@ -607,6 +608,8 @@ class Panel(BaseHTTPRequestHandler):
             cambios["clave_panel"] = resumen_clave(v)
         if "cortafuegos" in d:
             cambios["cortafuegos"] = bool(d["cortafuegos"])
+        if "simultaneo" in d:
+            cambios["simultaneo"] = bool(d["simultaneo"])
         if "puertos_extra" in d:
             v = str(d["puertos_extra"]).strip()
             if len(v) > 300 or puertos_extra(v) is None:
@@ -623,7 +626,7 @@ class Panel(BaseHTTPRequestHandler):
         if cambios:
             nucleo.CONF.actualizar(cambios)
             if "modo" in cambios:
-                evento("modo", modo=cambios["modo"])
+                evento("modo", modo=cambios["modo"], camaras=simultaneo(nucleo.CONF.get()))
             if cambios.keys() - {"modo"}:
                 evento("ajustes", campos=sorted(cambios.keys() - {"modo"}))
         if "clave_panel" in cambios:

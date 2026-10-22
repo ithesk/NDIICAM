@@ -61,7 +61,8 @@ POR_DEFECTO = {"ndi_nombre": "NDIICAM", "resolucion": "1080p", "fps": 30, "audio
                "ap_clave": "ndiicam-setup", "pais": "", "clave_panel": "",
                "hdmi": False, "hdmi_fuente": "auto", "hdmi_consola": "nativa",
                "modo": "emisor", "rx_fuente": "", "decodificadores": "auto",
-               "puente_clave": "", "idioma": "es", "cortafuegos": True, "puertos_extra": ""}
+               "puente_clave": "", "idioma": "es", "cortafuegos": True, "puertos_extra": "",
+               "simultaneo": True}
 AP_CLAVE_DEFECTO = POR_DEFECTO["ap_clave"]
 
 # decodificadores JPEG por fuente: jpegdec va en un solo hilo y con imágenes muy

@@ -702,5 +702,52 @@ class GpuParaDecodificar(unittest.TestCase):
             tmp.cleanup()
 
 
+class EquipoPotente(unittest.TestCase):
+    """Las funciones simultáneas, solo en equipos que dan para ellas."""
+
+    def setUp(self):
+        self.orig = (gpu.os.cpu_count, gpu.leer, gpu.capacidad_vpp)
+        self.nucleos, self.mem_kb, self.vpp = 4, 8 * 1024 ** 2, {"jpeg": True, "h264": True}
+        gpu.os.cpu_count = lambda: self.nucleos
+        gpu.leer = lambda ruta, defecto="": f"MemTotal:       {self.mem_kb} kB\n"
+        gpu.capacidad_vpp = lambda: {"vpp": True, **self.vpp}
+
+    def tearDown(self):
+        gpu.os.cpu_count, gpu.leer, gpu.capacidad_vpp = self.orig
+
+    def test_i3_con_gpu_es_potente(self):
+        c = gpu.equipo_potente()
+        self.assertTrue(c["potente"])
+        self.assertEqual((c["nucleos"], c["memoria_gb"]), (4, 8.0))
+
+    def test_celeron_de_dos_nucleos_no(self):
+        self.nucleos = 2
+        self.assertFalse(gpu.equipo_potente()["potente"])
+
+    def test_sin_gpu_util_hacen_falta_8_nucleos(self):
+        self.vpp = {"jpeg": False, "h264": False}
+        self.assertFalse(gpu.equipo_potente()["potente"])
+        self.nucleos = 8
+        self.assertTrue(gpu.equipo_potente()["potente"])
+
+    def test_poca_memoria_no(self):
+        self.mem_kb = 2 * 1024 ** 2
+        self.assertFalse(gpu.equipo_potente()["potente"])
+
+    def test_el_ajuste_las_apaga(self):
+        self.assertTrue(gpu.simultaneo({}))
+        self.assertTrue(gpu.simultaneo({"simultaneo": True}))
+        self.assertFalse(gpu.simultaneo({"simultaneo": False}))
+        self.nucleos = 2
+        self.assertFalse(gpu.simultaneo({"simultaneo": True}))
+
+    def test_cortafuegos_de_receptor_con_camaras(self):
+        g = cortafuegos.reglas(["emisor", "receptor"], [9000], [], [22])
+        self.assertIn("tcp dport 6960-7059 accept", g)      # recibir
+        self.assertRegex(g, r"udp dport \{[^}]*\b9000\b")   # SRT de las cámaras
+        solo = cortafuegos.reglas("receptor", [9000], [], [22])
+        self.assertNotRegex(solo, r"\b9000\b")
+
+
 if __name__ == "__main__":
     unittest.main()
