@@ -158,7 +158,7 @@
   .conmutador input::after { content: ""; position: absolute; top: 3px; left: 3px; width: 16px; height: 16px; border-radius: 50%; background: #fff; transition: left .2s; box-shadow: 0 1px 2px rgba(0,0,0,.3); }
   .conmutador input:checked { background: var(--ok); }
   .conmutador input:checked::after { left: 19px; }
-  .modos { display: grid; gap: 10px; grid-template-columns: 1fr 1fr; }
+  .modos { display: grid; gap: 10px; grid-template-columns: repeat(3, 1fr); }
   .modo-op { display: flex; gap: 10px; align-items: flex-start; padding: 12px 14px; border: 1px solid var(--borde);
     border-radius: 12px; cursor: pointer; }
   .modo-op:has(input:checked) { border-color: var(--acento); box-shadow: inset 0 0 0 1px var(--acento); }
@@ -167,6 +167,33 @@
   .modo-op small { display: block; color: var(--suave); font-size: 13px; margin-top: 2px; }
   .punto { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--pista); margin-right: 6px; }
   .punto.ok { background: var(--ok); } .punto.mal { background: var(--mal); } .punto.aviso { background: var(--aviso); }
+  /* configuración: Entradas → Programa → Salidas */
+  .grupo { margin: 22px 2px 8px; font-size: 12px; font-weight: 700; letter-spacing: .08em;
+    text-transform: uppercase; color: var(--suave); display: flex; align-items: center; gap: 10px; }
+  .grupo::after { content: ""; flex: 1; height: 1px; background: var(--borde); }
+  .esquema { display: grid; grid-template-columns: 1fr 28px 1fr 28px 1fr; align-items: center; gap: 6px 0; }
+  .esquema > h4 { margin: 0; font-size: 11px; font-weight: 700; letter-spacing: .08em;
+    text-transform: uppercase; color: var(--suave); align-self: end; }
+  .esq-col { display: flex; flex-direction: column; gap: 8px; }
+  .esq-flecha { text-align: center; color: var(--suave); font-size: 18px; }
+  .nodo { display: flex; align-items: flex-start; gap: 8px; padding: 8px 10px; border: 1px solid var(--borde);
+    border-radius: 10px; background: var(--panel); cursor: pointer; text-align: left; font: inherit;
+    color: inherit; width: 100%; }
+  .nodo:hover { border-color: var(--acento); }
+  .nodo b { display: block; font-size: 13.5px; line-height: 1.3; }
+  .nodo small { display: block; color: var(--suave); font-size: 12px; line-height: 1.3; word-break: break-word; }
+  .nodo .punto { margin-top: 5px; flex: none; }
+  .nodo.central { border-color: var(--acento); box-shadow: 0 0 0 1px var(--acento) inset; }
+  .nodo.apagado { opacity: .55; }
+  details.mas { margin-top: 12px; border-top: 1px dashed var(--borde); padding-top: 8px; }
+  details.mas > summary { cursor: pointer; color: var(--suave); font-size: 13px; font-weight: 600;
+    list-style: none; padding: 4px 0; }
+  details.mas > summary::before { content: "▸ "; }
+  details.mas[open] > summary::before { content: "▾ "; }
+  @media (max-width: 640px) {
+    .esquema { grid-template-columns: 1fr; gap: 6px; }
+    .esq-flecha { transform: rotate(90deg); line-height: 1; }
+  }
   @media (max-width: 640px) {
     .heroe { grid-template-columns: 1fr; }
     .graficas { justify-content: space-between; gap: 10px; }
@@ -230,6 +257,7 @@
 
   <div id="fuentes" data-tab="monitor"></div>
 
+
   <section class="tarjeta seccion" id="secModo" data-tab="config">
     <div class="fuente-cab"><div><h3 data-t="modo_title"></h3><div class="sub" id="modoSub"></div></div></div>
     <div class="modos">
@@ -240,15 +268,12 @@
       <label class="modo-op"><input type="radio" name="modo" value="puente">
         <span><b data-t="modo_puente"></b><small data-t="modo_puente_d"></small></span></label>
     </div>
-    <div id="bloqueSimultaneo" class="oculto" style="margin-top:12px">
-      <label class="conmutador"><input type="checkbox" id="chkSimultaneo"><span data-t="simul_on"></span></label>
-      <div class="ayuda" id="simulAyuda"></div>
-    </div>
     <div class="mensaje oculto" id="msgModo"></div>
   </section>
-
-  <div id="fuentesCfg" data-tab="config"></div>
-
+  <section class="tarjeta seccion" id="secEsquema" data-tab="config">
+    <div class="esquema" id="esquema"></div>
+  </section>
+  <div class="grupo" id="grupoEntradas" data-tab="config"><span data-t="g_inputs"></span></div>
   <section class="tarjeta seccion oculto" id="secRx" data-tab="config">
     <div class="fuente-cab">
       <div><h3 data-t="rx_title"></h3><div class="sub" id="rxSub"></div></div>
@@ -265,7 +290,6 @@
     <div class="ayuda" data-t="rx_help" style="margin-top:10px"></div>
     <div class="mensaje oculto" id="msgRx"></div>
   </section>
-
   <section class="tarjeta seccion oculto" id="secPuente" data-tab="config">
     <div class="fuente-cab">
       <div><h3 data-t="pt_title"></h3><div class="sub" id="ptSub"></div></div>
@@ -275,38 +299,7 @@
       <div><label data-t="pt_rtmp"></label><div class="mono" id="ptRtmp">—</div></div>
       <div><label data-t="pt_key"></label><div class="mono" id="ptClave">—</div></div>
       <div><label data-t="pt_srt"></label><div class="mono" id="ptSrt">—</div></div>
-      <div><label data-t="hdmi_state"></label><div id="ptEstado">—</div></div>
-      <div id="ptNdiBloque" class="oculto"><label data-t="pt_ndi"></label><div class="mono" id="ptNdi">—</div></div>
-    </div>
-    <div id="ptPrograma" class="oculto" style="margin-top:16px">
-      <h3 data-t="pg_title" style="margin:0 0 4px"></h3>
-      <div class="sub" id="pgSub"></div>
-      <div class="campos" style="margin-top:10px">
-        <div>
-          <label for="pgAudio" data-t="pg_audio"></label>
-          <select id="pgAudio"></select>
-          <div id="pgBloqueRetraso">
-            <label data-t="delay_label" style="margin-top:12px"></label>
-            <div style="display:flex;gap:10px;align-items:center">
-              <input type="range" id="pgRetraso" min="0" max="1000" step="10" style="flex:1">
-              <b id="pgRetrasoVal" style="min-width:64px;text-align:right"></b>
-            </div>
-            <div class="ayuda" data-t="pg_delay_help"></div>
-          </div>
-          <label class="conmutador" style="margin-top:12px"><input type="checkbox" id="pgGrabar"><span data-t="pg_record"></span></label>
-          <label for="pgHdmi" data-t="pg_hdmi" style="margin-top:12px"></label>
-          <select id="pgHdmi"></select>
-        </div>
-        <div>
-          <label data-t="pg_where"></label>
-          <ul class="lista" id="pgUrls"></ul>
-        </div>
-      </div>
-      <div class="botones"><button class="boton principal" id="pgGuardar" data-t="save"></button></div>
-    </div>
-    <div id="ptNdiAjuste" class="oculto" style="margin-top:12px">
-      <label class="conmutador"><input type="checkbox" id="chkPuenteNdi"><span data-t="pt_ndi_on"></span></label>
-      <div class="ayuda" data-t="pt_ndi_help"></div>
+      <div><label data-t="pt_state"></label><div id="ptEstado">—</div></div>
     </div>
     <div class="botones">
       <a class="boton principal" id="ptXml" href="/api/puente/atem.xml" data-t="pt_xml"></a>
@@ -315,7 +308,72 @@
     <div class="ayuda" data-t="pt_help" style="margin-top:10px"></div>
     <div class="mensaje oculto" id="msgPuente"></div>
   </section>
-
+  <div id="fuentesCfg" data-tab="config"></div>
+  <div class="grupo" id="grupoPrograma" data-tab="config"><span data-t="g_program"></span></div>
+  <section class="tarjeta seccion oculto" id="secPrograma" data-tab="config">
+    <div class="fuente-cab">
+      <div><h3 data-t="pg_title"></h3><div class="sub" id="pgSub"></div></div>
+      <span class="pastilla" id="pgPastilla">—</span>
+    </div>
+    <div id="ptPrograma" class="campos">
+      <div>
+        <label for="pgAudio" data-t="pg_audio"></label>
+        <select id="pgAudio"></select>
+        <label class="conmutador" style="margin-top:12px"><input type="checkbox" id="pgGrabar"><span data-t="pg_record"></span></label>
+        <div class="ayuda" data-t="pg_record_help"></div>
+      </div>
+      <div id="pgBloqueRetraso">
+        <label data-t="delay_label"></label>
+        <div style="display:flex;gap:10px;align-items:center">
+          <input type="range" id="pgRetraso" min="0" max="1000" step="10" style="flex:1">
+          <b id="pgRetrasoVal" style="min-width:64px;text-align:right"></b>
+        </div>
+        <div class="ayuda" data-t="pg_delay_help"></div>
+      </div>
+    </div>
+    <div class="botones"><button class="boton principal" id="pgGuardar" data-t="save"></button></div>
+    <div class="mensaje oculto" id="msgPrograma"></div>
+  </section>
+  <div class="grupo" id="grupoSalidas" data-tab="config"><span data-t="g_outputs"></span></div>
+  <section class="tarjeta seccion" id="secHdmi" data-tab="config">
+    <div class="fuente-cab">
+      <div><h3 data-t="hdmi_title"></h3><div class="sub" id="hdmiSub"></div></div>
+    </div>
+    <div class="campos">
+      <div>
+        <label for="hdmiQue" data-t="hdmi_what"></label>
+        <select id="hdmiQue"></select>
+        <div class="ayuda" id="hdmiQueAyuda"></div>
+      </div>
+      <div id="bloqueHdmiEstado"><label data-t="hdmi_state"></label><div id="hdmiEstado">—</div></div>
+    </div>
+    <details class="mas"><summary data-t="more_settings"></summary>
+      <label for="hdmiConsola" data-t="hdmi_screen_res"></label>
+      <select id="hdmiConsola">
+        <option value="nativa" data-t="hdmi_res_native"></option>
+        <option value="1080p">1920×1080</option>
+        <option value="720p">1280×720</option>
+      </select>
+      <div class="ayuda" data-t="hdmi_res_help"></div>
+    </details>
+    <div class="mensaje aviso oculto" id="hdmiReinicio" style="background:var(--aviso-f);color:var(--aviso)">
+      <span data-t="hdmi_reboot_needed"></span>
+      <button class="boton" id="btHdmiReboot" style="margin-left:8px" data-t="reboot_now"></button>
+    </div>
+    <div class="mensaje oculto" id="msgHdmi"></div>
+  </section>
+  <section class="tarjeta seccion oculto" id="secReparto" data-tab="config">
+    <div class="fuente-cab">
+      <div><h3 data-t="rp_title"></h3><div class="sub" data-t="rp_sub"></div></div>
+    </div>
+    <ul class="lista" id="pgUrls"></ul>
+    <div id="ptNdiAjuste" class="oculto" style="margin-top:12px">
+      <div style="margin-bottom:8px" id="ptNdiBloque" class="oculto" hidden><label data-t="pt_ndi"></label><div class="mono" id="ptNdi">—</div></div>
+      <label class="conmutador"><input type="checkbox" id="chkPuenteNdi"><span data-t="pt_ndi_on"></span></label>
+      <div class="ayuda" data-t="pt_ndi_help"></div>
+    </div>
+    <div class="mensaje oculto" id="msgReparto"></div>
+  </section>
   <section class="tarjeta seccion oculto" id="secReem" data-tab="config">
     <div class="fuente-cab">
       <div><h3 data-t="reem_title"></h3><div class="sub" id="reemSub"></div></div>
@@ -348,40 +406,15 @@
     <div class="mensaje oculto" id="msgReem"></div>
   </section>
 
+
+
+
   <section class="tarjeta seccion oculto" id="secGrab" data-tab="monitor">
     <div class="fuente-cab"><div><h3 data-t="rec_title"></h3><div class="sub" id="grabSub"></div></div></div>
     <ul class="lista" id="grabLista"></ul>
     <div class="mensaje oculto" id="msgGrab"></div>
   </section>
 
-  <section class="tarjeta seccion" id="secHdmi" data-tab="config">
-    <div class="fuente-cab">
-      <div><h3 data-t="hdmi_title"></h3><div class="sub" id="hdmiSub"></div></div>
-      <label class="conmutador" style="margin-left:auto" id="bloqueHdmiActiva"><input type="checkbox" id="hdmiActiva"><span data-t="hdmi_on"></span></label>
-    </div>
-    <div class="campos">
-      <div id="bloqueHdmiFuente">
-        <label for="hdmiFuente" data-t="hdmi_camera"></label>
-        <select id="hdmiFuente"></select>
-      </div>
-      <div id="bloqueHdmiEstado"><label data-t="hdmi_state"></label><div id="hdmiEstado">—</div></div>
-      <div>
-        <label for="hdmiConsola" data-t="hdmi_screen_res"></label>
-        <select id="hdmiConsola">
-          <option value="nativa" data-t="hdmi_res_native"></option>
-          <option value="1080p">1920×1080</option>
-          <option value="720p">1280×720</option>
-        </select>
-        <div class="ayuda" data-t="hdmi_res_help"></div>
-      </div>
-    </div>
-    <div class="mensaje aviso oculto" id="hdmiReinicio" style="background:var(--aviso-f);color:var(--aviso)">
-      <span data-t="hdmi_reboot_needed"></span>
-      <button class="boton" id="btHdmiReboot" style="margin-left:8px" data-t="reboot_now"></button>
-    </div>
-    <div class="ayuda" data-t="hdmi_help" id="hdmiAyuda" style="margin-top:10px"></div>
-    <div class="mensaje oculto" id="msgHdmi"></div>
-  </section>
 
   <div class="rejilla">
     <section class="tarjeta" data-tab="monitor">
@@ -428,58 +461,92 @@
       </dl>
     </section>
 
-    <section class="tarjeta" data-tab="config">
-      <h2 data-t="updates"></h2>
-      <dl>
-        <dt data-t="installed_version"></dt><dd id="actActual">—</dd>
-        <dt data-t="latest_version"></dt><dd id="actUltima">—</dd>
-        <dt data-t="checked"></dt><dd id="actComprobado">—</dd>
-      </dl>
-      <div class="botones">
-        <button class="boton" id="btComprobar" data-t="check_updates"></button>
-        <button class="boton principal oculto" id="btActualizar"></button>
-        <a class="boton oculto" id="actNotas" target="_blank" rel="noopener" data-t="release_notes"></a>
-      </div>
-      <div class="mensaje oculto" id="msgAct"></div>
-    </section>
   </div>
 
-  <section class="tarjeta seccion" id="secWifi" data-tab="config">
-    <h2 data-t="wifi_networks"></h2>
-    <label data-t="saved_help"></label>
-    <ul class="lista" id="wifiGuardadas"></ul>
-    <div class="botones" style="margin-top:6px">
-      <button class="boton" id="btBuscar" data-t="scan"></button>
-    </div>
-    <div class="ayuda oculto" id="ayudaCache" data-t="scan_cached"></div>
-    <ul class="lista oculto" id="wifiVistas" style="margin-top:10px"></ul>
-    <div class="mensaje oculto" id="msgWifi"></div>
+
+
+
+  <section class="tarjeta seccion" data-tab="monitor">
+    <h2 data-t="activity"></h2>
+    <ul class="lista eventos" id="eventos"></ul>
   </section>
 
-  <section class="tarjeta seccion" id="secIp" data-tab="config">
-    <h2 data-t="ip_address"></h2>
-    <div class="segmentado oculto" id="segIpCon" style="margin-bottom:10px">
-      <button type="button" data-v="activa" data-t="ip_con_active"></button>
-      <button type="button" data-v="cable" data-t="ip_con_cable"></button>
-    </div>
-    <div class="ayuda" id="ipPerfil" style="margin:0 0 12px"></div>
-    <div class="segmentado" id="segIp">
-      <button type="button" data-v="auto" data-t="ip_auto"></button>
-      <button type="button" data-v="manual" data-t="ip_manual"></button>
+
+
+
+  <section class="tarjeta seccion" data-tab="sistema" id="secSistema">
+    <h2 data-t="system"></h2>
+    <dl>
+      <dt data-t="edition"></dt><dd id="sisEdicion">—</dd>
+      <dt data-t="last_boot"></dt><dd id="sisArranque">—</dd>
+      <dt data-t="watchdog"></dt><dd id="sisWatchdog">—</dd>
+      <dt data-t="clock"></dt><dd id="sisHora">—</dd>
+    </dl>
+    <div id="bloqueSimultaneo" class="oculto" style="margin-top:14px">
+      <label class="conmutador"><input type="checkbox" id="chkSimultaneo"><span data-t="simul_on"></span></label>
+      <div class="ayuda" id="simulAyuda"></div>
     </div>
     <div class="campos" style="margin-top:14px">
-      <div><label for="ipDir" data-t="ip_addr"></label><input type="text" id="ipDir" inputmode="decimal" placeholder="192.168.1.50"></div>
-      <div><label for="ipPref" data-t="ip_prefix"></label><input type="number" id="ipPref" min="8" max="30" placeholder="24"></div>
-      <div><label for="ipGw" data-t="ip_gateway"></label><input type="text" id="ipGw" inputmode="decimal" placeholder="192.168.1.1"></div>
-      <div><label for="ipDns" data-t="ip_dns"></label><input type="text" id="ipDns" placeholder="192.168.1.1, 1.1.1.1"></div>
+      <div>
+        <label for="selZona" data-t="timezone"></label>
+        <select id="selZona"></select>
+        <div class="ayuda" data-t="timezone_help"></div>
+      </div>
     </div>
     <div class="botones">
-      <button class="boton principal" id="btIp" data-t="apply"></button>
+      <button class="boton principal" id="btZona" data-t="save"></button>
+      <button class="boton peligro" id="btReboot" data-t="reboot"></button>
+      <button class="boton peligro" id="btApagar" data-t="shutdown"></button>
     </div>
-    <div class="mensaje oculto" id="msgIp"></div>
+    <div class="mensaje oculto" id="msgSistema"></div>
   </section>
+  <section class="tarjeta seccion" data-tab="sistema" id="secSeguridad">
+    <h2 data-t="security"></h2>
+    <div class="mensaje mal oculto" id="avisoHttp" style="margin-bottom:12px"></div>
+    <div class="mensaje info oculto" id="avisoApClave" style="margin-bottom:12px"></div>
+    <dl>
+      <dt data-t="sec_connection"></dt><dd id="segConexion">—</dd>
+      <dt data-t="sec_fingerprint"></dt><dd class="mono" id="segHuella">—</dd>
+    </dl>
+    <h2 style="margin-top:20px" data-t="change_password"></h2>
+    <div class="campos">
+      <div id="bloqueClaveActual">
+        <label for="inClaveActual" data-t="current_password"></label>
+        <input type="password" id="inClaveActual" maxlength="128" autocomplete="current-password">
+      </div>
+      <div>
+        <label for="inClaveNueva" data-t="new_password"></label>
+        <input type="password" id="inClaveNueva" maxlength="128" autocomplete="new-password">
+        <div class="ayuda" data-t="password_help"></div>
+      </div>
+      <div>
+        <label for="inClaveNueva2" data-t="repeat_password"></label>
+        <input type="password" id="inClaveNueva2" maxlength="128" autocomplete="new-password">
+      </div>
+    </div>
+    <div class="botones">
+      <button class="boton principal" id="btCambiarClave" data-t="change_password"></button>
+      <button class="boton" id="btSalir" data-t="logout"></button>
+    </div>
+    <div class="mensaje oculto" id="msgClave"></div>
 
-  <section class="tarjeta seccion" data-tab="config">
+    <h2 style="margin-top:20px" data-t="firewall"></h2>
+    <label class="conmutador"><input type="checkbox" id="cfActivo"><span data-t="firewall_on"></span></label>
+    <div class="ayuda" data-t="firewall_help"></div>
+    <div class="ayuda" id="cfEstado"></div>
+    <div class="campos" style="margin-top:12px">
+      <div>
+        <label for="inPuertosExtra" data-t="extra_ports"></label>
+        <input type="text" id="inPuertosExtra" maxlength="300" placeholder="tcp:8080 udp:5000-5010" autocomplete="off" spellcheck="false">
+        <div class="ayuda" data-t="extra_ports_help"></div>
+      </div>
+    </div>
+    <div class="botones">
+      <button class="boton principal" id="btCortafuegos" data-t="save"></button>
+    </div>
+    <div class="mensaje oculto" id="msgCortafuegos"></div>
+  </section>
+  <section class="tarjeta seccion" data-tab="sistema">
     <h2 data-t="device_settings"></h2>
     <div class="campos">
       <div>
@@ -542,82 +609,53 @@
       <button class="boton" id="btAp"></button>
     </div>
   </section>
-
-  <section class="tarjeta seccion" data-tab="monitor">
-    <h2 data-t="activity"></h2>
-    <ul class="lista eventos" id="eventos"></ul>
+  <section class="tarjeta seccion" id="secWifi" data-tab="sistema">
+    <h2 data-t="wifi_networks"></h2>
+    <label data-t="saved_help"></label>
+    <ul class="lista" id="wifiGuardadas"></ul>
+    <div class="botones" style="margin-top:6px">
+      <button class="boton" id="btBuscar" data-t="scan"></button>
+    </div>
+    <div class="ayuda oculto" id="ayudaCache" data-t="scan_cached"></div>
+    <ul class="lista oculto" id="wifiVistas" style="margin-top:10px"></ul>
+    <div class="mensaje oculto" id="msgWifi"></div>
   </section>
-
-  <section class="tarjeta seccion" data-tab="sistema" id="secSeguridad">
-    <h2 data-t="security"></h2>
-    <div class="mensaje mal oculto" id="avisoHttp" style="margin-bottom:12px"></div>
-    <div class="mensaje info oculto" id="avisoApClave" style="margin-bottom:12px"></div>
-    <dl>
-      <dt data-t="sec_connection"></dt><dd id="segConexion">—</dd>
-      <dt data-t="sec_fingerprint"></dt><dd class="mono" id="segHuella">—</dd>
-    </dl>
-    <h2 style="margin-top:20px" data-t="change_password"></h2>
-    <div class="campos">
-      <div id="bloqueClaveActual">
-        <label for="inClaveActual" data-t="current_password"></label>
-        <input type="password" id="inClaveActual" maxlength="128" autocomplete="current-password">
-      </div>
-      <div>
-        <label for="inClaveNueva" data-t="new_password"></label>
-        <input type="password" id="inClaveNueva" maxlength="128" autocomplete="new-password">
-        <div class="ayuda" data-t="password_help"></div>
-      </div>
-      <div>
-        <label for="inClaveNueva2" data-t="repeat_password"></label>
-        <input type="password" id="inClaveNueva2" maxlength="128" autocomplete="new-password">
-      </div>
+  <section class="tarjeta seccion" id="secIp" data-tab="sistema">
+    <h2 data-t="ip_address"></h2>
+    <div class="segmentado oculto" id="segIpCon" style="margin-bottom:10px">
+      <button type="button" data-v="activa" data-t="ip_con_active"></button>
+      <button type="button" data-v="cable" data-t="ip_con_cable"></button>
     </div>
-    <div class="botones">
-      <button class="boton principal" id="btCambiarClave" data-t="change_password"></button>
-      <button class="boton" id="btSalir" data-t="logout"></button>
+    <div class="ayuda" id="ipPerfil" style="margin:0 0 12px"></div>
+    <div class="segmentado" id="segIp">
+      <button type="button" data-v="auto" data-t="ip_auto"></button>
+      <button type="button" data-v="manual" data-t="ip_manual"></button>
     </div>
-    <div class="mensaje oculto" id="msgClave"></div>
-
-    <h2 style="margin-top:20px" data-t="firewall"></h2>
-    <label class="conmutador"><input type="checkbox" id="cfActivo"><span data-t="firewall_on"></span></label>
-    <div class="ayuda" data-t="firewall_help"></div>
-    <div class="ayuda" id="cfEstado"></div>
-    <div class="campos" style="margin-top:12px">
-      <div>
-        <label for="inPuertosExtra" data-t="extra_ports"></label>
-        <input type="text" id="inPuertosExtra" maxlength="300" placeholder="tcp:8080 udp:5000-5010" autocomplete="off" spellcheck="false">
-        <div class="ayuda" data-t="extra_ports_help"></div>
-      </div>
-    </div>
-    <div class="botones">
-      <button class="boton principal" id="btCortafuegos" data-t="save"></button>
-    </div>
-    <div class="mensaje oculto" id="msgCortafuegos"></div>
-  </section>
-
-  <section class="tarjeta seccion" data-tab="sistema" id="secSistema">
-    <h2 data-t="system"></h2>
-    <dl>
-      <dt data-t="edition"></dt><dd id="sisEdicion">—</dd>
-      <dt data-t="last_boot"></dt><dd id="sisArranque">—</dd>
-      <dt data-t="watchdog"></dt><dd id="sisWatchdog">—</dd>
-      <dt data-t="clock"></dt><dd id="sisHora">—</dd>
-    </dl>
     <div class="campos" style="margin-top:14px">
-      <div>
-        <label for="selZona" data-t="timezone"></label>
-        <select id="selZona"></select>
-        <div class="ayuda" data-t="timezone_help"></div>
-      </div>
+      <div><label for="ipDir" data-t="ip_addr"></label><input type="text" id="ipDir" inputmode="decimal" placeholder="192.168.1.50"></div>
+      <div><label for="ipPref" data-t="ip_prefix"></label><input type="number" id="ipPref" min="8" max="30" placeholder="24"></div>
+      <div><label for="ipGw" data-t="ip_gateway"></label><input type="text" id="ipGw" inputmode="decimal" placeholder="192.168.1.1"></div>
+      <div><label for="ipDns" data-t="ip_dns"></label><input type="text" id="ipDns" placeholder="192.168.1.1, 1.1.1.1"></div>
     </div>
     <div class="botones">
-      <button class="boton principal" id="btZona" data-t="save"></button>
-      <button class="boton peligro" id="btReboot" data-t="reboot"></button>
-      <button class="boton peligro" id="btApagar" data-t="shutdown"></button>
+      <button class="boton principal" id="btIp" data-t="apply"></button>
     </div>
-    <div class="mensaje oculto" id="msgSistema"></div>
+    <div class="mensaje oculto" id="msgIp"></div>
   </section>
-
+    <section class="tarjeta seccion" data-tab="sistema">
+      <h2 data-t="updates"></h2>
+      <dl>
+        <dt data-t="installed_version"></dt><dd id="actActual">—</dd>
+        <dt data-t="latest_version"></dt><dd id="actUltima">—</dd>
+        <dt data-t="checked"></dt><dd id="actComprobado">—</dd>
+      </dl>
+      <div class="botones">
+        <button class="boton" id="btComprobar" data-t="check_updates"></button>
+        <button class="boton principal oculto" id="btActualizar"></button>
+        <a class="boton oculto" id="actNotas" target="_blank" rel="noopener" data-t="release_notes"></a>
+      </div>
+      <div class="mensaje oculto" id="msgAct"></div>
+    </section>
   <section class="tarjeta seccion" data-tab="sistema" id="secRegistro">
     <h2 data-t="log"></h2>
     <div class="filtros">
@@ -638,7 +676,6 @@
     </div>
     <div class="registro mono" id="registro"></div>
   </section>
-
   <footer>NDIICAM <span id="version"></span> · GPL-3.0 · NDI® is a registered trademark of Vizrt NDI AB</footer>
 </div>
 <div class="desconectado oculto" id="desconectado" data-t="disconnected"></div>
@@ -738,7 +775,7 @@ const T = {
     sec_http: "Sin cifrar (HTTP)",
     sec_http_warn: "Estás entrando sin cifrar. Abre el panel con https:// para que la contraseña no viaje en claro.",
     sec_no_https: "Este equipo no pudo crear su certificado (falta openssl): el panel va sin cifrar.",
-    ap_default_warn: "La WiFi de configuración usa la clave por defecto (ndiicam-setup), que es pública: cualquiera cerca podría entrar al panel desde ella. Cámbiala en Configuración.",
+    ap_default_warn: "La WiFi de configuración usa la clave por defecto (ndiicam-setup), que es pública: cualquiera cerca podría entrar al panel desde ella. Cámbiala más abajo, en «Nombre y red del equipo».",
     change_password: "Cambiar contraseña", current_password: "Contraseña actual", new_password: "Contraseña nueva",
     repeat_password: "Repítela", password_help: "Al menos 8 caracteres. Cierra las demás sesiones abiertas.",
     password_mismatch: "Las dos contraseñas no coinciden.", password_changed: "Contraseña cambiada.",
@@ -773,7 +810,7 @@ const T = {
     login_http: "Ojo: esta conexión no va cifrada. Mejor abre el panel con https://",
     tab_monitor: "Monitor", tab_config: "Configuración", preview: "Vista previa",
     preview_none: "Sin vista previa: la cámara no entrega MJPEG", preview_wait: "Esperando imagen…",
-    device_settings: "Equipo", device_name: "Nombre del equipo",
+    device_settings: "Nombre y red del equipo", device_name: "Nombre del equipo",
     screen_lang: "Idioma de la pantalla HDMI", screen_lang_help: "La pantalla de ayuda que sale por HDMI cuando no hay nada que mostrar: estado, red y un QR a este panel.",
     device_name_help: "También es el prefijo de las fuentes NDI y la dirección <nombre>.local. Cambiarlo reinicia el servicio.",
     transport_help: "TCP es lo más compatible. UDP es el modo por defecto de NDI 6. Cambiarlo reinicia el servicio.",
@@ -818,7 +855,7 @@ const T = {
     delay_audio_late: (ms) => `Medido: el audio va ${ms} ms por detrás de la imagen; eso no se corrige retrasando el audio.`,
     delay_apply: (ms) => `Aplicar ${ms} ms`,
     delay_errors: { sin_palmadas: "No se oyó ninguna palmada: más fuerte, o acerca el micro.", sin_movimiento: "Se oyeron las palmadas, pero no se vieron: hazlas dentro del encuadre.", sin_datos: "No llegaron audio o imagen durante la medida.", sin_audio: "La cámara no tiene audio.", ocupado: "Ya se estaba midiendo." },
-    gpu_out: "Salida H.264 por GPU", gpu_state: "Salida GPU", gpu_no: "Desactivada", gpu_also: "Y además, a la vez:",
+    gpu_section: "Grabar o emitir (SRT, RTMP)", gpu_out: "Salida H.264 por GPU", gpu_state: "Salida GPU", gpu_no: "Desactivada", gpu_also: "Y además, a la vez:",
     gpu_grabar: "Grabar en el equipo", gpu_srt: "SRT (para OBS, vMix, VLC…)", gpu_rtmp: "RTMP (YouTube, Twitch…)",
     gpu_quality: "Calidad", gpu_port: "Puerto SRT", gpu_url: "URL RTMP con la clave de emisión",
     gpu_url_ph: "rtmp://a.rtmp.youtube.com/live2/tu-clave",
@@ -838,13 +875,26 @@ const T = {
     rec_horario: "En un horario", rec_from: "Desde", rec_to: "Hasta",
     modo_puente: "Puente (ATEM Streaming Bridge)",
     modo_puente_d: "Un ATEM Mini Pro, OBS o vMix emite a este equipo por la red y sale por su HDMI, con sonido.",
-    pt_title: "Puente", pt_rtmp: "Servidor RTMP (para el ATEM)", pt_key: "Clave de emisión", pt_srt: "SRT (OBS, vMix, Larix…)",
+    pt_title: "ATEM (entrada)", pt_rtmp: "Servidor RTMP (para el ATEM)", pt_key: "Clave de emisión", pt_srt: "SRT (OBS, vMix, Larix…)",
     pt_xml: "Descargar ajustes para ATEM", pt_new_key: "Clave nueva", pt_new_key_ok: "Clave nueva: vuelve a cargar los ajustes en el ATEM.",
     pt_confirm: "Con una clave nueva, quien emite ahora se corta y tendrá que usar la nueva. ¿Seguir?",
     reem_title: "Reemitir una fuente NDI", reem_outputs: "Salidas (a la vez)",
     reem_help: "Coge una fuente NDI de la red (OBS, vMix, otro NDIICAM…) y la graba en el equipo o la emite por SRT o RTMP, codificada en la GPU, sin pasar por OBS. Con audio si la fuente lo trae.",
     reem_sub: (r) => `${r.fps.toFixed(1)} fps · ${r.mbps.toFixed(1)} Mbit/s` + (r.audio_activo ? " · audio" : ""),
     reem_st: { apagado: "Apagada", conectando: "Conectando", activa: "Activa", error: "Error, reintentando" },
+    g_inputs: "Entradas", g_program: "Programa", g_outputs: "Salidas",
+    rp_title: "Reparto del programa", rp_sub: "Lo mismo para todos: con el audio de la consola y ya sincronizado.",
+    pg_record_help: "Copia exacta de lo que manda el ATEM (usa su perfil «NDIICAM edición» para más calidad), en trozos de 10 minutos.",
+    pt_state: "Recepción", more_settings: "Más ajustes",
+    hdmi_what: "Qué muestra el monitor", hdmi_opt_rx: "La fuente NDI recibida", hdmi_opt_programa: "El programa", hdmi_opt_no: "Nada (pantalla de ayuda)",
+    hdmi_what_help: "Una cámara (también el multiview del ATEM por USB), el programa o nada.",
+    hdmi_what_rx: "En modo receptor el monitor muestra la fuente NDI que eliges arriba.",
+    hdmi_what_lite: "En la edición Lite el monitor muestra lo que llega al puente.",
+    esq: { atem: "ATEM", atem_espera: "Esperando a que publique", consola: "Consola (audio USB)", consola_no: "Sin consola: audio del ATEM",
+      ndi_entrada: "Fuente NDI", ndi_elige: "Elige una fuente", solo_hdmi: "Solo al HDMI", sin_entradas: "Sin entradas",
+      sin_entradas_d: "Conecta una cámara USB", con_consola: "Con la consola", con_atem: "Con el audio del ATEM", grabando: "grabando",
+      equipo: "Equipo", ndi_nada: "Nada", hdmi: "Monitor HDMI", nada: "Nada", reparto: "OBS · TV · navegador",
+      reparto_d: "RTMP, HLS y SRT", grabacion: "Grabación", grabando_si: "Grabando", emision: "Emisión H.264" },
     pg_title: "Programa final", pg_audio: "Audio del programa", pg_audio_atem: "El que manda el ATEM",
     pg_delay_help: "El ATEM tarda en codificar y mandar la imagen, así que la consola llega antes: retrásala hasta que la voz case con la boca. Se ajusta en marcha.",
     pg_record: "Grabar el programa (MKV, sin recodificar)", pg_hdmi: "Monitor HDMI",
@@ -1061,7 +1111,7 @@ const T = {
     sec_http: "Unencrypted (HTTP)",
     sec_http_warn: "You are connected without encryption. Open the panel with https:// so the password is not sent in the clear.",
     sec_no_https: "This device could not create its certificate (openssl missing): the panel is unencrypted.",
-    ap_default_warn: "The setup WiFi uses the default password (ndiicam-setup), which is public: anyone nearby could reach the panel through it. Change it in Settings.",
+    ap_default_warn: "The setup WiFi uses the default password (ndiicam-setup), which is public: anyone nearby could reach the panel through it. Change it below, under \u201cDevice name and network\u201d.",
     change_password: "Change password", current_password: "Current password", new_password: "New password",
     repeat_password: "Repeat it", password_help: "At least 8 characters. Other open sessions are signed out.",
     password_mismatch: "The two passwords do not match.", password_changed: "Password changed.",
@@ -1096,7 +1146,7 @@ const T = {
     login_http: "Note: this connection is not encrypted. Better open the panel with https://",
     tab_monitor: "Monitor", tab_config: "Settings", preview: "Preview",
     preview_none: "No preview: the camera does not deliver MJPEG", preview_wait: "Waiting for a picture…",
-    device_settings: "Device", device_name: "Device name",
+    device_settings: "Device name and network", device_name: "Device name",
     screen_lang: "HDMI screen language", screen_lang_help: "The help screen shown on HDMI when there is nothing to display: status, network and a QR code to this panel.",
     device_name_help: "Also the NDI source prefix and the <name>.local address. Changing it restarts the service.",
     transport_help: "TCP is the most compatible. UDP is the NDI 6 default. Changing it restarts the service.",
@@ -1141,7 +1191,7 @@ const T = {
     delay_audio_late: (ms) => `Measured: audio is ${ms} ms behind the picture; delaying the audio cannot fix that.`,
     delay_apply: (ms) => `Apply ${ms} ms`,
     delay_errors: { sin_palmadas: "No clap was heard: louder, or bring the mic closer.", sin_movimiento: "The claps were heard but not seen: clap inside the frame.", sin_datos: "No audio or picture arrived during the measurement.", sin_audio: "This camera has no audio.", ocupado: "A measurement was already running." },
-    gpu_out: "H.264 output (GPU)", gpu_state: "GPU output", gpu_no: "Off", gpu_also: "And also, at the same time:",
+    gpu_section: "Record or stream (SRT, RTMP)", gpu_out: "H.264 output (GPU)", gpu_state: "GPU output", gpu_no: "Off", gpu_also: "And also, at the same time:",
     gpu_grabar: "Record on this device", gpu_srt: "SRT (for OBS, vMix, VLC…)", gpu_rtmp: "RTMP (YouTube, Twitch…)",
     gpu_quality: "Quality", gpu_port: "SRT port", gpu_url: "RTMP URL with the stream key",
     gpu_url_ph: "rtmp://a.rtmp.youtube.com/live2/your-key",
@@ -1161,13 +1211,26 @@ const T = {
     rec_horario: "On a schedule", rec_from: "From", rec_to: "To",
     modo_puente: "Bridge (ATEM Streaming Bridge)",
     modo_puente_d: "An ATEM Mini Pro, OBS or vMix streams to this device over the network and it plays on its HDMI, with sound.",
-    pt_title: "Bridge", pt_rtmp: "RTMP server (for the ATEM)", pt_key: "Stream key", pt_srt: "SRT (OBS, vMix, Larix…)",
+    pt_title: "ATEM (input)", pt_rtmp: "RTMP server (for the ATEM)", pt_key: "Stream key", pt_srt: "SRT (OBS, vMix, Larix…)",
     pt_xml: "Download ATEM settings", pt_new_key: "New key", pt_new_key_ok: "New key: load the settings into the ATEM again.",
     pt_confirm: "With a new key, whoever is streaming now is cut off and must use the new one. Continue?",
     reem_title: "Re-stream an NDI source", reem_outputs: "Outputs (at the same time)",
     reem_help: "Takes an NDI source from the network (OBS, vMix, another NDIICAM…) and records it on this device or streams it over SRT or RTMP, encoded on the GPU, without OBS. With audio if the source has it.",
     reem_sub: (r) => `${r.fps.toFixed(1)} fps · ${r.mbps.toFixed(1)} Mbit/s` + (r.audio_activo ? " · audio" : ""),
     reem_st: { apagado: "Off", conectando: "Connecting", activa: "Active", error: "Error, retrying" },
+    g_inputs: "Inputs", g_program: "Program", g_outputs: "Outputs",
+    rp_title: "Program distribution", rp_sub: "The same for everyone: with the console audio, already in sync.",
+    pg_record_help: "An exact copy of what the ATEM sends (use its \u201cNDIICAM edición\u201d profile for more quality), in 10-minute pieces.",
+    pt_state: "Reception", more_settings: "More settings",
+    hdmi_what: "What the monitor shows", hdmi_opt_rx: "The received NDI source", hdmi_opt_programa: "The program", hdmi_opt_no: "Nothing (help screen)",
+    hdmi_what_help: "A camera (the ATEM multiview over USB too), the program, or nothing.",
+    hdmi_what_rx: "In receiver mode the monitor shows the NDI source you pick above.",
+    hdmi_what_lite: "On the Lite edition the monitor shows what reaches the bridge.",
+    esq: { atem: "ATEM", atem_espera: "Waiting for it to publish", consola: "Console (USB audio)", consola_no: "No console: ATEM audio",
+      ndi_entrada: "NDI source", ndi_elige: "Pick a source", solo_hdmi: "HDMI only", sin_entradas: "No inputs",
+      sin_entradas_d: "Plug in a USB camera", con_consola: "With the console", con_atem: "With the ATEM audio", grabando: "recording",
+      equipo: "Device", ndi_nada: "None", hdmi: "HDMI monitor", nada: "Nothing", reparto: "OBS · TV · browser",
+      reparto_d: "RTMP, HLS and SRT", grabacion: "Recording", grabando_si: "Recording", emision: "H.264 stream" },
     pg_title: "Final program", pg_audio: "Program audio", pg_audio_atem: "The ATEM's own",
     pg_delay_help: "The ATEM takes time to encode and send the picture, so the console arrives earlier: delay it until the voice matches the lips. It applies live.",
     pg_record: "Record the program (MKV, no re-encoding)", pg_hdmi: "HDMI monitor",
@@ -1532,22 +1595,30 @@ function crearTarjeta(f) {
       c.pastillaCfg),
     el("div", { class: "fuente-cuerpo" },
       el("div", null,
-        el("label", { class: "conmutador", style: "margin-bottom:2px" }, c.conmutador, el("span", { text: t("source_stream") })),
+        el("label", { class: "conmutador", style: "display:flex;margin-bottom:6px" }, c.conmutador, el("span", { text: t("source_stream") })),
         // NDI aparte de encender la cámara: sin él, solo se ve en el HDMI
         // (el multiview del ATEM para el operador)
-        el("label", { class: "conmutador", style: "margin-bottom:2px" },
+        el("label", { class: "conmutador", style: "display:flex;margin-bottom:2px" },
           c.conNdi = el("input", { type: "checkbox", onchange: () => {
             api("/api/fuente", { id, solo_monitor: !c.conNdi.checked }).catch((err) => mensaje(c.msg, err.message, "mal"));
           } }), el("span", { text: t("send_ndi") })),
         c.ayudaNdi = el("div", { class: "ayuda", style: "margin-bottom:12px" }),
-        el("label", { text: t("ndi_name") }),
-        c.nombre = el("input", { type: "text", maxlength: "48", autocomplete: "off", spellcheck: "false",
-          oninput: () => editado.add(k("nombre")) }),
+        c.bloqueNombre = el("div", null, el("label", { text: t("ndi_name") }),
+          c.nombre = el("input", { type: "text", maxlength: "48", autocomplete: "off", spellcheck: "false",
+            oninput: () => editado.add(k("nombre")) })),
         el("label", { text: t("resolution"), style: "margin-top:12px" }),
         c.segRes = el("div", { class: "segmentado" }),
         el("label", { text: t("framerate"), style: "margin-top:12px" }),
         c.segFps = el("div", { class: "segmentado" }),
-        el("label", { text: t("audio"), style: "margin-top:12px" }),
+        c.masCam = el("details", { class: "mas" }, el("summary", { text: t("more_settings") }),
+          el("label", { text: t("cam_format") }),
+          c.selFormato = el("select", { onchange: () => editado.add(k("formato")) }),
+          c.ayudaFormato = el("div", { class: "ayuda" }),
+          el("label", { text: t("lat_label"), style: "margin-top:12px" }),
+          c.selLatencia = el("select", { onchange: () => { editado.add(k("latencia")); pintar(ultimo); } }),
+          c.ayudaLatencia = el("div", { class: "ayuda" }))),
+      c.colAudio = el("div", null,
+        el("label", { text: t("audio") }),
         c.selAudio = el("select", { onchange: () => editado.add(k("audio")) }),
         // audio de otra interfaz: llega antes que la imagen de la cámara
         c.bloqueRetraso = el("div", null,
@@ -1567,13 +1638,8 @@ function crearTarjeta(f) {
               catch (err) { mensaje(c.msg, err.message, "mal"); }
             } })),
           c.ayudaRetraso = el("div", { class: "ayuda" })),
-        el("label", { text: t("cam_format"), style: "margin-top:12px" }),
-        c.selFormato = el("select", { onchange: () => editado.add(k("formato")) }),
-        c.ayudaFormato = el("div", { class: "ayuda" }),
-        el("label", { text: t("lat_label"), style: "margin-top:12px" }),
-        c.selLatencia = el("select", { onchange: () => { editado.add(k("latencia")); pintar(ultimo); } }),
-        c.ayudaLatencia = el("div", { class: "ayuda" })),
-      el("div", null,
+        // grabar o emitir por SRT/RTMP con la GPU: plegado salvo si ya hay una salida
+        c.masGpu = el("details", { class: "mas" }, el("summary", { text: t("gpu_section") }),
         c.gpuBloque = el("div", null,
           el("label", { text: t("gpu_out") }),
           c.selGpu = el("select", { onchange: () => { editado.add(k("gpu")); pintar(ultimo); } }),
@@ -1607,7 +1673,7 @@ function crearTarjeta(f) {
               el("label", { text: t("gpu_url"), style: "margin-top:12px" }),
               c.url = el("input", { type: "text", autocomplete: "off", spellcheck: "false",
                 placeholder: t("gpu_url_ph"), oninput: () => editado.add(k("url")) }))),
-          c.gpuAyuda = el("div", { class: "ayuda" })))),
+          c.gpuAyuda = el("div", { class: "ayuda" }))))),
     el("div", { class: "botones" },
       el("button", { class: "boton principal", text: t("save"), onclick: async (ev) => {
         const datos = { id, ndi_nombre: c.nombre.value.trim() };
@@ -1700,6 +1766,8 @@ function pintarFuente(c, f, e) {
   if (document.activeElement !== c.conNdi) c.conNdi.checked = !aj.solo_monitor;
   c.conNdi.disabled = !aj.activa;
   poner(c.ayudaNdi, !aj.activa ? t("cam_off_help") : aj.solo_monitor ? t("send_ndi_off_help") : "");
+  c.colAudio.classList.toggle("oculto", !!aj.solo_monitor);
+  c.bloqueNombre.classList.toggle("oculto", !!aj.solo_monitor);
   rellenar(c.nombre, aj.ndi_nombre, k("nombre"));
   const noAdmite = Object.keys(f.admite).filter((r) => !f.admite[r]);
   segmentadoEn(c.segRes, null, elegido[k("res")] || aj.resolucion, noAdmite);
@@ -1752,6 +1820,9 @@ function pintarRetraso(c, f, k) {
 function pintarGpu(c, f, e, k) {
   const aj = f.ajustes, cap = e.gpu || {}, g = f.gpu || {};
   const usada = aj.gpu_salida !== "no";
+  // la primera vez, abierto si la cámara ya graba o emite; luego, como lo deje el usuario
+  if (!c.gpuAbierto) { c.gpuAbierto = true; c.masGpu.open = usada; }
+  c.masGpu.classList.toggle("oculto", !cap.disponible && !usada);
   // sin GPU válida solo se enseña el motivo (y se deja quitar una salida que ya estuviera puesta)
   c.gpuBloque.classList.toggle("oculto", !cap.disponible && !usada);
   if (!editado.has(k("gpu")) && document.activeElement !== c.selGpu) {
@@ -1878,38 +1949,123 @@ function pintarFuentes(e) {
   }
 }
 
+function opcionesHdmi(e) {
+  // qué puede mostrar el monitor, según el modo: [valor, texto]
+  const fuentes = e.fuentes || [], cap = e.capacidad || {};
+  const camaras = fuentes.map((f) => ["cam:" + f.id, f.camara]);
+  if (e.modo === "receptor") return [["rx", t("hdmi_opt_rx")]];
+  if (e.modo === "puente") return cap.simultaneo
+    ? [["programa", t("hdmi_opt_programa")], ...camaras, ["no", t("hdmi_opt_no")]]
+    : [["programa", t("hdmi_opt_programa")]];
+  return [...(fuentes.length > 1 ? [["auto", t("hdmi_auto")]] : []), ...camaras, ["no", t("hdmi_opt_no")]];
+}
+function valorHdmi(e) {
+  const h = e.hdmi || {}, cfg = e.config || {};
+  if (e.modo === "receptor") return "rx";
+  if (e.modo === "puente") {
+    const v = cfg.puente_hdmi || "programa";
+    return v === "programa" || v === "no" ? v : "cam:" + v;
+  }
+  if (!h.activa) return "no";
+  if (!h.fuente || h.fuente === "auto") return (e.fuentes || []).length > 1 ? "auto" : "cam:" + ((e.fuentes || [])[0] || {}).id;
+  return "cam:" + h.fuente;
+}
 function pintarHdmi(e) {
-  const h = e.hdmi || {}, fuentes = e.fuentes || [], receptor = ["receptor", "puente"].includes(e.modo);
+  const h = e.hdmi || {}, fuentes = e.fuentes || [];
   const monitor = (h.pantallas || []).find((p) => p.conectado);
   poner("hdmiSub", monitor ? T[lang].hdmi_monitor(monitor) : t("hdmi_no_monitor"));
-  // en modo receptor la pantalla es del receptor: de esta tarjeta solo queda su resolución
-  for (const id of ["bloqueHdmiActiva", "bloqueHdmiEstado", "hdmiAyuda"]) $(id).classList.toggle("oculto", receptor);
-  if (document.activeElement !== $("hdmiActiva")) $("hdmiActiva").checked = !!h.activa;
-  $("bloqueHdmiFuente").classList.toggle("oculto", receptor || fuentes.length < 2);
-  if (document.activeElement !== $("hdmiFuente")) {
-    $("hdmiFuente").replaceChildren(new Option(t("hdmi_auto"), "auto"), ...fuentes.map((f) => new Option(f.camara, f.id)));
-    $("hdmiFuente").value = h.fuente || "auto";
-    if (!$("hdmiFuente").value) $("hdmiFuente").value = "auto";
+  const ops = opcionesHdmi(e);
+  if (document.activeElement !== $("hdmiQue")) {
+    $("hdmiQue").replaceChildren(...ops.map(([v, n]) => new Option(n, v)));
+    $("hdmiQue").value = valorHdmi(e);
   }
+  $("hdmiQue").disabled = ops.length < 2;
+  poner("hdmiQueAyuda", e.modo === "receptor" ? t("hdmi_what_rx")
+    : e.modo === "puente" && !(e.capacidad || {}).simultaneo ? t("hdmi_what_lite") : t("hdmi_what_help"));
   const fuente = fuentes.find((f) => f.id === h.mostrando);
   let estado = t("hdmi_off_state");
-  if (fuentes.some((f) => f.hdmi_fallido)) estado = t("hdmi_failed");
-  else if (h.activa && !monitor) estado = t("hdmi_no_monitor");
-  else if (h.activa && fuente) estado = fuente.hdmi && fuente.estado === "emitiendo" ? T[lang].hdmi_showing(fuente.camara) : t("hdmi_waiting");
-  else if (h.activa) estado = t("hdmi_waiting");
+  const rx = (e.receptor || {}).estado;
+  if (!monitor) estado = t("hdmi_no_monitor");
+  else if (fuentes.some((f) => f.hdmi_fallido)) estado = t("hdmi_failed");
+  else if (fuente) estado = fuente.hdmi && ["emitiendo", "en_hdmi"].includes(fuente.estado) ? T[lang].hdmi_showing(fuente.camara) : t("hdmi_waiting");
+  else if (["receptor", "puente"].includes(e.modo) && rx && rx.estado === "recibiendo" && valorHdmi(e) !== "no") estado = T[lang].hdmi_rx_recibiendo(rx);
+  else if (valorHdmi(e) !== "no") estado = t("hdmi_waiting");
   poner("hdmiEstado", estado);
   if (document.activeElement !== $("hdmiConsola")) $("hdmiConsola").value = h.consola || "nativa";
   $("hdmiReinicio").classList.toggle("oculto", !h.reinicio_pendiente);
+}
+
+// ------------------------------------------------------------ esquema Entradas → Programa → Salidas
+function pintarEsquema(e) {
+  const fuentes = e.fuentes || [], cap = e.capacidad || {}, cfg = e.config || {}, h = e.hdmi || {};
+  const pt = e.puente || {}, g = pt.programa || {}, rc = e.receptor || {}, rx = rc.estado || {};
+  const receptor = e.modo === "receptor", puente = e.modo === "puente", pro = !!cap.simultaneo;
+  const camaras = !(receptor || puente) || pro;
+  const E = T[lang].esq;
+  const nodo = (titulo, sub, clase, destino, extra = "") => el("button", { type: "button", class: "nodo " + extra,
+    onclick: () => { const d = $(destino); if (d) d.scrollIntoView({ behavior: "smooth", block: "start" }); } },
+    el("span", { class: "punto " + (clase || "") }), el("span", null, el("b", { text: titulo }), el("small", { text: sub || "" })));
+  const estadoCam = (f) => f.estado === "emitiendo" ? "ok" : f.estado === "en_hdmi" ? "ok"
+    : ["iniciando"].includes(f.estado) ? "aviso" : f.estado === "error" ? "mal" : "";
+  // --- entradas
+  const ent = [];
+  if (puente) {
+    ent.push(nodo(E.atem, pt.publicando ? T[lang].pt_from(pt) : E.atem_espera, pt.publicando ? "ok" : "aviso", "secPuente"));
+    if (pro) ent.push(nodo(E.consola, cfg.programa_audio
+      ? `${(e.audio_dispositivos || []).find((a) => a.id === cfg.programa_audio)?.nombre || cfg.programa_audio} · ${cfg.programa_retraso || 0} ms`
+      : E.consola_no, cfg.programa_audio ? (g.audio_activo ? "ok" : "aviso") : "", "secPrograma", cfg.programa_audio ? "" : "apagado"));
+  }
+  if (receptor) ent.push(nodo(E.ndi_entrada, rc.fuente || E.ndi_elige, rx.estado === "recibiendo" ? "ok" : rc.fuente ? "aviso" : "", "secRx"));
+  if (camaras) for (const f of fuentes) ent.push(nodo(f.camara,
+    f.ajustes.activa ? (f.ajustes.solo_monitor ? E.solo_hdmi : (f.nombre_ndi || t("st_" + f.estado))) : t("st_desactivada"),
+    estadoCam(f), "fuentesCfg", f.ajustes.activa ? "" : "apagado"));
+  if (!ent.length) ent.push(nodo(E.sin_entradas, E.sin_entradas_d, "aviso", "fuentesCfg"));
+  // --- centro
+  const centro = puente && pro
+    ? nodo(t("pg_title"), g.estado === "activa" ? `${g.consola ? E.con_consola : E.con_atem}${g.grabar ? " · " + E.grabando : ""}` : (T[lang].reem_st || {})[g.estado] || "—",
+      g.estado === "activa" ? "ok" : g.estado === "error" ? "mal" : "aviso", "secPrograma", "central")
+    : nodo((e.equipo || {}).nombre ? (e.equipo.nombre || "").toUpperCase() : "NDIICAM",
+      `${cap.edicion === "pro" ? "Pro" : "Lite"} · CPU ${(e.equipo || {}).cpu ?? "—"} %`, "ok", "secModo", "central");
+  // --- salidas
+  const sal = [];
+  const ndis = fuentes.filter((f) => f.nombre_ndi && f.estado === "emitiendo").map((f) => f.nombre_ndi);
+  if (pt.ndi) ndis.push(pt.ndi);
+  if (camaras || (puente && pro)) sal.push(nodo("NDI", ndis.length ? ndis.join(" · ") : E.ndi_nada, ndis.length ? "ok" : "", puente ? "secReparto" : "fuentesCfg", ndis.length ? "" : "apagado"));
+  const monitor = (h.pantallas || []).find((m) => m.conectado), qh = valorHdmi(e);
+  const textoHdmi = (opcionesHdmi(e).find(([v]) => v === qh) || [, ""])[1];
+  sal.push(nodo(E.hdmi, monitor ? (qh === "no" ? E.nada : textoHdmi) : t("hdmi_no_monitor"), monitor && qh !== "no" ? "ok" : "", "secHdmi", monitor && qh !== "no" ? "" : "apagado"));
+  if (puente && pro) sal.push(nodo(E.reparto, E.reparto_d, g.estado === "activa" ? "ok" : "aviso", "secReparto"));
+  const graba = (puente && pro && cfg.programa_grabar) || fuentes.some((f) => (f.gpu || {}).modo === "grabar" || (f.gpu_extra || []).some((x) => x.modo === "grabar"))
+    || ((e.reemision || {}).salidas || []).some((x) => x.modo === "grabar");
+  sal.push(nodo(E.grabacion, graba ? E.grabando_si : E.nada, graba ? "ok" : "", puente && pro ? "secPrograma" : "fuentesCfg", graba ? "" : "apagado"));
+  const emisiones = fuentes.flatMap((f) => [f.gpu || {}, ...(f.gpu_extra || [])]).filter((x) => x.modo === "srt" || x.modo === "rtmp");
+  if (emisiones.length) sal.push(nodo(E.emision, emisiones.map((x) => x.modo.toUpperCase()).join(" · "), emisiones.some((x) => x.estado === "activa") ? "ok" : "aviso", "fuentesCfg"));
+  const rm = e.reemision || {};
+  if (rm.disponible && rm.fuente && (rm.salidas || []).length) sal.push(nodo(t("reem_title"), rm.fuente, rm.estado === "activa" ? "ok" : rm.estado === "error" ? "mal" : "aviso", "secReem"));
+  const col = (nodos) => el("div", { class: "esq-col" }, ...nodos);
+  const movil = matchMedia("(max-width: 640px)").matches;
+  const tit = (txt) => el("h4", { text: txt }), vacio = () => el("span");
+  const titulos = [t("g_inputs"), puente && pro ? t("g_program") : E.equipo, t("g_outputs")];
+  // en el móvil, una columna: cada título encima de lo suyo
+  $("esquema").replaceChildren(...(movil
+    ? [tit(titulos[0]), col(ent), el("div", { class: "esq-flecha", text: "→" }), tit(titulos[1]), col([centro]),
+       el("div", { class: "esq-flecha", text: "→" }), tit(titulos[2]), col(sal)]
+    : [tit(titulos[0]), vacio(), tit(titulos[1]), vacio(), tit(titulos[2]),
+       col(ent), el("div", { class: "esq-flecha", text: "→" }), col([centro]),
+       el("div", { class: "esq-flecha", text: "→" }), col(sal)]));
 }
 
 function pintarModo(e) {
   const receptor = e.modo === "receptor", puente = e.modo === "puente";
   const cap = e.capacidad || {}, camaras = !(receptor || puente) || !!cap.simultaneo;
   for (const r of document.querySelectorAll("input[name=modo]")) r.checked = r.value === (e.modo || "emisor");
+  const programa = puente && !!cap.simultaneo;
   $("secRx").classList.toggle("oculto", !receptor);
   $("secPuente").classList.toggle("oculto", !puente);
   $("fuentes").classList.toggle("oculto", !camaras);
   $("fuentesCfg").classList.toggle("oculto", !camaras);
+  for (const id of ["grupoPrograma", "secPrograma", "secReparto"]) $(id).classList.toggle("oculto", !programa);
+  pintarEsquema(e);
   // el interruptor solo en equipos que dan para ello (o mientras se mide la GPU)
   $("bloqueSimultaneo").classList.toggle("oculto", !cap.potente && !cap.midiendo);
   poner("modoSub", t(cap.potente ? "modo_sub_si" : "modo_sub"));
@@ -1951,9 +2107,10 @@ function pintarModo(e) {
 const pgEditado = new Set();
 function pintarPrograma(e, host) {
   const pt = e.puente || {}, g = pt.programa || {}, cfg = e.config || {};
-  $("ptPrograma").classList.toggle("oculto", !g.disponible);
   if (!g.disponible) return;
   poner("pgSub", T[lang].pg_sub(g));
+  $("pgPastilla").className = "pastilla " + ({ activa: "ok vivo", conectando: "aviso", error: "mal" }[g.estado] || "");
+  poner("pgPastilla", (T[lang].reem_st || {})[g.estado] || g.estado || "—");
   if (!pgEditado.has("audio") && document.activeElement !== $("pgAudio")) {
     $("pgAudio").replaceChildren(new Option(t("pg_audio_atem"), ""),
       ...(e.audio_dispositivos || []).map((a) => new Option(a.nombre, a.id)));
@@ -1963,11 +2120,6 @@ function pintarPrograma(e, host) {
   poner("pgRetrasoVal", `${$("pgRetraso").value} ms`);
   $("pgBloqueRetraso").classList.toggle("oculto", !$("pgAudio").value);
   if (!pgEditado.has("grabar")) $("pgGrabar").checked = !!cfg.programa_grabar;
-  if (!pgEditado.has("hdmi") && document.activeElement !== $("pgHdmi")) {
-    $("pgHdmi").replaceChildren(new Option(t("pg_hdmi_programa"), "programa"),
-      ...(e.fuentes || []).map((f) => new Option(f.camara, f.id)), new Option(t("pg_hdmi_no"), "no"));
-    $("pgHdmi").value = cfg.puente_hdmi || "programa";
-  }
   const r = pt.ruta_programa || "live/programa", u = T[lang].pg_url;
   const lineas = [[u.obs, `rtmp://${host}:${pt.puerto_rtmp || 1935}/${r}`],
     [u.vlc, `http://${host}:${pt.puerto_hls || 8888}/${r}/index.m3u8`],
@@ -1980,15 +2132,13 @@ function pintarPrograma(e, host) {
 $("pgAudio").addEventListener("change", () => { pgEditado.add("audio"); $("pgBloqueRetraso").classList.toggle("oculto", !$("pgAudio").value); });
 $("pgRetraso").addEventListener("input", () => { pgEditado.add("retraso"); poner("pgRetrasoVal", `${$("pgRetraso").value} ms`); });
 $("pgGrabar").addEventListener("change", () => pgEditado.add("grabar"));
-$("pgHdmi").addEventListener("change", () => pgEditado.add("hdmi"));
 $("pgGuardar").addEventListener("click", async () => {
   const datos = {};
   if (pgEditado.has("audio")) datos.programa_audio = $("pgAudio").value;
   if (pgEditado.has("retraso")) datos.programa_retraso = Number($("pgRetraso").value);
   if (pgEditado.has("grabar")) datos.programa_grabar = $("pgGrabar").checked;
-  if (pgEditado.has("hdmi")) datos.puente_hdmi = $("pgHdmi").value;
-  try { await api("/api/config", datos); pgEditado.clear(); mensaje("msgPuente", t("saved_ok"), "ok"); refrescar(); }
-  catch (err) { mensaje("msgPuente", err.message, "mal"); }
+  try { await api("/api/config", datos); pgEditado.clear(); mensaje("msgPrograma", t("saved_ok"), "ok"); refrescar(); }
+  catch (err) { mensaje("msgPrograma", err.message, "mal"); }
 });
 
 // ------------------------------------------------------------ reemisión
@@ -2441,7 +2591,7 @@ for (const r of document.querySelectorAll("input[name=modo]")) r.addEventListene
 });
 $("chkPuenteNdi").addEventListener("change", async () => {
   try { await api("/api/config", { puente_ndi: $("chkPuenteNdi").checked }); refrescar(); }
-  catch (err) { mensaje("msgPuente", err.message, "mal"); }
+  catch (err) { mensaje("msgReparto", err.message, "mal"); }
 });
 $("chkSimultaneo").addEventListener("change", async () => {
   try { await api("/api/config", { simultaneo: $("chkSimultaneo").checked }); refrescar(); }
@@ -2456,8 +2606,13 @@ $("btReiniciarTodo").addEventListener("click", async () => {
   catch (err) { mensaje("msgReinicio", err.message, "mal"); }
   setTimeout(() => { $("btReiniciarTodo").disabled = false; mensaje("msgReinicio"); }, 5000);
 });
-$("hdmiActiva").addEventListener("change", () => guardarHdmi({ hdmi: $("hdmiActiva").checked }));
-$("hdmiFuente").addEventListener("change", () => guardarHdmi({ hdmi_fuente: $("hdmiFuente").value }));
+$("hdmiQue").addEventListener("change", () => {
+  const v = $("hdmiQue").value, puente = (ultimo || {}).modo === "puente";
+  if (v === "rx") return;
+  if (puente) guardarHdmi({ puente_hdmi: v.startsWith("cam:") ? v.slice(4) : v });
+  else if (v === "no") guardarHdmi({ hdmi: false });
+  else guardarHdmi({ hdmi: true, hdmi_fuente: v === "auto" ? "auto" : v.slice(4) });
+});
 $("hdmiConsola").addEventListener("change", () => guardarHdmi({ hdmi_consola: $("hdmiConsola").value }));
 $("btHdmiReboot").addEventListener("click", async () => {
   if (!confirm(t("confirm_reboot"))) return;
