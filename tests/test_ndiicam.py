@@ -262,6 +262,13 @@ class JpegDeLaCamara(unittest.TestCase):
         self.assertEqual(fuente.muestreo_jpeg(self.jpeg(hv=0x11)), "YCbCr-4:4:4")
         self.assertEqual(fuente.muestreo_jpeg(self.jpeg(componentes=1)), "GRAYSCALE")
 
+    def test_cabecera_larga(self):
+        # cámaras como la Pocket meten segmentos APP grandes antes del SOF0: hay que
+        # mirar el JPEG entero, no solo el principio
+        j = self.jpeg()
+        app = b"\xff\xe1" + (6000).to_bytes(2, "big") + b"\x00" * 5998
+        self.assertEqual(fuente.muestreo_jpeg(j[:2] + app + j[2:]), "YCbCr-4:2:0")
+
     def test_progresivo_o_roto(self):
         self.assertIsNone(fuente.muestreo_jpeg(self.jpeg(marca_sof=0xC2)))   # progresivo: la GPU no
         self.assertIsNone(fuente.muestreo_jpeg(b"no es un jpeg"))

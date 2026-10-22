@@ -481,7 +481,7 @@ class DecoGPU(Reparto):
         buf = sink.emit("pull-sample").get_buffer()
         if self.modo is None:
             ok, info = buf.map(Gst.MapFlags.READ)
-            muestreo = muestreo_jpeg(bytes(info.data[:4096])) if ok else None
+            muestreo = muestreo_jpeg(bytes(info.data)) if ok else None
             if ok:
                 buf.unmap(info)
             if muestreo:
@@ -598,7 +598,7 @@ class SalidaGPU:
               and time.monotonic() >= self.espera_hasta):
             ok, mapa = buf.map(Gst.MapFlags.READ)
             if ok:
-                self.primer_jpeg = bytes(mapa.data[:4096])
+                self.primer_jpeg = bytes(mapa.data)
                 buf.unmap(mapa)
                 self.creando = True
                 GLib.idle_add(self._crear)
