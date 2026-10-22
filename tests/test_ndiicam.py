@@ -38,6 +38,7 @@ import seguridad  # noqa: E402
 import sistema  # noqa: E402
 import panel  # noqa: E402
 import gpu  # noqa: E402
+import rutas  # noqa: E402
 
 
 class Utilidades(unittest.TestCase):
@@ -941,6 +942,138 @@ class ProgramaFinal(unittest.TestCase):
     def test_grabaciones_mkv(self):
         self.assertTrue(nucleo.NOMBRE_GRABACION.match("programa_2026-10-22_16-25-04.mkv"))
         self.assertFalse(nucleo.NOMBRE_GRABACION.match("../x.mkv"))
+
+
+class Rutas(unittest.TestCase):
+    """Entradas → rutas → salidas, traducido a procesos."""
+
+    ENT = [
+        {"id": "atem", "tipo": "ingesta", "nombre": "ATEM", "clave": "K1"},
+        {"id": "x32", "tipo": "usb_audio", "nombre": "X32", "dev": "plughw:CARD=X32,DEV=0"},
+        {"id": "pocket", "tipo": "usb_cam", "nombre": "Pocket", "audio_dev": "plughw:CARD=Pocket,DEV=0"},
+        {"id": "mview", "tipo": "usb_cam", "nombre": "Multiview"},
+        {"id": "obs", "tipo": "ndi", "nombre": "OBS", "fuente": "PC (OBS)"},
+    ]
+
+    def ruta(self, **k):
+        r = {"id": "r1", "nombre": "Culto", "video": "atem", "audio": "x32", "ganancia": -3,
+             "retraso": 520, "salidas": [{"tipo": "obs"}, {"tipo": "ndi", "nombre": "Culto"},
+                                         {"tipo": "grabar"}]}
+        r.update(k)
+        return r
+
+    def plan(self, lista, potente=True):
+        limpias, err = rutas.validar(lista, self.ENT)
+        return limpias, err, rutas.plan(limpias, self.ENT, potente, err)
+
+    def test_camino(self):
+        self.assertEqual(rutas.camino("Culto de las 11"), "culto-de-las-11")
+        self.assertEqual(rutas.camino("Cámara ñ"), "camara-n")
+        self.assertEqual(rutas.camino("culto", {"culto"}), "culto-2")
+        self.assertEqual(rutas.camino("¡¡!!"), "ruta")
+
+    def test_culto_atem_con_consola(self):
+        r, err, p = self.plan([self.ruta()])
+        self.assertEqual(err, {})
+        clases = {x["clase"]: x for x in p["procesos"]}
+        prog = clases["programa"]
+        self.assertEqual(prog["entrada"], "live/K1")
+        self.assertEqual(prog["publicar"], "live/culto")
+        self.assertEqual(prog["audio"], {"de": "aparte", "dev": "plughw:CARD=X32,DEV=0",
+                                         "ganancia": -3, "mudo": False, "retraso": 520})
+        rx = clases["receptor"]     # el NDI sale del programa ya con la consola
+        self.assertEqual((rx["fuente"], rx["ndi"], rx["hdmi"]), ("live/culto", "Culto", False))
+        self.assertEqual(p["mediamtx"]["publicaciones"], [{"camino": "live/culto", "prefijo": "culto"}])
+        grab = clases["relevo"]     # la grabación lee el programa, sin recodificar
+        self.assertEqual((grab["modo"], grab["desde"], grab["prefijo"], grab["formato"]),
+                         ("grabar", "live/culto", "culto", "mp4"))
+        self.assertEqual(p["mediamtx"]["ingestas"], ["live/K1"])
+
+    def test_multiview_al_monitor(self):
+        _, err, p = self.plan([self.ruta(id="r2", nombre="Operador", video="mview", audio="",
+                                         salidas=[{"tipo": "hdmi"}])])
+        self.assertEqual(err, {})
+        (cam,) = p["procesos"]
+        self.assertEqual((cam["clase"], cam["cam"], cam["ndi"], cam["hdmi"], cam["publicar"]),
+                         ("camara", "mview", None, True, None))
+        self.assertIsNone(cam["audio"]["de"])
+        self.assertFalse(p["mediamtx"]["publicaciones"])
+
+    def test_camara_con_su_micro_a_ndi_y_youtube(self):
+        _, err, p = self.plan([self.ruta(video="pocket", audio="pocket", retraso=300, salidas=[
+            {"tipo": "ndi", "nombre": "Pocket"}, {"tipo": "rtmp", "url": "rtmp://a.rtmp.youtube.com/live2/k"}])])
+        self.assertEqual(err, {})
+        cam = next(x for x in p["procesos"] if x["clase"] == "camara")
+        self.assertEqual(cam["audio"]["de"], "propio")
+        self.assertEqual(cam["audio"]["dev"], "plughw:CARD=Pocket,DEV=0")
+        self.assertEqual(cam["publicar"], "live/culto")     # YouTube sale del programa publicado
+        relevo = next(x for x in p["procesos"] if x["clase"] == "relevo")
+        self.assertEqual((relevo["modo"], relevo["desde"], relevo["url"]),
+                         ("rtmp", "live/culto", "rtmp://a.rtmp.youtube.com/live2/k"))
+
+    def test_fuente_ndi_a_monitor_y_grabacion(self):
+        _, err, p = self.plan([self.ruta(video="obs", audio="obs", salidas=[{"tipo": "hdmi"}, {"tipo": "grabar"}])])
+        self.assertEqual(err, {})
+        clases = sorted(x["clase"] for x in p["procesos"])
+        self.assertEqual(clases, ["receptor", "reemision", "relevo"])
+
+    def test_errores(self):
+        casos = [
+            (self.ruta(video=""), "sin_imagen"),
+            (self.ruta(video="x32"), "imagen_no_valida"),          # una interfaz de audio no da imagen
+            (self.ruta(audio="mview"), "audio_no_valido"),         # el multiview no tiene micro
+            (self.ruta(salidas=[]), "sin_salidas"),
+            (self.ruta(video="obs", salidas=[{"tipo": "ndi"}]), "ndi_a_ndi"),
+            (self.ruta(salidas=[{"tipo": "rtmp", "url": "http://no"}]), "url_rtmp_invalida"),
+        ]
+        for r, codigo in casos:
+            _, err, _ = self.plan([r])
+            self.assertIn(codigo, err.get("r1", []), codigo)
+
+    def test_un_solo_monitor_y_ndi_sin_repetir(self):
+        a = self.ruta(id="a", nombre="A", video="pocket", salidas=[{"tipo": "hdmi"}, {"tipo": "ndi", "nombre": "X"}])
+        b = self.ruta(id="b", nombre="B", video="mview", salidas=[{"tipo": "hdmi"}, {"tipo": "ndi", "nombre": "x"}])
+        limpias, err, p = self.plan([a, b])
+        self.assertEqual(err["b"], ["hdmi_ocupado", "ndi_repetido"])
+        self.assertEqual([s["tipo"] for s in limpias[1]["salidas"]], ["ndi"])   # el monitor es de «A»
+        self.assertTrue(next(x for x in p["procesos"] if x["ruta"] == "a")["hdmi"])
+
+    def test_rutas_paradas_y_lite(self):
+        a = self.ruta(id="a", nombre="A", video="pocket", salidas=[{"tipo": "ndi"}])
+        b = self.ruta(id="b", nombre="B", video="mview", salidas=[{"tipo": "hdmi"}])
+        c = self.ruta(id="c", nombre="C", video="", salidas=[{"tipo": "hdmi"}])
+        _, _, p = self.plan([a, b, c], potente=False)
+        self.assertEqual((p["activas"], p["pausadas"]), (["a"], ["b", "c"]))
+        _, _, p = self.plan([a, b, c], potente=True)
+        self.assertEqual((p["activas"], p["pausadas"]), (["a", "b"], ["c"]))
+        _, _, p = self.plan([{**a, "activa": False}])
+        self.assertEqual(p["pausadas"], ["a"])
+
+    def test_desde_el_modo_puente(self):
+        cfg = {"modo": "puente", "puente_clave": "K9", "programa_audio": "X32", "programa_retraso": 450,
+               "programa_grabar": True, "puente_hdmi": "mview", "simultaneo": True}
+        cams = {"mview": {"nombre": "ATEM multiview"}}
+        red, lista = rutas.desde_modos(cfg, cams, lambda i: {"activa": True, "solo_monitor": True}, ["X32"])
+        self.assertEqual(red, [{"id": "atem", "tipo": "ingesta", "nombre": "ATEM", "clave": "K9"}])
+        prog, mview = lista
+        self.assertEqual((prog["video"], prog["audio"], prog["retraso"]), ("atem", "audio:X32", 450))
+        self.assertEqual([s["tipo"] for s in prog["salidas"]], ["obs", "ndi", "grabar"])
+        self.assertEqual([s["tipo"] for s in mview["salidas"]], ["hdmi"])   # el multiview al monitor
+
+    def test_desde_el_modo_emisor(self):
+        cfg = {"modo": "emisor", "hdmi": True, "hdmi_fuente": "auto"}
+        cams = {"a": {"nombre": "Pocket"}, "b": {"nombre": "Webcam"}}
+        aj = {"a": {"activa": True, "ndi_nombre": "NDIICAM", "audio": "auto", "gpu_salida": "grabar"},
+              "b": {"activa": False}}
+        red, lista = rutas.desde_modos(cfg, cams, lambda i: aj[i], [])
+        self.assertEqual(red, [])
+        (r,) = lista
+        self.assertEqual((r["video"], r["audio"]), ("a", "a"))
+        self.assertEqual([s["tipo"] for s in r["salidas"]], ["ndi", "hdmi", "grabar"])
+
+    def test_caminos_unicos(self):
+        limpias, _, _ = self.plan([self.ruta(id="a"), self.ruta(id="b")])
+        self.assertEqual([r["camino"] for r in limpias], ["culto", "culto-2"])
 
 
 if __name__ == "__main__":

@@ -50,11 +50,16 @@ def descripcion(cfg):
         desc += (f"alsasrc name=asrc device={cfg['audio']}"
                  f" ! queue name=qa max-size-time={(RETRASO_MAX_MS + 500) * 1000000} leaky=downstream"
                  " ! audioconvert ! audioresample ! audio/x-raw,rate=48000,channels=2"
-                 " ! identity name=retraso"
+                 " ! volume name=vol ! identity name=retraso"
                  " ! level name=nivel interval=200000000 post-messages=true"
                  " ! audioconvert ! voaacenc bitrate=192000 ! aacparse name=ap ! tee name=ta ")
     else:
-        desc += f"d.audio ! {cola} name=qa ! aacparse name=ap ! tee name=ta "
+        # el del ATEM: se decodifica y se vuelve a codificar (cuesta poco) para poder
+        # ajustarle la ganancia, silenciarlo y medir su nivel
+        desc += (f"d.audio ! {cola} name=qa ! aacparse ! avdec_aac ! audioconvert ! audioresample"
+                 " ! audio/x-raw,rate=48000,channels=2 ! volume name=vol"
+                 " ! level name=nivel interval=200000000 post-messages=true"
+                 " ! audioconvert ! voaacenc bitrate=192000 ! aacparse name=ap ! tee name=ta ")
     desc += ("flvmux name=m streamable=true latency=500000000"
              f" ! rtmp2sink name=out location={cfg['salida']} async-connect=true sync=false "
              f"tv. ! {cola} ! m.video ta. ! {cola} ! m.audio ")
@@ -121,6 +126,12 @@ def main():
             liberar_disco(d, RESERVA)
             return os.path.join(d, f"programa_{time.strftime('%Y-%m-%d_%H-%M-%S')}.mkv")
         p.get_by_name("rec").connect("format-location", nombre)
+    vol = p.get_by_name("vol")
+
+    def ganancia(db, mudo):
+        vol.set_property("volume", 10 ** (max(-60.0, min(24.0, float(db))) / 20))
+        vol.set_property("mute", bool(mudo))
+    ganancia(cfg.get("ganancia") or 0, cfg.get("mudo"))
     retraso = p.get_by_name("retraso")
     if retraso is not None:
         retraso.get_static_pad("src").set_offset(
@@ -178,6 +189,8 @@ def main():
             d = json.loads(linea)
         except ValueError:
             return True
+        if "ganancia" in d or "mudo" in d:
+            ganancia(d.get("ganancia", 0), d.get("mudo", False))
         if "retraso_audio" in d and retraso is not None:
             # en marcha, sin cortar: se afina de oído
             retraso.get_static_pad("src").set_offset(

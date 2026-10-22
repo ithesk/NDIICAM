@@ -37,6 +37,30 @@ def conf_mediamtx(clave, reparto=False):
     return conf
 
 
+def conf_mediamtx_rutas(ingestas, publicaciones, hls=True):
+    """MediaMTX como bus de las rutas. ingestas: caminos donde publican de fuera (un
+    ATEM, OBS, un móvil: live/<clave>), los únicos que se pueden publicar desde la
+    red. publicaciones: los programas de las rutas (live/<camino>), que solo publica
+    este equipo. Leer se puede todo y desde cualquier sitio: es lo que se reparte
+    (OBS por RTMP, la TV y el móvil por HLS, vMix y VLC por SRT)."""
+    conf = ("# generado por NDIICAM (rutas); se rehace cuando cambian\n"
+            "logLevel: warn\napi: yes\napiAddress: 127.0.0.1:9997\n"
+            "rtsp: no\nwebrtc: no\nmoq: no\nplayback: no\n"
+            f"rtmp: yes\nrtmpAddress: :{PUERTO_RTMP}\n"
+            f"srt: yes\nsrtAddress: :{PUERTO_SRT}\n")
+    conf += (f"hls: yes\nhlsAddress: :{PUERTO_HLS}\nhlsAllowOrigins: ['*']\n" if hls else "hls: no\n")
+    conf += ("authInternalUsers:\n"
+             "- user: any\n  pass:\n  ips: ['127.0.0.1', '::1']\n  permissions:\n"
+             "  - action: publish\n  - action: read\n  - action: api\n"
+             "- user: any\n  pass:\n  ips: []\n  permissions:\n")
+    for c in ingestas:
+        conf += f"  - action: publish\n    path: {c}\n"
+    conf += "  - action: read\npaths:\n"
+    for c in list(dict.fromkeys([*ingestas, *publicaciones])):
+        conf += f"  {c}: {{}}\n"
+    return conf
+
+
 class ServidorPuente:
     """MediaMTX, el servidor donde publica el ATEM en modo puente. Solo RTMP y
     SRT hacia fuera, la API en local, y una única ruta: live/<clave>; lo demás
@@ -45,11 +69,46 @@ class ServidorPuente:
     def __init__(self):
         self.proc = None
         self.clave = None
+        self.conf = None
         self.reparto = False
         self.reintento = 0.0
 
     def disponible(self):
         return os.access(MEDIAMTX, os.X_OK)
+
+    def arrancar_conf(self, conf):
+        """Con una configuración dada (la de las rutas): se rehace solo si cambia."""
+        if self.proc is not None and self.proc.poll() is None and self.conf == conf:
+            return
+        if time.time() < self.reintento:
+            return
+        self.detener()
+        os.makedirs("/run/ndiicam", exist_ok=True)
+        ruta = "/run/ndiicam/mediamtx.yml"
+        with open(ruta, "w") as f:
+            f.write(conf)
+        self.conf, self.clave = conf, None
+        self.proc = subprocess.Popen([MEDIAMTX, ruta], cwd="/run/ndiicam",
+                                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        self.reintento = time.time() + 5
+        evento("puente_servidor", puerto=PUERTO_RTMP)
+
+    def ruta_info(self, camino):
+        """Si alguien publica en ese camino, desde dónde, qué manda y cuántos leen."""
+        if self.proc is None or self.proc.poll() is not None:
+            return {"activo": False, "publicando": False}
+        r = self._api(f"/v3/paths/get/{camino}")
+        if not r or not r.get("ready"):
+            return {"activo": True, "publicando": False}
+        fuente = r.get("source") or {}
+        res = {"activo": True, "publicando": True, "pistas": r.get("tracks") or [],
+               "protocolo": {"rtmpConn": "RTMP", "srtConn": "SRT"}.get(fuente.get("type"), fuente.get("type")),
+               "lectores": len(r.get("readers") or [])}
+        lista = {"rtmpConn": "rtmpconns", "srtConn": "srtconns"}.get(fuente.get("type"))
+        if lista and fuente.get("id"):
+            con = self._api(f"/v3/{lista}/get/{fuente['id']}") or {}
+            res["desde"] = (con.get("remoteAddr") or "").rsplit(":", 1)[0] or None
+        return res
 
     def arrancar(self, clave, reparto=False):
         if (self.proc is not None and self.proc.poll() is None and self.clave == clave
@@ -62,7 +121,7 @@ class ServidorPuente:
         conf = "/run/ndiicam/mediamtx.yml"
         with open(conf, "w") as f:
             f.write(conf_mediamtx(clave, reparto))
-        self.clave, self.reparto = clave, reparto
+        self.clave, self.reparto, self.conf = clave, reparto, None
         self.proc = subprocess.Popen([MEDIAMTX, conf], cwd="/run/ndiicam",
                                      stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         self.reintento = time.time() + 5     # si muere enseguida, no en bucle

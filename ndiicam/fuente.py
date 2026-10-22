@@ -253,13 +253,26 @@ def contar(clave, con_bytes=False):
     return probe
 
 
+def con_ndi(cfg):
+    """Si esta cámara sale por NDI. Sin NDI (solo monitor, o una ruta que solo publica
+    o graba) la imagen va al HDMI o a ninguna parte, y el audio sigue para la GPU."""
+    return cfg.get("ndi", True) and not cfg.get("solo_monitor")
+
+
 def tramo_salida(cfg):
-    """De los fotogramas decodificados al NDI (y al HDMI si toca)."""
+    """De los fotogramas decodificados al NDI (y al HDMI si toca). El sumidero final
+    se llama siempre 'sink' (el NDI, o el HDMI/fakesink sin NDI) para que contadores
+    y retardo funcionen igual."""
+    ndi = con_ndi(cfg)
     # colas entre etapas: conversión y envío en hilos distintos (en un solo
     # hilo un Atom no pasa de ~22 fps a 1080p)
     video = (f"queue name=q2 {Q} ! videoconvert n-threads={os.cpu_count() or 2}"
              f" ! video/x-raw,format=UYVY ! queue name=q3 {Q}")
-    if cfg.get("hdmi"):
+    if not ndi:
+        # solo al HDMI (el multiview del ATEM para el operador) o a ninguna parte
+        video += (f" ! kmssink name=sink sync=false connector-id={cfg['hdmi']}" if cfg.get("hdmi")
+                  else " ! fakesink name=sink sync=false async=false")
+    elif cfg.get("hdmi"):
         # copia al HDMI como monitor de encuadre: sin sincronizar y con una cola
         # que descarta, para no frenar nunca el NDI. UYVY va a un plano de vídeo
         # de la GPU sin pasar por la CPU. Esos planos no siempre escalan (Cherry
@@ -268,30 +281,33 @@ def tramo_salida(cfg):
         video += (" ! tee name=t t. ! queue name=qh max-size-buffers=1 leaky=downstream"
                   f" ! kmssink name=hdmi sync=false connector-id={cfg['hdmi']}"
                   " t. ! queue name=q4 max-size-buffers=2 leaky=downstream")
-    if cfg.get("solo_monitor"):
-        # solo al HDMI (el multiview del ATEM para el operador): sin NDI ni audio. El
-        # sumidero es el propio HDMI, con su nombre de 'sink' para que todo lo demás
-        # (contadores, retardo) funcione igual
-        return (f"queue name=q2 {Q} ! videoconvert n-threads={os.cpu_count() or 2}"
-                f" ! video/x-raw,format=UYVY ! queue name=q3 {Q}"
-                f" ! kmssink name=sink sync=false connector-id={cfg['hdmi']}")
-    if cfg.get("audio"):
-        # Retraso del audio (audio de otra interfaz USB, que llega antes que la imagen
-        # de la cámara): se desplaza el tiempo del audio en el pad de 'retraso' (ver
-        # fijar_retraso). La cola de entrada aguanta lo que se retrase y medio segundo
-        # más. Con baja latencia el combinador no espera por tiempos: ahí el retraso
-        # es real, una cola que no suelta nada hasta tener ese tanto
-        real = (" ! queue name=qr max-size-time=0 max-size-buffers=0 max-size-bytes=0"
-                if cfg.get("baja_latencia") else "")
-        return (f"{video} ! c.video "
-                f"alsasrc name=asrc ! queue name=qa max-size-time={(RETRASO_MAX_MS + 500) * 1000000}"
-                " leaky=downstream ! audioconvert ! audioresample"
-                " ! capsfilter name=af caps=audio/x-raw,format=F32LE,rate=48000"
-                " ! identity name=retraso"
-                # 'level' mide el nivel (dBFS) cada 200 ms para el medidor del panel
-                " ! level name=nivel interval=200000000 post-messages=true"
-                f"{real} ! c.audio ndisinkcombiner name=c ! ndisink name=sink")
-    return f"{video} ! ndisink name=sink"
+    if not cfg.get("audio"):
+        return video if not ndi else f"{video} ! ndisink name=sink"
+    # Retraso del audio (audio de otra interfaz USB, que llega antes que la imagen
+    # de la cámara): se desplaza el tiempo del audio en el pad de 'retraso' (ver
+    # fijar_retraso). La cola de entrada aguanta lo que se retrase y medio segundo
+    # más. Con baja latencia el combinador no espera por tiempos: ahí el retraso
+    # es real, una cola que no suelta nada hasta tener ese tanto. La ganancia, antes
+    # de 'af': así le llega también a la salida por GPU
+    real = (" ! queue name=qr max-size-time=0 max-size-buffers=0 max-size-bytes=0"
+            if cfg.get("baja_latencia") and ndi else "")
+    audio = (f"alsasrc name=asrc ! queue name=qa max-size-time={(RETRASO_MAX_MS + 500) * 1000000}"
+             " leaky=downstream ! audioconvert ! audioresample ! volume name=vol"
+             " ! capsfilter name=af caps=audio/x-raw,format=F32LE,rate=48000"
+             " ! identity name=retraso"
+             # 'level' mide el nivel (dBFS) cada 200 ms para el medidor del panel
+             " ! level name=nivel interval=200000000 post-messages=true" + real)
+    if ndi:
+        return f"{video} ! c.video {audio} ! c.audio ndisinkcombiner name=c ! ndisink name=sink"
+    return f"{video} {audio} ! fakesink name=asink sync=false async=false"
+
+
+def fijar_ganancia(flujo, db, mudo=False):
+    """Ganancia (dB) y silencio del audio; se puede cambiar en marcha."""
+    vol = flujo.elemento("vol")
+    if vol is not None:
+        vol.set_property("volume", 10 ** (max(-60.0, min(24.0, float(db))) / 20))
+        vol.set_property("mute", bool(mudo))
 
 
 def tramo_camara(cfg):
@@ -789,7 +805,7 @@ def main():
     else:
         flujo = Directo(cfg)
     flujo.elemento("src").set_property("device", cfg["dev"])
-    if not cfg.get("solo_monitor"):
+    if con_ndi(cfg):
         flujo.elemento("sink").set_property("ndi-name", cfg["nombre"])
     combinador = flujo.elemento("c")
     if cfg.get("baja_latencia") and combinador is not None:
@@ -802,6 +818,7 @@ def main():
     if cfg.get("audio"):
         flujo.elemento("asrc").set_property("device", cfg["audio"])
     retraso = fijar_retraso(flujo, cfg.get("retraso_audio") or 0)
+    fijar_ganancia(flujo, cfg.get("ganancia") or 0, cfg.get("mudo"))
 
     flujo.elemento("src").get_static_pad("src").add_probe(
         Gst.PadProbeType.BUFFER, contar("cam", con_bytes=True))
@@ -813,8 +830,10 @@ def main():
         Gst.PadProbeType.BUFFER,
         sonda_retardo(flujo.salida if isinstance(flujo, Reparto) else flujo.p, retardo))
     if cfg.get("audio"):
-        flujo.elemento("c").get_static_pad("audio").add_probe(
-            Gst.PadProbeType.BUFFER, contar("aud"))
+        # el audio se cuenta donde acaba: en el combinador NDI o, sin NDI, en su sumidero
+        destino = flujo.elemento("c").get_static_pad("audio") if con_ndi(cfg) else \
+            flujo.elemento("asink").get_static_pad("sink")
+        destino.add_probe(Gst.PadProbeType.BUFFER, contar("aud"))
     for cola in ("q1", "q2", "q3"):
         flujo.elemento(cola).connect("overrun", descartado)
 
@@ -899,6 +918,8 @@ def main():
             ns = fijar_retraso(flujo, d["retraso_audio"])
             for s in salidas:
                 s.retraso_ns = ns
+        if "ganancia" in d or "mudo" in d:
+            fijar_ganancia(flujo, d.get("ganancia", 0), d.get("mudo", False))
         if "calibrar" in d:
             calibrar(flujo, float(d["calibrar"]))
         if "gpu_activa" in d:

@@ -36,6 +36,7 @@ FUENTE_PY = os.path.join(AQUI, "fuente.py")
 RECEPTOR_PY = os.path.join(AQUI, "receptor.py")
 REEMISION_PY = os.path.join(AQUI, "reemision.py")
 PROGRAMA_PY = os.path.join(AQUI, "programa.py")
+RELEVO_PY = os.path.join(AQUI, "relevo.py")
 REPOSO_PY = os.path.join(AQUI, "reposo.py")     # pantalla de ayuda cuando el HDMI está libre
 IDIOMAS = ("es", "en")
 MODOS = ("emisor", "receptor", "puente")   # un Atom no da para emitir y recibir a la vez
@@ -74,7 +75,9 @@ POR_DEFECTO = {"ndi_nombre": "NDIICAM", "resolucion": "1080p", "fps": 30, "audio
                # programa final del puente (Pro): audio de la consola (id ALSA, "" = el del
                # ATEM), su retraso, grabarlo en MKV y qué sale por el HDMI
                "programa_audio": "", "programa_retraso": 0, "programa_grabar": False,
-               "puente_hdmi": "programa"}
+               "puente_hdmi": "programa",
+               # motor "modos" (emisor, receptor, puente) o "rutas" (entradas → rutas → salidas)
+               "motor": "modos", "entradas_red": [], "rutas": []}
 AP_CLAVE_DEFECTO = POR_DEFECTO["ap_clave"]
 
 # decodificadores JPEG por fuente: jpegdec va en un solo hilo y con imágenes muy

@@ -11,11 +11,12 @@ import nucleo
 from nucleo import (ESTADO, FPS_VALIDOS, GRABACIONES, NOMBRE_GRABACION, PUERTO_HLS, PUERTO_RTMP,
     PUERTO_SRT, RESOLUCIONES, RUTA_PROGRAMA, VERSION, bytes_red, conexiones_por_pid, evento, ip_de, leer,
     nombre_de)
-from camaras import modo_consola_activo, pantallas
+from camaras import camaras as camaras_conectadas, modo_consola_activo, pantallas
 from gpu import (capacidad_gpu, capacidad_vpp, decodificador_h264, energia_rapl,
     edicion, simultaneo, tiempos_cpu, tiempos_gpu, uso_gpu, vatios)
 from puente import PUENTE
 from supervisor import ocultar_clave_rtmp
+import rutas as rutas_mod
 import sistema
 
 
@@ -30,6 +31,7 @@ def medidor():
             nucleo.FUENTES.receptor.medir(t)
             nucleo.FUENTES.reemision.medir(t)
             nucleo.FUENTES.programa.medir(t)
+            nucleo.FUENTES.motor.medir(t)
             if prev:
                 dt = t - prev["t"]
                 potencia = {k: vatios(v, prev["rapl"].get(k), dt) for k, v in rapl.items()}
@@ -74,6 +76,31 @@ def grabaciones():
         lista.append({"nombre": n, "bytes": st.st_size, "fecha": st.st_mtime})
     lista.sort(key=lambda x: x["fecha"], reverse=True)
     return {"lista": lista, "libre": shutil.disk_usage(GRABACIONES).free}
+
+def estado_rutas():
+    """Todo lo que necesita el panel de rutas: entradas (con lo que llega por la red),
+    rutas guardadas, sus errores y cómo va cada una y cada salida."""
+    cfg = nucleo.CONF.get()
+    mot = nucleo.FUENTES.motor
+    # siempre desde la configuración (lo recién guardado); lo que corre, del motor
+    entradas = mot.entradas_actuales({c["id"]: c for c in camaras_conectadas()}, cfg)
+    limpias, errores = rutas_mod.validar(cfg.get("rutas") or [], entradas)
+    est, activas, pausadas = {}, [], []
+    if cfg.get("motor") == "rutas" and getattr(mot, "limpias", None) is not None:
+        est, activas, pausadas = mot.estado(), mot.ultimo["activas"], mot.ultimo["pausadas"]
+        for rid, e in mot.errores.items():      # los que solo ve el motor (sin GPU...)
+            errores[rid] = sorted(set(errores.get(rid, [])) | set(e))
+    ents = []
+    for e in entradas:
+        e = dict(e)
+        if e["tipo"] == "ingesta":
+            e["llega"] = PUENTE.ruta_info(f"live/{e['clave']}")
+        ents.append(e)
+    return {"motor": cfg.get("motor", "modos"), "entradas": ents, "rutas": limpias,
+            "errores": errores, "estado": est, "activas": activas, "pausadas": pausadas,
+            "red_ndi": nucleo.BUSCADOR.lista() if nucleo.BUSCADOR else [],
+            "puertos": {"rtmp": PUERTO_RTMP, "srt": PUERTO_SRT, "hls": PUERTO_HLS},
+            "limite_lite": rutas_mod.LIMITE_LITE, "pro": simultaneo(cfg)}
 
 def estado_programa(cfg):
     """El programa final del puente (Pro): vídeo del ATEM + audio de la consola."""

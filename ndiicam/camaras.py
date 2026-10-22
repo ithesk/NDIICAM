@@ -34,6 +34,10 @@ def modos_captura(dev):
             m = re.search(r"\(([\d.]+) fps\)", linea)
             if m and fmt in ("MJPG", "YUYV") and tam:
                 modos.add((tam[0], tam[1], round(float(m.group(1))), fmt))
+        if not modos:
+            # sin modos todavía (una cámara que tarda en arrancar): no se guarda, que
+            # si no quedaría invisible hasta que el nodo cambie
+            return []
         _cache_modos[clave] = sorted(modos)
     return _cache_modos[clave]
 

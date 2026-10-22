@@ -11,11 +11,13 @@ import time
 
 import nucleo
 from nucleo import (AP_IF, AP_IP, FUENTE_PY, GRABACIONES, MAX_DECODIFICADORES, PUERTO_RTMP,
-    NOMBRE_NDI_PUENTE, PROGRAMA_PY, PUERTO_RTMP_LOCAL, RECEPTOR_PY, REEMISION_PY, REPOSO_PY,
-    RESOLUCIONES, RUTA_PROGRAMA, SALIDAS_EXTRA, VERSION, conexiones_por_pid, dispositivo_por_defecto, evento, ip_de, ips_propias, leer)
+    NOMBRE_NDI_PUENTE, PROGRAMA_PY, PUERTO_RTMP_LOCAL, RECEPTOR_PY, REEMISION_PY, RELEVO_PY,
+    REPOSO_PY, RESOLUCIONES, RUTA_PROGRAMA, SALIDAS_EXTRA, VERSION, conexiones_por_pid,
+    dispositivo_por_defecto, evento, ip_de, ips_propias, leer)
 from camaras import audio_dispositivos, audio_hdmi, camaras, pantallas, resolucion_pantalla
 from gpu import capacidad_gpu, capacidad_vpp, decodificador_h264, edicion, entorno_va, simultaneo
-from puente import PUENTE, clave_puente
+import rutas as rutas_mod
+from puente import PUENTE, clave_puente, conf_mediamtx_rutas
 
 
 class Fuente:
@@ -507,6 +509,211 @@ class Auxiliar:
                    consola=bool(self.obj.get("audio")), grabar=bool(self.obj.get("grabar")))
         self.prev = (t, c)
 
+class MotorRutas:
+    """Las rutas (rutas.py) hechas procesos. Cada paso: entradas detectadas + rutas
+    guardadas → plan → arranca lo que falta, para lo que sobra y ajusta en marcha lo
+    que se puede (retraso, ganancia, silencio) sin cortar. Los procesos son los de
+    siempre: Fuente (cámaras), Auxiliar (programa, reemisión, relevo) y Receptor."""
+
+    VIVOS = ("retraso_audio", "ganancia", "mudo")    # se cambian sin reiniciar
+
+    def __init__(self, sup):
+        self.sup = sup          # Fuentes: config, audio, objetivo() de las cámaras
+        self.procs = {}         # clave -> objeto de proceso
+        self.ultimo = {"procesos": [], "activas": [], "pausadas": [], "mediamtx": {}}
+        self.errores = {}
+        self.entradas = []
+        self.hdmi = False       # alguna ruta tiene el monitor
+
+    def entradas_actuales(self, cams, cfg):
+        """Las cámaras e interfaces de audio conectadas, y las entradas de red guardadas."""
+        audio = self.sup.audio
+        ents = []
+        for c in cams.values():
+            mic = next((a["dev"] for a in audio if a["usb"] and a["usb"] == c.get("usb")), None)
+            ents.append({"id": c["id"], "tipo": "usb_cam", "nombre": c["nombre"], "dev": c["dev"],
+                         "audio_dev": mic})
+        de_camara = {c.get("usb") for c in cams.values() if c.get("usb")}
+        for a in audio:
+            if not (a["usb"] and a["usb"] in de_camara):
+                ents.append({"id": "audio:" + a["id"], "tipo": "usb_audio", "nombre": a["nombre"],
+                             "dev": a["dev"]})
+        for e in cfg.get("entradas_red") or []:
+            ents.append(dict(e))
+        return ents
+
+    def paso(self, cfg, cams, monitor):
+        self.entradas = self.entradas_actuales(cams, cfg)
+        limpias, self.errores = rutas_mod.validar(cfg.get("rutas") or [], self.entradas)
+        pl = rutas_mod.plan(limpias, self.entradas, simultaneo(cfg), self.errores)
+        self.ultimo, self.limpias = pl, limpias
+        m = pl["mediamtx"]
+        if m["necesario"] and PUENTE.disponible():
+            PUENTE.arrancar_conf(conf_mediamtx_rutas(m["ingestas"], [x["camino"] for x in m["publicaciones"]]))
+        elif not m["necesario"]:
+            PUENTE.detener()
+        deseados = {}
+        for pr in pl["procesos"]:
+            obj = self.objeto(pr, cfg, cams, monitor)
+            if obj is not None:
+                deseados[pr["clave"]] = (pr, obj)
+        self.hdmi = any(pr.get("hdmi") for pr, _ in deseados.values())
+        for clave in list(self.procs):
+            if clave not in deseados:
+                self.procs.pop(clave).detener()
+        for clave, (pr, obj) in deseados.items():
+            p = self.procs.get(clave)
+            if p is None:
+                p = self.procs[clave] = self.nuevo(pr, cams)
+            if p.proc is not None and p.obj and p.obj != obj:
+                fijo = {k: v for k, v in obj.items() if k not in self.VIVOS}
+                antes = {k: v for k, v in p.obj.items() if k not in self.VIVOS}
+                if fijo == antes:
+                    p.orden({k: obj[k] for k in self.VIVOS if k in obj})   # en marcha
+                    p.obj = obj
+                else:
+                    p.detener()
+                    evento("aplicando", fuente=pr["nombre_ruta"])
+            if p.proc is None and time.time() >= p.reintento:
+                p.arrancar(obj)
+
+    def nuevo(self, pr, cams):
+        if pr["clase"] == "camara":
+            return Fuente(cams[pr["cam"]])
+        if pr["clase"] == "receptor":
+            return Receptor()
+        return Auxiliar({"programa": PROGRAMA_PY, "reemision": REEMISION_PY,
+                         "relevo": RELEVO_PY}[pr["clase"]], pr["clase"])
+
+    def objeto(self, pr, cfg, cams, monitor):
+        """Lo que se le pasa al proceso: el mismo formato que en los modos."""
+        local = PUERTO_RTMP_LOCAL
+        a = pr.get("audio") or {}
+        con_audio = a.get("de") is not None
+        vivos = {"retraso_audio": a.get("retraso", 0) if con_audio else 0,
+                 "ganancia": a.get("ganancia", 0), "mudo": bool(a.get("mudo")) or not con_audio}
+        hdmi = monitor["id"] if pr.get("hdmi") and monitor else None
+        if pr["clase"] == "camara":
+            # el proceso que ya corre (lo que aprendió: hilos, GPU) o uno nuevo
+            f = self.procs.get(pr["clave"]) or Fuente(cams[pr["cam"]])
+            aj = {**self.sup.config.fuente(pr["cam"]), "solo_monitor": False, "gpu_extra": [],
+                  "gpu_salida": "rtmp" if pr["publicar"] else "no",
+                  "rtmp_url": f"{local}/{pr['publicar']}" if pr["publicar"] else ""}
+            obj = self.sup.objetivo(f, aj)
+            if pr["publicar"] and not obj["gpu"]:
+                self.errores.setdefault(pr["ruta"], []).append("sin_gpu")   # no se puede codificar
+            obj.update(nombre=pr["ndi"] or cams[pr["cam"]]["nombre"], ndi=bool(pr["ndi"]),
+                       audio=a.get("dev") if con_audio else None, hdmi=hdmi,
+                       solo_monitor=False, preview=ruta_preview(pr["cam"]), **vivos)
+            if not obj["audio"]:
+                obj.update(retraso_audio=0, baja_latencia=False)
+            return obj
+        if pr["clase"] == "programa":
+            return {"nombre": pr["nombre_ruta"], "entrada": f"{local}/{pr['entrada']}",
+                    "salida": f"{local}/{pr['publicar']}",
+                    "audio": a.get("dev") if a.get("de") == "aparte" else None, "grabar": None, **vivos}
+        if pr["clase"] == "receptor":
+            if pr["origen"] == "rtmp":
+                if not PUENTE.ruta_lista(pr["fuente"]):
+                    return None         # todavía no publica el programa
+                return {"origen": "puente", "nombre": pr["nombre_ruta"], "url": f"{local}/{pr['fuente']}",
+                        "decodificador": decodificador_h264(), "hdmi": hdmi,
+                        "pantalla": resolucion_pantalla(monitor) if hdmi else None,
+                        "gpu_h264": capacidad_vpp()["h264"], "ndi_nombre": pr["ndi"],
+                        "ndi_audio": True, "audio": audio_hdmi() if hdmi else None}
+            if not hdmi:
+                return None
+            return {"nombre": pr["fuente"], "hdmi": hdmi, "equipo": f"NDIICAM {socket.gethostname()}",
+                    "pantalla": resolucion_pantalla(monitor), "plano": True, "audio": audio_hdmi()}
+        if pr["clase"] == "reemision":
+            cap = capacidad_gpu()
+            if not cap["disponible"]:
+                self.errores.setdefault(pr["ruta"], []).append("sin_gpu")
+                return None
+            return {"nombre": pr["fuente"], "equipo": f"NDIICAM {socket.gethostname()}",
+                    "codificador": cap["codificador"], "vpp": capacidad_vpp()["vpp"], "kbps": 8000,
+                    "salidas": [{"modo": "rtmp", "url": f"{local}/{pr['publicar']}"}],
+                    "audio_dev": a.get("dev") if a.get("de") == "aparte" else None,
+                    "sin_audio": not con_audio, **vivos}
+        if pr["clase"] == "relevo":
+            if not PUENTE.ruta_lista(pr["desde"]):
+                return None             # aún no hay nada que reenviar o grabar
+            obj = {"nombre": pr["nombre_ruta"], "desde": f"{local}/{pr['desde']}", "modo": pr["modo"]}
+            if pr["modo"] == "rtmp":
+                obj["url"] = pr["url"]
+            else:
+                obj.update(dir=GRABACIONES, prefijo=pr["prefijo"], formato=pr["formato"])
+            return obj
+        return None
+
+    def medir(self, t):
+        for p in list(self.procs.values()):
+            p.medir(t)
+
+    def detener(self):
+        for p in self.procs.values():
+            p.detener()
+        self.procs = {}
+
+    def calibrar(self, ruta, segundos=8):
+        p = self.procs.get(f"cam:{ruta}")
+        if p is None or p.proc is None or not (p.obj or {}).get("audio"):
+            return False
+        p.calibracion = {"estado": "midiendo", "hasta": time.time() + segundos}
+        p.orden({"calibrar": segundos})
+        return True
+
+    def estado(self):
+        """Por ruta: si va, qué le pasa y cómo está cada salida."""
+        res = {}
+        por_ruta = {}
+        for clave, p in self.procs.items():
+            por_ruta.setdefault(clave.split(":")[1], []).append((clave, p))
+        for r in getattr(self, "limpias", []):
+            rid = r["id"]
+            err = self.errores.get(rid, [])
+            if rid in self.ultimo["pausadas"]:
+                est = "pausada"
+            elif not por_ruta.get(rid):
+                est = "esperando"
+            else:
+                ests = [estado_proceso(p) for _, p in por_ruta[rid]]
+                est = "error" if "error" in ests else "en_marcha" if all(e == "ok" for e in ests) else "esperando"
+            procs = {c.split(":")[0]: p for c, p in por_ruta.get(rid, [])}
+            principal = procs.get("cam") or procs.get("prog") or procs.get("reem") or procs.get("rx")
+            st = getattr(principal, "stats", {}) if principal else {}
+            info = PUENTE.ruta_info(f"live/{r['camino']}") if any(
+                s["tipo"] in rutas_mod.DE_RED for s in r["salidas"]) else {}
+            salidas = {}
+            for s in r["salidas"]:
+                if est == "pausada":
+                    salidas[s["id"]] = "pausada"
+                elif s["tipo"] in ("rtmp", "grabar"):     # su propio relevo
+                    p = self.procs.get(f"relevo:{rid}:{s['id']}")
+                    salidas[s["id"]] = estado_proceso(p) if p else "esperando"
+                elif s["tipo"] in ("obs", "srt"):         # lo sirve MediaMTX
+                    salidas[s["id"]] = "ok" if info.get("publicando") else "esperando"
+                else:                                    # NDI y HDMI: los de la ruta
+                    salidas[s["id"]] = "ok" if est == "en_marcha" else "esperando"
+            res[rid] = {"estado": est, "errores": err, "salidas": salidas,
+                        "lectores": info.get("lectores", 0),
+                        "fps": st.get("fps_enviados", st.get("fps", 0)),
+                        "audio_db": st.get("audio_db"),
+                        "calibracion": getattr(procs.get("cam"), "calibracion", None),
+                        "copia": any(c.startswith("prog:") for c, _ in por_ruta.get(rid, []))}
+        return res
+
+
+def estado_proceso(p):
+    """ok | esperando | error, con los estados de cada clase de proceso."""
+    e = getattr(p, "estado", "")
+    if e in ("emitiendo", "en_hdmi", "recibiendo", "activa"):
+        return "ok"
+    if e == "error":
+        return "error"
+    return "esperando"
+
+
 class Fuentes:
     """Supervisa una Fuente por cámara: arranca, reinicia y para según las
     cámaras presentes y los ajustes."""
@@ -523,10 +730,11 @@ class Fuentes:
         self.reemision = Auxiliar(REEMISION_PY, "reem")  # una fuente NDI grabada o emitida (Pro)
         self.programa = Auxiliar(PROGRAMA_PY, "programa")  # el programa final del puente (Pro)
         self.edicion = None     # lite | pro, según el equipo
+        self.motor = MotorRutas(self)   # con motor "rutas", en vez de los modos
         self.reposo = Reposo()      # y si no, la pantalla de ayuda
 
-    def objetivo(self, f):
-        aj = self.config.fuente(f.cam["id"])
+    def objetivo(self, f, aj=None):
+        aj = aj or self.config.fuente(f.cam["id"])
         modos = f.cam["modos"]
         ancho, alto = RESOLUCIONES.get(aj["resolucion"], RESOLUCIONES["1080p"])
         if not any(m[0] == ancho and m[1] == alto for m in modos):
@@ -654,8 +862,12 @@ class Fuentes:
                    memoria=ed["memoria_gb"], gpu=ed["gpu"], falta=ed["falta"])
         cams = {c["id"]: c for c in camaras()}
         self.audio = audio_dispositivos()
-        # una sola cámara al HDMI: la elegida o, en automático, la primera activa
         cfg = self.config.get()
+        if cfg.get("motor") == "rutas":
+            return self._paso_rutas(cfg, cams)
+        if self.motor.procs:
+            self.motor.detener()        # se vuelve a los modos
+        # una sola cámara al HDMI: la elegida o, en automático, la primera activa
         activas = [i for i in cams if self.config.fuente(i)["activa"]]
         monitor = next((p for p in pantallas() if p["conectado"] and p["id"]), None)
         self.hdmi_conector = monitor["id"] if monitor else None
@@ -781,6 +993,27 @@ class Fuentes:
             if reposo_obj and self.reposo.proc is None and time.time() >= self.reposo.reintento:
                 self.reposo.arrancar(reposo_obj)
             self._grabacion_condicional()
+
+    def _paso_rutas(self, cfg, cams):
+        """Con el motor de rutas: los modos se paran y manda lo que digan las rutas."""
+        monitor = next((p for p in pantallas() if p["conectado"] and p["id"]), None)
+        self.hdmi_conector = monitor["id"] if monitor else None
+        with self.lock:
+            for f in self.fuentes.values():
+                if f.proc is not None:
+                    f.detener()
+            self.fuentes = {}
+            for p in (self.receptor, self.programa, self.reemision):
+                if p.proc is not None:
+                    p.detener()
+            self.motor.paso(cfg, cams, monitor)
+            # el monitor: si ninguna ruta lo usa, la pantalla de ayuda
+            reposo_obj = (None if self.motor.hdmi or not monitor
+                          else self.pantalla_reposo(cfg, cams, monitor))
+            if self.reposo.proc is not None and self.reposo.obj != reposo_obj:
+                self.reposo.detener()
+            if reposo_obj and self.reposo.proc is None and time.time() >= self.reposo.reintento:
+                self.reposo.arrancar(reposo_obj)
 
     def _programa(self, cfg, activo, info_puente):
         """El programa final del puente (Pro): arranca o para programa.py y dice de
@@ -962,6 +1195,7 @@ class Fuentes:
             self.receptor.detener()
             self.reemision.detener()
             self.programa.detener()
+            self.motor.detener()
             self.reposo.detener()
 
     def lista(self):

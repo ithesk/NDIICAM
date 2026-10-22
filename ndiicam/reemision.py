@@ -28,9 +28,11 @@ import gi
 gi.require_version("Gst", "1.0")
 from gi.repository import GLib, Gst  # noqa: E402
 
-from fuente import informar, liberar_disco  # noqa: E402
+from fuente import informar, liberar_disco, nivel_audio  # noqa: E402
+from nucleo import RETRASO_MAX_MS  # noqa: E402
 
 CONTADORES = {"rx": 0, "aud": 0, "out": 0, "bytes": 0}
+NIVEL = {"db_peak": None, "db_rms": None}
 RESERVA = 2 * 1024 ** 3     # al grabar, borrar lo más viejo si queda menos libre
 SEGMENTO = 10 * 60          # duración de cada fichero de grabación, en segundos
 
@@ -48,15 +50,27 @@ def descripcion(cfg):
             "d.video ! queue name=qv max-size-buffers=4 leaky=downstream"
             f" ! {a_nv12} ! {cfg['codificador']} name=enc bitrate={kbps} key-int-max=60"
             " ! tee name=tv "
-            # silencio continuo mezclado con el audio de la fuente, si lo trae
+            # silencio continuo mezclado con el audio (el de la fuente, el de otra
+            # entrada o ninguno): los multiplexores necesitan que siempre llegue algo.
+            # La ganancia, después de mezclar; el retraso, en el pad de 'retraso'
             "audiotestsrc wave=silence is-live=true"
             " ! audio/x-raw,format=F32LE,rate=48000,channels=2,layout=interleaved"
-            " ! audiomixer name=am ! audioconvert ! audioresample"
+            " ! audiomixer name=am ! audioconvert ! audioresample ! volume name=vol"
+            " ! level name=nivel interval=200000000 post-messages=true"
             " ! audio/x-raw,rate=48000,channels=2 ! voaacenc bitrate=128000"
-            " ! tee name=ta "
-            "d.audio ! queue name=qa max-size-time=300000000 leaky=downstream"
-            " ! audioconvert ! audioresample"
-            " ! audio/x-raw,format=F32LE,rate=48000,channels=2,layout=interleaved ! am. ")
+            " ! tee name=ta ")
+    f32 = "audio/x-raw,format=F32LE,rate=48000,channels=2,layout=interleaved"
+    if cfg.get("audio_dev"):
+        # el de otra entrada (la consola por USB); el de la fuente NDI se descarta
+        desc += ("d.audio ! queue ! fakesink sync=false async=false "
+                 f"alsasrc name=asrc device={cfg['audio_dev']}"
+                 f" ! queue name=qa max-size-time={(RETRASO_MAX_MS + 500) * 1000000} leaky=downstream"
+                 f" ! audioconvert ! audioresample ! {f32} ! identity name=retraso ! am. ")
+    elif cfg.get("sin_audio"):
+        desc += "d.audio ! queue name=qa ! fakesink sync=false async=false "
+    else:
+        desc += ("d.audio ! queue name=qa max-size-time=300000000 leaky=downstream"
+                 f" ! audioconvert ! audioresample ! {f32} ! am. ")
     # cada salida con su parser: el MP4 quiere el H.264 y el AAC en un formato
     # (avc, raw) y MPEG-TS y FLV en otro; un parser común no puede dar los dos
     cola = "queue max-size-time=2000000000 leaky=downstream"
@@ -114,6 +128,29 @@ def main():
         return probe
     p.get_by_name("qv").get_static_pad("sink").add_probe(Gst.PadProbeType.BUFFER, contar("rx"))
     p.get_by_name("qa").get_static_pad("sink").add_probe(Gst.PadProbeType.BUFFER, contar("aud"))
+    vol, retraso = p.get_by_name("vol"), p.get_by_name("retraso")
+
+    def ajustar(d):
+        """Ganancia (dB), silencio y retraso (ms) del audio: al arrancar y en marcha."""
+        if "ganancia" in d or "mudo" in d:
+            vol.set_property("volume", 10 ** (max(-60.0, min(24.0, float(d.get("ganancia", 0)))) / 20))
+            vol.set_property("mute", bool(d.get("mudo", False)))
+        if "retraso_audio" in d and retraso is not None:
+            retraso.get_static_pad("src").set_offset(
+                max(0, min(RETRASO_MAX_MS, int(d["retraso_audio"]))) * 1000000)
+    ajustar({"ganancia": cfg.get("ganancia") or 0, "mudo": cfg.get("mudo"),
+             "retraso_audio": cfg.get("retraso_audio") or 0})
+
+    def orden(canal, _cond):
+        linea = canal.readline()
+        if not linea:
+            return False
+        try:
+            ajustar(json.loads(linea))
+        except (ValueError, TypeError):
+            pass
+        return True
+    GLib.io_add_watch(sys.stdin, GLib.IO_IN | GLib.IO_HUP, orden)
     p.get_by_name("enc").get_static_pad("src").add_probe(Gst.PadProbeType.BUFFER, contar("out", True))
 
     bucle = GLib.MainLoop()
@@ -129,13 +166,17 @@ def main():
             informar({"error": "eos", "elemento": "src"})
             salida[0] = 1
             bucle.quit()
+        elif msg.type == Gst.MessageType.ELEMENT:
+            n = nivel_audio(msg)
+            if n:
+                NIVEL["db_peak"], NIVEL["db_rms"] = n["peak"], n["rms"]
 
     bus = p.get_bus()
     bus.add_signal_watch()
     bus.connect("message", mensaje)
 
     def tic():
-        informar({**CONTADORES, "t": time.monotonic()})
+        informar({**CONTADORES, **NIVEL, "t": time.monotonic()})
         return True
     GLib.timeout_add(2000, tic)
 

@@ -25,6 +25,9 @@ from camaras import fijar_modo_consola
 from gpu import capacidad_gpu, simultaneo
 from puente import clave_puente, xml_atem
 from supervisor import ocultar_clave_rtmp
+from camaras import camaras as camaras_conectadas
+from estado import estado_rutas
+import rutas as rutas_mod
 from actualizador import (cambiar_nombre_equipo, reiniciar_servicio, respaldo, restaurar,
     valores_fabrica)
 from estado import grabaciones
@@ -246,6 +249,8 @@ class Panel(BaseHTTPRequestHandler):
             self.send_header("Content-Length", str(len(cuerpo)))
             self.end_headers()
             self.wfile.write(cuerpo)
+        elif url.path == "/api/rutas":
+            self._json(estado_rutas())
         elif url.path == "/api/puente/atem.xml":
             # la IP de verdad: el ATEM puede no resolver nombres .local
             try:
@@ -254,7 +259,11 @@ class Panel(BaseHTTPRequestHandler):
                     ip = so.getsockname()[0]
             except OSError:
                 ip = (self.headers.get("Host") or "").split(":")[0]
-            cuerpo = xml_atem(ip, clave_puente(nucleo.CONF)).encode()
+            # con rutas, la clave de esa entrada; si no, la del modo puente
+            ent = parse_qs(url.query).get("entrada", [""])[0]
+            clave = next((e.get("clave") for e in nucleo.CONF.get().get("entradas_red") or []
+                          if e.get("id") == ent and e.get("tipo") == "ingesta"), None)
+            cuerpo = xml_atem(ip, clave or clave_puente(nucleo.CONF)).encode()
             self.send_response(200)
             self.send_header("Content-Type", "application/xml; charset=utf-8")
             self.send_header("Content-Disposition",
@@ -375,6 +384,14 @@ class Panel(BaseHTTPRequestHandler):
             return self._grabar(d)
         if ruta == "/api/fuente/reiniciar":
             return self._json({"ok": nucleo.FUENTES.reiniciar(str(d.get("id", "")))})
+        if ruta == "/api/rutas":
+            return self._guardar_rutas(d)
+        if ruta == "/api/rutas/motor":
+            return self._motor(d)
+        if ruta == "/api/rutas/calibrar":
+            if not nucleo.FUENTES.motor.calibrar(str(d.get("ruta", ""))):
+                return self._error("sin_audio")
+            return self._json({"ok": True, "segundos": 8})
         if ruta == "/api/fuente/calibrar":
             # unas palmadas delante de la cámara miden el desfase entre audio e imagen
             if not nucleo.FUENTES.calibrar(str(d.get("id", ""))):
@@ -564,6 +581,60 @@ class Panel(BaseHTTPRequestHandler):
                 nucleo.FUENTES.reiniciar(ident)
             evento("ajustes_fuente", fuente=fuente.cam["nombre"], campos=sorted(cambios))
         self._json({"ok": True})
+
+    def _guardar_rutas(self, d):
+        """El montaje entero desde el panel: entradas de red y rutas. Lo que no
+        cuadra se guarda igual y la ruta queda parada con su motivo."""
+        cfg = nucleo.CONF.get()
+        cambios = {}
+        if "entradas_red" in d:
+            if not isinstance(d["entradas_red"], list) or len(d["entradas_red"]) > 32:
+                return self._error("entradas_invalidas")
+            red, ids = [], set()
+            antes = {e.get("id"): e for e in cfg.get("entradas_red") or []}
+            for e in d["entradas_red"]:
+                tipo, eid = str(e.get("tipo")), str(e.get("id") or "")[:40]
+                if tipo not in ("ndi", "ingesta") or not re.fullmatch(r"[\w-]{1,40}", eid) or eid in ids:
+                    return self._error("entradas_invalidas")
+                ids.add(eid)
+                ne = {"id": eid, "tipo": tipo, "nombre": str(e.get("nombre") or tipo)[:60]}
+                if tipo == "ndi":
+                    ne["fuente"] = str(e.get("fuente") or "")[:200]
+                else:
+                    # la clave no la elige el panel: se genera una vez y se conserva
+                    ne["clave"] = (antes.get(eid) or {}).get("clave") or \
+                        secrets.token_urlsafe(9).replace("-", "x").replace("_", "y")
+                red.append(ne)
+            cambios["entradas_red"] = red
+        if "rutas" in d:
+            if not isinstance(d["rutas"], list) or len(d["rutas"]) > 16:
+                return self._error("rutas_invalidas")
+            ents = nucleo.FUENTES.motor.entradas_actuales(
+                {c["id"]: c for c in camaras_conectadas()}, {**cfg, **cambios})
+            limpias, _ = rutas_mod.validar(d["rutas"], ents)
+            cambios["rutas"] = limpias
+        if cambios:
+            nucleo.CONF.actualizar(cambios)
+            evento("rutas_guardadas", rutas=len(cambios.get("rutas", cfg.get("rutas") or [])))
+        return self._json({"ok": True, **estado_rutas()})
+
+    def _motor(self, d):
+        """Pasar al motor de rutas (la primera vez, con las rutas equivalentes a los
+        modos) o volver a los modos."""
+        motor = str(d.get("motor"))
+        if motor not in ("rutas", "modos"):
+            return self._error("motor_invalido")
+        cfg = nucleo.CONF.get()
+        cambios = {"motor": motor}
+        if motor == "rutas" and not cfg.get("rutas"):
+            cams = {c["id"]: c for c in camaras_conectadas()}
+            red, lista = rutas_mod.desde_modos(cfg, cams, nucleo.CONF.fuente,
+                                               [a["id"] for a in nucleo.FUENTES.audio])
+            ents = nucleo.FUENTES.motor.entradas_actuales(cams, {**cfg, "entradas_red": red})
+            cambios.update(entradas_red=red, rutas=rutas_mod.validar(lista, ents)[0])
+        nucleo.CONF.actualizar(cambios)
+        evento("motor", motor=motor)
+        return self._json({"ok": True, **estado_rutas()})
 
     def _config(self, d):
         antes = nucleo.CONF.get()
