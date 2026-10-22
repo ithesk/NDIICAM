@@ -418,6 +418,8 @@ class DecoGPU(Reparto):
     cabecera. Si el JPEG no le vale (progresivo) o la GPU falla, sigue con jpegdec
     sin cortar el NDI y lo avisa."""
 
+    INTENTOS = 30               # fotogramas que se miran antes de rendirse (1 s a 30 fps)
+
     def __init__(self, cfg):
         self.cfg = cfg
         self.n = 1
@@ -425,7 +427,8 @@ class DecoGPU(Reparto):
         self.orden, self.pendientes = {}, {}
         self.caps = None
         self.lock = threading.Lock()
-        self.modo = None            # gpu | cpu, al llegar el primer JPEG
+        self.modo = None            # gpu | cpu, al llegar el primer JPEG válido
+        self.intentos = 0
         self.deco = None
         self.captura = Gst.parse_launch(
             f"{tramo_camara(cfg)} ! appsink name=cap sync=false emit-signals=true"
@@ -493,6 +496,11 @@ class DecoGPU(Reparto):
                 buf.unmap(info)
             if muestreo:
                 self._cambiar("gpu", muestreo)
+            elif self.intentos < self.INTENTOS:
+                # recién conectada, una cámara (la DJI Pocket 3) puede mandar algún
+                # fotograma roto: se tira y se mira el siguiente
+                self.intentos += 1
+                return Gst.FlowReturn.OK
             else:
                 self._cambiar("cpu", motivo="jpeg_no_admitido")
         with self.lock:

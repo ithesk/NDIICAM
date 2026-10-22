@@ -114,8 +114,10 @@ def construir_estado(tx_mbps, rx_mbps, cpu_pct, potencia, gpu_uso=None):
         en_marcha = f.estado in ("iniciando", "emitiendo")
         fuentes.append({
             "id": f.cam["id"], "camara": f.cam["nombre"], "dispositivo": f.cam["dev"],
-            "estado": f.estado, "error": f.error, "desde": f.desde,
-            "nombre_ndi": f"{host.upper()} ({obj['nombre']})" if obj else None,
+            # sin NDI (solo monitor) no "emite": está en el HDMI
+            "estado": "en_hdmi" if f.estado == "emitiendo" and obj.get("solo_monitor") else f.estado,
+            "error": f.error, "desde": f.desde,
+            "nombre_ndi": f"{host.upper()} ({obj['nombre']})" if obj and not obj.get("solo_monitor") else None,
             "modo": f"{obj['ancho']}×{obj['alto']} @{obj['fps']}" if obj else None,
             "formato": obj.get("fmt"),
             "hilos": f.c.get("hilos", 1) if en_marcha else None,
@@ -192,6 +194,8 @@ def construir_estado(tx_mbps, rx_mbps, cpu_pct, potencia, gpu_uso=None):
         agregado = "sin_camara"
     elif "emitiendo" in estados:
         agregado = "emitiendo"
+    elif "en_hdmi" in estados:
+        agregado = "en_hdmi"
     elif "iniciando" in estados:
         agregado = "iniciando"
     elif "error" in estados:

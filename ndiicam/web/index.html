@@ -682,7 +682,6 @@ const T = {
     latency: "Retardo interno", latency_value: (ms) => `${Math.round(ms)} ms (cámara → NDI)`,
     hdmi_rx_error: (n) => `${n} no responde; reintentando…`,
     st_recibiendo: "Recibiendo", st_conectando: "Conectando", st_sin_fuente: "Sin fuente", st_sin_monitor: "Sin monitor", st_rx_error: "Sin señal", st_pausada: "En pausa", st_solo_monitor: "Solo monitor (el HDMI muestra otra cosa)",
-    solo_monitor: "Solo monitor: al HDMI, sin NDI (p. ej., el multiview del ATEM)",
     sub_sin_fuente: "Elige qué fuente NDI mostrar.", sub_sin_monitor: "Conecta un monitor al HDMI del equipo.",
     hdmi_rx_tam: (r, p) => `La fuente es ${r.ancho}×${r.alto} y la pantalla está a ${p}: se escala por CPU, lo que gasta bastante más. Emítela a ${p} (en OBS, la resolución de salida) para que no cueste nada.`,
     hdmi_no_monitor: "No hay ningún monitor conectado", hdmi_monitor: (p) => `Monitor en ${p.conector} (${p.modo || "?"})`,
@@ -798,7 +797,11 @@ const T = {
     sub_sin_camara: "Conecta una cámara USB: la emisión empieza sola.",
     sub_emitiendo: (n, lista) => (n === 1 ? "1 fuente: " : `${n} fuentes: `) + lista.join(" · "),
     sub_desactivada: "Todas las fuentes están desactivadas.",
-    source_stream: "Emitir", ndi_name: "Nombre NDI", resolution: "Resolución", framerate: "Fotogramas por segundo",
+    source_stream: "Cámara encendida", send_ndi: "Enviar por NDI",
+    cam_off_help: "Apagada: no sale ni por NDI ni por el HDMI.",
+    send_ndi_off_help: "Sin NDI: solo se ve en el monitor HDMI (elígela en Salida HDMI). Útil para el multiview del ATEM.",
+    st_en_hdmi: "En el HDMI", sub_en_hdmi: "Cámara en el monitor HDMI, sin NDI.",
+    ndi_name: "Nombre NDI", resolution: "Resolución", framerate: "Fotogramas por segundo",
     audio: "Audio", audio_auto: "Automático (micrófono de la cámara)", audio_off: "Sin audio",
     audio_none: "La cámara no tiene micrófono", audio_failed: "El audio falló: emitiendo sin él",
     audio_on: "Activo", audio_off_state: "Desactivado", audio_waiting: "Esperando…",
@@ -1002,7 +1005,6 @@ const T = {
     latency: "Internal delay", latency_value: (ms) => `${Math.round(ms)} ms (camera → NDI)`,
     hdmi_rx_error: (n) => `${n} is not responding; retrying…`,
     st_recibiendo: "Receiving", st_conectando: "Connecting", st_sin_fuente: "No source", st_sin_monitor: "No monitor", st_rx_error: "No signal", st_pausada: "Paused", st_solo_monitor: "Monitor only (HDMI is showing something else)",
-    solo_monitor: "Monitor only: to HDMI, no NDI (e.g. the ATEM multiview)",
     sub_sin_fuente: "Pick which NDI source to show.", sub_sin_monitor: "Plug a monitor into the device's HDMI.",
     hdmi_rx_tam: (r, p) => `The source is ${r.ancho}×${r.alto} and the screen is at ${p}: it is scaled on the CPU, which costs a lot more. Send it at ${p} (in OBS, the output resolution) so it costs nothing.`,
     hdmi_no_monitor: "No monitor connected", hdmi_monitor: (p) => `Monitor on ${p.conector} (${p.modo || "?"})`,
@@ -1118,7 +1120,11 @@ const T = {
     sub_sin_camara: "Plug in a USB camera: streaming starts by itself.",
     sub_emitiendo: (n, lista) => (n === 1 ? "1 source: " : `${n} sources: `) + lista.join(" · "),
     sub_desactivada: "All sources are disabled.",
-    source_stream: "Stream", ndi_name: "NDI name", resolution: "Resolution", framerate: "Frames per second",
+    source_stream: "Camera on", send_ndi: "Send over NDI",
+    cam_off_help: "Off: it goes out neither over NDI nor to HDMI.",
+    send_ndi_off_help: "No NDI: it only shows on the HDMI monitor (pick it under HDMI output). Handy for the ATEM multiview.",
+    st_en_hdmi: "On HDMI", sub_en_hdmi: "Camera on the HDMI monitor, no NDI.",
+    ndi_name: "NDI name", resolution: "Resolution", framerate: "Frames per second",
     audio: "Audio", audio_auto: "Automatic (camera microphone)", audio_off: "No audio",
     audio_none: "The camera has no microphone", audio_failed: "Audio failed: streaming without it",
     audio_on: "On", audio_off_state: "Off", audio_waiting: "Waiting…",
@@ -1475,7 +1481,7 @@ function rellenar(input, valor, clave) {
 
 // ----------------------------------------------------------------- fuentes
 const CLASES = { emitiendo: "ok", iniciando: "aviso", sin_camara: "aviso", error: "mal", desactivada: "",
-  recibiendo: "ok", conectando: "aviso", sin_fuente: "aviso", sin_monitor: "aviso", rx_error: "mal", pausada: "", solo_monitor: "",
+  recibiendo: "ok", conectando: "aviso", sin_fuente: "aviso", sin_monitor: "aviso", rx_error: "mal", pausada: "", solo_monitor: "", en_hdmi: "ok",
   esperando_atem: "aviso" };
 
 function crearTarjeta(f) {
@@ -1526,12 +1532,14 @@ function crearTarjeta(f) {
       c.pastillaCfg),
     el("div", { class: "fuente-cuerpo" },
       el("div", null,
-        el("label", { class: "conmutador", style: "margin-bottom:4px" }, c.conmutador, el("span", { text: t("source_stream") })),
-        // solo al HDMI, sin NDI (el multiview del ATEM para el operador)
-        el("label", { class: "conmutador", style: "margin-bottom:12px" },
-          c.soloMonitor = el("input", { type: "checkbox", onchange: () => {
-            api("/api/fuente", { id, solo_monitor: c.soloMonitor.checked }).catch((err) => mensaje(c.msg, err.message, "mal"));
-          } }), el("span", { text: t("solo_monitor") })),
+        el("label", { class: "conmutador", style: "margin-bottom:2px" }, c.conmutador, el("span", { text: t("source_stream") })),
+        // NDI aparte de encender la cámara: sin él, solo se ve en el HDMI
+        // (el multiview del ATEM para el operador)
+        el("label", { class: "conmutador", style: "margin-bottom:2px" },
+          c.conNdi = el("input", { type: "checkbox", onchange: () => {
+            api("/api/fuente", { id, solo_monitor: !c.conNdi.checked }).catch((err) => mensaje(c.msg, err.message, "mal"));
+          } }), el("span", { text: t("send_ndi") })),
+        c.ayudaNdi = el("div", { class: "ayuda", style: "margin-bottom:12px" }),
         el("label", { text: t("ndi_name") }),
         c.nombre = el("input", { type: "text", maxlength: "48", autocomplete: "off", spellcheck: "false",
           oninput: () => editado.add(k("nombre")) }),
@@ -1689,7 +1697,9 @@ function pintarFuente(c, f, e) {
   poner(c.emitiendoDesde, f.desde ? duracion(Date.now() / 1000 - f.desde) : "—");
   // ajustes, sin pisar lo que se está editando
   if (document.activeElement !== c.conmutador) c.conmutador.checked = aj.activa;
-  if (document.activeElement !== c.soloMonitor) c.soloMonitor.checked = !!aj.solo_monitor;
+  if (document.activeElement !== c.conNdi) c.conNdi.checked = !aj.solo_monitor;
+  c.conNdi.disabled = !aj.activa;
+  poner(c.ayudaNdi, !aj.activa ? t("cam_off_help") : aj.solo_monitor ? t("send_ndi_off_help") : "");
   rellenar(c.nombre, aj.ndi_nombre, k("nombre"));
   const noAdmite = Object.keys(f.admite).filter((r) => !f.admite[r]);
   segmentadoEn(c.segRes, null, elegido[k("res")] || aj.resolucion, noAdmite);
@@ -2091,6 +2101,7 @@ function pintar(e) {
     : (e.receptor.fuente + (rx && rx.estado === "recibiendo" ? " · " + T[lang].hdmi_rx_recibiendo(rx) : ""));
   else if (em.estado === "sin_camara") sub = t("sub_sin_camara");
   else if (em.estado === "desactivada") sub = t("sub_desactivada");
+  else if (em.estado === "en_hdmi") sub = t("sub_en_hdmi");
   else sub = T[lang].sub_emitiendo(fuentes.filter((f) => f.ajustes.activa).length,
     fuentes.filter((f) => f.nombre_ndi).map((f) => f.nombre_ndi));
   poner("estadoSub", sub);

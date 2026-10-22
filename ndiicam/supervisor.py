@@ -105,8 +105,9 @@ class Fuente:
                 evento("calibracion", fuente=self.cam["nombre"], **d["calibracion"])
             elif "aviso" in d:
                 if d["aviso"] == "deco_gpu_fallida" and not self.deco_gpu_fallida:
-                    # fuente.py ya siguió por CPU; los próximos arranques, también
-                    self.deco_gpu_fallida = True
+                    # fuente.py ya siguió por CPU. Si falló la GPU, los próximos arranques
+                    # también; si fue el JPEG (fotogramas raros), se vuelve a probar
+                    self.deco_gpu_fallida = d.get("detalle") != "jpeg_no_admitido"
                     evento("deco_gpu_fallida", fuente=self.cam["nombre"], detalle=d.get("detalle"))
             else:
                 self.c = d
