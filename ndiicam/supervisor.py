@@ -11,8 +11,8 @@ import time
 
 import nucleo
 from nucleo import (AP_IF, AP_IP, FUENTE_PY, GRABACIONES, MAX_DECODIFICADORES, PUERTO_RTMP,
-    RECEPTOR_PY, REPOSO_PY, RESOLUCIONES, VERSION, conexiones_por_pid, dispositivo_por_defecto,
-    evento, ip_de, ips_propias, leer)
+    RECEPTOR_PY, REPOSO_PY, RESOLUCIONES, SALIDAS_EXTRA, VERSION, conexiones_por_pid,
+    dispositivo_por_defecto, evento, ip_de, ips_propias, leer)
 from camaras import audio_dispositivos, audio_hdmi, camaras, pantallas, resolucion_pantalla
 from gpu import capacidad_gpu, capacidad_vpp, decodificador_h264, entorno_va, simultaneo
 from puente import PUENTE, clave_puente
@@ -37,6 +37,7 @@ class Fuente:
         self.retrasos = 0           # mediciones seguidas con la emisión por detrás de la cámara
         self.hdmi_fallido = False   # el HDMI hizo caer el pipeline: seguir sin él
         self.gpu = {"estado": None, "error": ""}   # salida H.264: activa | error
+        self.gpu_extra = {}         # salidas H.264 adicionales (equipo potente): modo -> estado
         self.tally = None           # {"programa": bool, "previo": bool} si el plugin lo da
         self.c = {"cam": 0, "bytes": 0, "out": 0, "desc": 0, "aud": 0}
         self.prev = None
@@ -51,6 +52,8 @@ class Fuente:
         self.c = {}
         self.prev = None
         self.gpu = {"estado": "iniciando" if obj.get("gpu") else None, "error": ""}
+        self.gpu_extra = {g["modo"]: {"estado": "iniciando", "error": ""}
+                          for g in obj.get("gpu_extra") or []}
         self.gpu_pedida = None      # última orden de grabar (True/False) enviada al proceso
         self.proc = subprocess.Popen([sys.executable, FUENTE_PY, json.dumps(obj)],
                                      stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True,
@@ -84,6 +87,16 @@ class Fuente:
                     evento("gpu_activa", fuente=self.cam["nombre"],
                            modo=((self.obj or {}).get("gpu") or {}).get("modo"))
                 self.gpu = {"estado": d["gpu_estado"], "error": ""}
+            elif "gpu_extra" in d:
+                # una salida adicional: como la principal, falla y se reintenta sola
+                modo = d["gpu_extra"]
+                antes = self.gpu_extra.get(modo, {})
+                if d.get("error") and antes.get("error") != d["error"]:
+                    evento("gpu_fallo", fuente=self.cam["nombre"], detalle=d["error"], modo=modo)
+                elif d.get("estado") == "activa" and antes.get("estado") != "activa":
+                    evento("gpu_activa", fuente=self.cam["nombre"], modo=modo)
+                self.gpu_extra[modo] = {"estado": "error" if d.get("error") else d.get("estado"),
+                                        "error": d.get("error", "")}
             elif "error" in d:
                 self._fallo(d["error"], d.get("elemento", ""))
             elif "aviso" in d:
@@ -431,6 +444,7 @@ class Fuentes:
                 "hdmi": self.hdmi_conector if f.cam["id"] == self.hdmi_para
                 and not f.hdmi_fallido else None,
                 "gpu": self.salida_gpu(aj, fmt),
+                "gpu_extra": self.salidas_extra(aj, fmt),
                 "preview": ruta_preview(f.cam["id"])}
 
     @staticmethod
@@ -452,10 +466,25 @@ class Fuentes:
         usb3 = velocidad_usb(f.cam.get("usb")) >= 5000
         return "YUYV" if usb3 and aj.get("gpu_salida", "no") == "no" else "MJPG"
 
+    def salidas_extra(self, aj, fmt):
+        """Salidas H.264 además de la principal (grabar mientras se emite por SRT y
+        por RTMP...): solo en un equipo potente. Cada una en su propio pipeline de
+        la GPU, con los ajustes que la cámara ya tiene para ese tipo de salida."""
+        principal = aj.get("gpu_salida", "no")
+        if principal == "no" or not simultaneo(self.config.get()):
+            return []
+        extra = []
+        for modo in SALIDAS_EXTRA:
+            if modo != principal and modo in (aj.get("gpu_extra") or []):
+                g = self.salida_gpu(aj, fmt, modo)
+                if g:
+                    extra.append(g)
+        return extra
+
     @staticmethod
-    def salida_gpu(aj, fmt):
+    def salida_gpu(aj, fmt, modo=None):
         """La GPU parte del JPEG de la cámara: solo con MJPEG."""
-        modo = aj.get("gpu_salida", "no")
+        modo = modo or aj.get("gpu_salida", "no")
         cap = capacidad_gpu()
         if modo == "no" or fmt != "MJPG" or not cap["disponible"]:
             return None
@@ -590,11 +619,12 @@ class Fuentes:
                     obj["nombre"] = f"{base} {n}"
                     n += 1
                 usados.add(obj["nombre"])
-                if obj["gpu"] and obj["gpu"]["modo"] == "srt":
-                    # dos cámaras no pueden escuchar SRT en el mismo puerto
-                    while obj["gpu"]["puerto"] in puertos:
-                        obj["gpu"]["puerto"] += 1
-                    puertos.add(obj["gpu"]["puerto"])
+                for g in [obj["gpu"], *obj["gpu_extra"]]:
+                    if g and g["modo"] == "srt":
+                        # dos cámaras no pueden escuchar SRT en el mismo puerto
+                        while g["puerto"] in puertos:
+                            g["puerto"] += 1
+                        puertos.add(g["puerto"])
                 if f.proc is not None and (obj != f.obj or f.forzar_reinicio):
                     f.detener()
                     evento("aplicando", fuente=cam["nombre"])
@@ -611,14 +641,20 @@ class Fuentes:
     def _grabacion_condicional(self):
         """Enciende o apaga la grabación GPU de cada cámara según su regla:
         solo con receptores NDI conectados, o dentro de un horario."""
-        condicionales = [f for f in self.fuentes.values() if f.proc is not None and f.obj
-                         and (f.obj.get("gpu") or {}).get("cuando", "siempre") != "siempre"]
+        condicionales = []
+        for f in self.fuentes.values():
+            if f.proc is None or not f.obj:
+                continue
+            # solo grabar tiene condición, y hay una como mucho: principal o adicional
+            g = next((g for g in [f.obj.get("gpu"), *(f.obj.get("gpu_extra") or [])]
+                      if g and g.get("cuando", "siempre") != "siempre"), None)
+            if g:
+                condicionales.append((f, g))
         if not condicionales:
             return
         conexiones = None
         ahora = time.strftime("%H:%M")
-        for f in condicionales:
-            g = f.obj["gpu"]
+        for f, g in condicionales:
             if g["cuando"] == "receptores":
                 if conexiones is None:
                     conexiones = conexiones_por_pid()
@@ -629,7 +665,7 @@ class Fuentes:
             else:
                 quiere = en_horario(ahora, *g["horario"])
             if quiere != f.gpu_pedida:
-                f.orden({"gpu_activa": quiere})
+                f.orden({"gpu_activa": quiere, "modo": g["modo"]})
                 f.gpu_pedida = quiere
 
     def pantalla_reposo(self, cfg, cams, monitor):

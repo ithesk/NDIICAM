@@ -735,7 +735,7 @@ const T = {
     none: "Ninguno", in_last_2s: "en 2 s", nobody_now: "ninguno ahora mismo",
     restart_all_emisor: "Reiniciar emisión", restart_all_receptor: "Reiniciar recepción",
     restarting_all: "Reiniciando… vuelve en unos segundos.",
-    gpu_out: "Salida H.264 por GPU", gpu_state: "Salida GPU", gpu_no: "Desactivada",
+    gpu_out: "Salida H.264 por GPU", gpu_state: "Salida GPU", gpu_no: "Desactivada", gpu_also: "Y además, a la vez:",
     gpu_grabar: "Grabar en el equipo", gpu_srt: "SRT (para OBS, vMix, VLC…)", gpu_rtmp: "RTMP (YouTube, Twitch…)",
     gpu_quality: "Calidad", gpu_port: "Puerto SRT", gpu_url: "URL RTMP con la clave de emisión",
     gpu_url_ph: "rtmp://a.rtmp.youtube.com/live2/tu-clave",
@@ -1023,7 +1023,7 @@ const T = {
     none: "None", in_last_2s: "in 2 s", nobody_now: "none right now",
     restart_all_emisor: "Restart streaming", restart_all_receptor: "Restart receiving",
     restarting_all: "Restarting… back in a few seconds.",
-    gpu_out: "H.264 output (GPU)", gpu_state: "GPU output", gpu_no: "Off",
+    gpu_out: "H.264 output (GPU)", gpu_state: "GPU output", gpu_no: "Off", gpu_also: "And also, at the same time:",
     gpu_grabar: "Record on this device", gpu_srt: "SRT (for OBS, vMix, VLC…)", gpu_rtmp: "RTMP (YouTube, Twitch…)",
     gpu_quality: "Quality", gpu_port: "SRT port", gpu_url: "RTMP URL with the stream key",
     gpu_url_ph: "rtmp://a.rtmp.youtube.com/live2/your-key",
@@ -1415,6 +1415,13 @@ function crearTarjeta(f) {
         c.gpuBloque = el("div", null,
           el("label", { text: t("gpu_out") }),
           c.selGpu = el("select", { onchange: () => { editado.add(k("gpu")); pintar(ultimo); } }),
+          // equipo potente: más salidas a la vez, cada una con sus ajustes de abajo
+          c.bloqueExtra = el("div", { class: "oculto", style: "margin-top:8px" },
+            el("label", { text: t("gpu_also") }),
+            ...["grabar", "srt", "rtmp"].map((m) => (c["extra_" + m] = el("label", { class: "conmutador" },
+              c["chkExtra_" + m] = el("input", { type: "checkbox",
+                onchange: () => { editado.add(k("extra")); pintar(ultimo); } }),
+              el("span", { text: t("gpu_" + m) }))))),
           c.gpuOpc = el("div", null,
             el("label", { text: t("gpu_quality"), style: "margin-top:12px" }),
             c.selKbps = el("select", { onchange: () => editado.add(k("kbps")) }),
@@ -1449,6 +1456,8 @@ function crearTarjeta(f) {
         if (editado.has(k("latencia"))) datos.latencia = c.selLatencia.value;
         if (editado.has(k("srtlat"))) datos.srt_latencia = Number(c.srtLat.value);
         if (editado.has(k("gpu"))) datos.gpu_salida = c.selGpu.value;
+        if (editado.has(k("extra"))) datos.gpu_extra = ["grabar", "srt", "rtmp"].filter((m) =>
+          m !== c.selGpu.value && c["chkExtra_" + m].checked);
         if (editado.has(k("kbps"))) datos.gpu_kbps = Number(c.selKbps.value);
         if (editado.has(k("puerto"))) datos.srt_puerto = Number(c.puerto.value);
         if (editado.has(k("url"))) datos.rtmp_url = c.url.value.trim();
@@ -1458,7 +1467,7 @@ function crearTarjeta(f) {
         ev.target.disabled = true;
         try {
           await api("/api/fuente", datos);
-          ["nombre", "audio", "gpu", "kbps", "puerto", "url", "cuando", "desde", "hasta", "formato", "latencia", "srtlat"].forEach((x) => editado.delete(k(x)));
+          ["nombre", "audio", "gpu", "extra", "kbps", "puerto", "url", "cuando", "desde", "hasta", "formato", "latencia", "srtlat"].forEach((x) => editado.delete(k(x)));
           delete elegido[k("res")]; delete elegido[k("fps")];
           mensaje(c.msg, t("saved_ok"), "ok");
         } catch (err) { mensaje(c.msg, err.message, "mal"); }
@@ -1491,7 +1500,8 @@ function pintarFuente(c, f, e) {
   }
   // botón Grabar / Parar: grabación manual (se muestra si la GPU puede)
   const g = f.gpu || {}, cap = e.gpu || {};
-  c.grabando = g.modo === "grabar" && aj.grabar_cuando === "manual" && !!aj.grabar_manual;
+  const grabaAlgo = g.modo === "grabar" || (f.gpu_extra || []).some((x) => x.modo === "grabar");
+  c.grabando = grabaAlgo && aj.grabar_cuando === "manual" && !!aj.grabar_manual;
   c.btGrabar.classList.toggle("oculto", !cap.disponible && !c.grabando);
   c.btGrabar.className = "boton " + (c.grabando ? "peligro" : "");
   c.btGrabar.style.marginTop = "10px";
@@ -1559,6 +1569,14 @@ function pintarGpu(c, f, e, k) {
     c.selGpu.value = aj.gpu_salida;
   }
   const modo = c.selGpu.value;
+  // salidas adicionales: solo si el equipo da para ello y hay una principal
+  const varias = !!(e.capacidad || {}).simultaneo && modo !== "no";
+  c.bloqueExtra.classList.toggle("oculto", !varias);
+  for (const m of ["grabar", "srt", "rtmp"]) {
+    c["extra_" + m].classList.toggle("oculto", m === modo);
+    if (!editado.has(k("extra"))) c["chkExtra_" + m].checked = (aj.gpu_extra || []).includes(m);
+  }
+  const usa = new Set([modo, ...(varias ? ["grabar", "srt", "rtmp"].filter((m) => m !== modo && c["chkExtra_" + m].checked) : [])]);
   if (!editado.has(k("kbps")) && document.activeElement !== c.selKbps) {
     const lista = [4000, 6000, 8000, 12000, 16000, 20000];
     if (!lista.includes(aj.gpu_kbps)) lista.push(aj.gpu_kbps);
@@ -1574,11 +1592,11 @@ function pintarGpu(c, f, e, k) {
   }
   rellenar(c.desde, aj.grabar_desde, k("desde"));
   rellenar(c.hasta, aj.grabar_hasta, k("hasta"));
-  c.bloqueCuando.classList.toggle("oculto", modo !== "grabar");
+  c.bloqueCuando.classList.toggle("oculto", !usa.has("grabar"));
   c.bloqueHorario.classList.toggle("oculto", c.selCuando.value !== "horario");
   c.gpuOpc.classList.toggle("oculto", modo === "no");
-  c.bloquePuerto.classList.toggle("oculto", modo !== "srt");
-  c.bloqueUrl.classList.toggle("oculto", modo !== "rtmp");
+  c.bloquePuerto.classList.toggle("oculto", !usa.has("srt"));
+  c.bloqueUrl.classList.toggle("oculto", !usa.has("rtmp"));
   let ayuda = t("gpu_help");
   if (!cap.disponible) ayuda = (T[lang].gpu_unavailable[cap.motivo] || cap.motivo || "");
   else if (f.formato && f.formato !== "MJPG") ayuda = t("gpu_only_mjpeg");
@@ -1592,6 +1610,11 @@ function pintarGpu(c, f, e, k) {
   if (g.estado === "activa") st = `${t("gpu_" + g.modo)} · ${g.fps.toFixed(1)} fps · ${g.mbps.toFixed(1)} Mbit/s`;
   else if (g.estado === "error") st = T[lang].gpu_errors[g.error] || `${T[lang].gpu_st.error}: ${g.error}`;
   else if (g.estado) st = T[lang].gpu_st[g.estado] || g.estado;
+  for (const x of f.gpu_extra || []) {
+    const ex = x.estado === "error" ? (T[lang].gpu_errors[x.error] || `${T[lang].gpu_st.error}: ${x.error}`)
+      : x.estado ? (T[lang].gpu_st[x.estado] || x.estado) : "—";
+    st += ` · ${t("gpu_" + x.modo)}: ${ex}`;
+  }
   poner(c.gpuDd, st);
 }
 

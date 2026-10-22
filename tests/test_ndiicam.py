@@ -749,5 +749,63 @@ class EquipoPotente(unittest.TestCase):
         self.assertNotRegex(solo, r"\b9000\b")
 
 
+class VariasSalidas(unittest.TestCase):
+    """En un equipo potente, cada cámara puede grabar y emitir por SRT y RTMP a la vez."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.orig = (nucleo.CONFIG, supervisor.simultaneo, supervisor.capacidad_gpu,
+                     supervisor.capacidad_vpp, cortafuegos.simultaneo)
+        nucleo.CONFIG = os.path.join(self.tmp.name, "config.json")
+        self.potente = True
+        supervisor.simultaneo = cortafuegos.simultaneo = lambda cfg: self.potente
+        supervisor.capacidad_gpu = lambda: {"disponible": True, "codificador": "vah264enc"}
+        supervisor.capacidad_vpp = lambda: {"vpp": True, "jpeg": True, "h264": True}
+        self.sup = supervisor.Fuentes(nucleo.Config())
+        self.aj = {"gpu_salida": "srt", "gpu_extra": ["grabar", "rtmp", "srt"], "gpu_kbps": 8000,
+                   "srt_puerto": 9000, "srt_latencia": 200, "rtmp_url": "rtmp://x/live/k",
+                   "grabar_cuando": "manual", "grabar_desde": "09:00", "grabar_hasta": "18:00"}
+
+    def tearDown(self):
+        (nucleo.CONFIG, supervisor.simultaneo, supervisor.capacidad_gpu,
+         supervisor.capacidad_vpp, cortafuegos.simultaneo) = self.orig
+        self.tmp.cleanup()
+
+    def test_extras_sin_repetir_la_principal(self):
+        extra = self.sup.salidas_extra(self.aj, "MJPG")
+        self.assertEqual([g["modo"] for g in extra], ["grabar", "rtmp"])
+        grabar = extra[0]
+        self.assertEqual(grabar["cuando"], "manual")     # su condición, como si fuera la principal
+        self.assertEqual(extra[1]["url"], "rtmp://x/live/k")
+
+    def test_en_equipo_justo_solo_la_principal(self):
+        self.potente = False
+        self.assertEqual(self.sup.salidas_extra(self.aj, "MJPG"), [])
+
+    def test_sin_principal_no_hay_extras(self):
+        self.assertEqual(self.sup.salidas_extra({**self.aj, "gpu_salida": "no"}, "MJPG"), [])
+
+    def test_rtmp_sin_url_se_omite(self):
+        extra = self.sup.salidas_extra({**self.aj, "rtmp_url": ""}, "MJPG")
+        self.assertEqual([g["modo"] for g in extra], ["grabar"])
+
+    def test_cortafuegos_abre_el_srt_adicional(self):
+        cf = cortafuegos.Cortafuegos()
+        guiones = []
+        orig = (cortafuegos.aplicar, cortafuegos.puertos_ssh)
+        cortafuegos.aplicar = lambda g: guiones.append(g)
+        cortafuegos.puertos_ssh = lambda: [22]
+        try:
+            cf.actualizar({"modo": "emisor", "cortafuegos": True},
+                          [{"gpu_salida": "grabar", "gpu_extra": ["srt"], "srt_puerto": 9100}])
+            self.assertRegex(guiones[-1], r"\b9100\b")
+            self.potente = False
+            cf.actualizar({"modo": "emisor", "cortafuegos": True},
+                          [{"gpu_salida": "grabar", "gpu_extra": ["srt"], "srt_puerto": 9100}])
+            self.assertNotRegex(guiones[-1], r"\b9100\b")
+        finally:
+            cortafuegos.aplicar, cortafuegos.puertos_ssh = orig
+
+
 if __name__ == "__main__":
     unittest.main()

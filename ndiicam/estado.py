@@ -115,6 +115,10 @@ def construir_estado(tx_mbps, rx_mbps, cpu_pct, potencia, gpu_uso=None):
                     "error": f.gpu["error"],
                     "fps": f.stats["fps_gpu"] if en_marcha else 0,
                     "mbps": f.stats["mbps_gpu"] if en_marcha else 0},
+            # salidas además de la principal (equipo potente)
+            "gpu_extra": [{"modo": g["modo"], "puerto": g.get("puerto"),
+                           **(f.gpu_extra.get(g["modo"]) if en_marcha else {"estado": None, "error": ""})}
+                          for g in obj.get("gpu_extra") or []],
             "ajustes": {**aj, "rtmp_url": ocultar_clave_rtmp(aj["rtmp_url"])},
             "admite": {k: any(m[0] == v[0] and m[1] == v[1] for m in f.cam["modos"])
                        for k, v in RESOLUCIONES.items()},

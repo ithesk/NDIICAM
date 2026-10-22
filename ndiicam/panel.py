@@ -19,7 +19,7 @@ from urllib.parse import parse_qs, urlparse
 import nucleo
 from nucleo import (AP_CLAVE_DEFECTO, AP_IP, CLAVE_PUENTE, ESTADO, EVENTOS, FPS_VALIDOS, GRABACIONES,
     GRABAR_CUANDO, HORA, IDIOMAS, MODOS, MODOS_CONSOLA, NOMBRE_EQUIPO, NOMBRE_GRABACION,
-    NOMBRE_NDI, RESOLUCIONES, SALIDAS_GPU, URL_RTMP, WEB, clave_correcta, cliente_ip,
+    NOMBRE_NDI, RESOLUCIONES, SALIDAS_EXTRA, SALIDAS_GPU, URL_RTMP, WEB, clave_correcta, cliente_ip,
     configurar_ndi, evento, resumen_clave, sh, FORMATOS, LATENCIAS)
 from camaras import fijar_modo_consola
 from gpu import capacidad_gpu, simultaneo
@@ -433,7 +433,12 @@ class Panel(BaseHTTPRequestHandler):
             return self._error("gpu_no_disponible")
         antes = nucleo.CONF.fuente(ident)
         cambios = {"grabar_manual": grabar}
-        if grabar and (antes["gpu_salida"] != "grabar" or antes["grabar_cuando"] != "manual"):
+        if grabar and antes["gpu_salida"] in ("srt", "rtmp") and simultaneo(nucleo.CONF.get()):
+            # equipo potente: graba además de emitir, sin cortar la emisión SRT/RTMP
+            if "grabar" not in antes["gpu_extra"] or antes["grabar_cuando"] != "manual":
+                cambios.update(gpu_extra=sorted({*antes["gpu_extra"], "grabar"}),
+                               grabar_cuando="manual")
+        elif grabar and (antes["gpu_salida"] != "grabar" or antes["grabar_cuando"] != "manual"):
             cambios.update(gpu_salida="grabar", grabar_cuando="manual")
         reinicia = any(antes.get(k) != v for k, v in cambios.items() if k != "grabar_manual")
         nucleo.CONF.actualizar_fuente(ident, cambios)
@@ -473,6 +478,11 @@ class Panel(BaseHTTPRequestHandler):
             if v != "no" and not capacidad_gpu()["disponible"]:
                 return self._error("gpu_no_disponible")
             cambios["gpu_salida"] = v
+        if "gpu_extra" in d:
+            v = d["gpu_extra"]
+            if not isinstance(v, list) or any(str(x) not in SALIDAS_EXTRA for x in v):
+                return self._error("salida_gpu_invalida")
+            cambios["gpu_extra"] = sorted({str(x) for x in v})
         if "gpu_kbps" in d:
             try:
                 v = int(d["gpu_kbps"])
@@ -521,8 +531,9 @@ class Panel(BaseHTTPRequestHandler):
                 if v and not URL_RTMP.match(v):
                     return self._error("url_rtmp_invalida")
                 cambios["rtmp_url"] = v
-        if cambios.get("gpu_salida") == "rtmp" and not (
-                cambios.get("rtmp_url") or nucleo.CONF.fuente(ident)["rtmp_url"]):
+        quiere_rtmp = (cambios.get("gpu_salida") == "rtmp"
+                       or "rtmp" in cambios.get("gpu_extra", []))
+        if quiere_rtmp and not (cambios.get("rtmp_url") or nucleo.CONF.fuente(ident)["rtmp_url"]):
             return self._error("url_rtmp_invalida")
         antes = nucleo.CONF.fuente(ident)
         cambios = {k: v for k, v in cambios.items() if antes.get(k) != v}

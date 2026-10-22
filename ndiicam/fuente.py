@@ -422,8 +422,10 @@ class SalidaGPU:
     RESERVA = 2 * 1024 ** 3     # al grabar, borrar lo más viejo si queda menos libre
     SEGMENTO = 10 * 60          # duración de cada fichero de grabación, en segundos
 
-    def __init__(self, cfg, origen, audio):
-        self.g = cfg["gpu"]
+    def __init__(self, cfg, origen, audio, g=None):
+        # g: una salida adicional (equipo potente); sin él, la principal, cfg["gpu"]
+        self.principal = g is None
+        self.g = cfg["gpu"] if g is None else g
         self.cfg = cfg
         self.origen = origen        # pipeline de la cámara: reloj y hora base
         self.audio = audio          # se espera audio
@@ -436,7 +438,7 @@ class SalidaGPU:
         self.espera_hasta = 0.0
         self.primer_jpeg = None
         if not self.habilitada:
-            informar({"gpu_estado": "en_espera"})
+            self._estado("en_espera")
 
     # --- copias desde el pipeline de la cámara (hilos de streaming)
     def jpeg(self, pad, info):
@@ -540,7 +542,7 @@ class SalidaGPU:
                 self._fallo("arranque", "gpu")
                 return False
             self.p = p
-            informar({"gpu_estado": "activa", "muestreo": self.muestreo})
+            self._estado("activa", muestreo=self.muestreo)
         except GLib.Error as ex:
             self._fallo(ex.message, "gpu")
         finally:
@@ -548,9 +550,16 @@ class SalidaGPU:
         return False
 
     def _contar(self, pad, info):
-        CONTADORES["gpu"] += 1
-        CONTADORES["gpu_bytes"] += info.get_buffer().get_size()
+        if self.principal:
+            CONTADORES["gpu"] += 1
+            CONTADORES["gpu_bytes"] += info.get_buffer().get_size()
         return Gst.PadProbeReturn.OK
+
+    def _estado(self, estado, **extra):
+        if self.principal:
+            informar({"gpu_estado": estado, **extra})
+        else:
+            informar({"gpu_extra": self.g["modo"], "estado": estado})
 
     def _nombre_fichero(self, mux, fragmento):
         self._liberar_disco()
@@ -574,7 +583,10 @@ class SalidaGPU:
             self._fallo(err.message, msg.src.get_name())
 
     def _fallo(self, error, elemento, reintentar=True):
-        informar({"gpu_error": error, "elemento": elemento})
+        if self.principal:
+            informar({"gpu_error": error, "elemento": elemento})
+        else:
+            informar({"gpu_extra": self.g["modo"], "error": error, "elemento": elemento})
         p, self.p = self.p, None
         if p is not None:
             GLib.idle_add(lambda: p.set_state(Gst.State.NULL) and False)
@@ -588,10 +600,10 @@ class SalidaGPU:
         self.habilitada = si
         if si:
             self.espera_hasta = 0.0
-            informar({"gpu_estado": "iniciando"})
+            self._estado("iniciando")
         else:
             self.parar(definitivo=False)
-            informar({"gpu_estado": "en_espera"})
+            self._estado("en_espera")
 
     def parar(self, definitivo=True):
         """Cierra limpio (EOS) para que el último fichero quede completo."""
@@ -652,14 +664,18 @@ def main():
         flujo.elemento("src").get_static_pad("src").add_probe(
             Gst.PadProbeType.BUFFER, guardar_preview(cfg["preview"]))
 
-    gpu = None
+    salidas = []
     if cfg.get("gpu") and cfg["fmt"] == "MJPG":
         # el pipeline que tiene la cámara marca el reloj y la hora base
         origen = flujo.captura if isinstance(flujo, Reparto) else flujo.p
-        gpu = SalidaGPU(cfg, origen, bool(cfg.get("audio")))
-        flujo.elemento("src").get_static_pad("src").add_probe(Gst.PadProbeType.BUFFER, gpu.jpeg)
-        if cfg.get("audio"):
-            flujo.elemento("af").get_static_pad("src").add_probe(Gst.PadProbeType.BUFFER, gpu.sonido)
+        salidas.append(SalidaGPU(cfg, origen, bool(cfg.get("audio"))))
+        # en un equipo potente, más salidas a la vez, cada una por su lado
+        salidas += [SalidaGPU(cfg, origen, bool(cfg.get("audio")), g)
+                    for g in cfg.get("gpu_extra") or []]
+        for s in salidas:
+            flujo.elemento("src").get_static_pad("src").add_probe(Gst.PadProbeType.BUFFER, s.jpeg)
+            if cfg.get("audio"):
+                flujo.elemento("af").get_static_pad("src").add_probe(Gst.PadProbeType.BUFFER, s.sonido)
 
     bucle = GLib.MainLoop()
     salida = [0]
@@ -717,8 +733,11 @@ def main():
             d = json.loads(linea)
         except ValueError:
             return True
-        if gpu is not None and "gpu_activa" in d:
-            gpu.habilitar(bool(d["gpu_activa"]))
+        if "gpu_activa" in d:
+            # la orden es para la salida de ese tipo (solo grabar tiene condición)
+            for s in salidas:
+                if d.get("modo") in (None, s.g["modo"]):
+                    s.habilitar(bool(d["gpu_activa"]))
         return True
     GLib.io_add_watch(sys.stdin, GLib.IO_IN | GLib.IO_HUP, orden)
     GLib.unix_signal_add(GLib.PRIORITY_HIGH, signal.SIGTERM, parar)
@@ -728,8 +747,8 @@ def main():
         informar({"error": "arranque", "elemento": "pipeline"})
         sys.exit(1)
     bucle.run()
-    if gpu is not None:
-        gpu.parar()
+    for s in salidas:
+        s.parar()
     flujo.parar()
     if cfg.get("preview"):
         for r in (cfg["preview"], cfg["preview"] + ".tmp"):

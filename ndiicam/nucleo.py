@@ -74,7 +74,7 @@ GRUB_NDIICAM = "/etc/default/grub.d/90-ndiicam.cfg"
 # resolución de la pantalla al arrancar: la de la cámara para verla a pantalla completa
 MODOS_CONSOLA = {"nativa": None, "1080p": "1920x1080@60", "720p": "1280x720@60"}
 CLAVES_FUENTE = ("activa", "ndi_nombre", "resolucion", "fps", "audio",
-                 "gpu_salida", "gpu_kbps", "srt_puerto", "rtmp_url",
+                 "gpu_salida", "gpu_extra", "gpu_kbps", "srt_puerto", "rtmp_url",
                  "grabar_cuando", "grabar_desde", "grabar_hasta", "grabar_manual", "formato",
                  "latencia", "srt_latencia")
 # latencia de la emisión NDI: normal (audio sincronizado), baja (la imagen sale sin
@@ -93,6 +93,7 @@ HORA = re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")
 
 # salida H.264 por GPU de cada cámara (además del NDI): grabar a disco, SRT o RTMP
 SALIDAS_GPU = ("no", "grabar", "srt", "rtmp")
+SALIDAS_EXTRA = ("grabar", "srt", "rtmp")     # las que se pueden sumar a la principal
 GRABACIONES = "/var/lib/ndiicam/grabaciones"
 NOMBRE_GRABACION = re.compile(r"^[\w.-]{1,120}\.mp4$")
 URL_RTMP = re.compile(r"^rtmps?://[^\s\"'<>]{3,500}$")
@@ -325,7 +326,7 @@ class Config:
         d = self.get()
         f = {"activa": True, "ndi_nombre": d["ndi_nombre"], "resolucion": d["resolucion"],
              "fps": d["fps"], "audio": d["audio"],
-             "gpu_salida": "no", "gpu_kbps": 8000, "srt_puerto": 9000, "rtmp_url": "",
+             "gpu_salida": "no", "gpu_extra": [], "gpu_kbps": 8000, "srt_puerto": 9000, "rtmp_url": "",
              "grabar_cuando": "siempre", "grabar_desde": "09:00", "grabar_hasta": "18:00",
              "grabar_manual": False, "formato": "auto", "latencia": "normal", "srt_latencia": 200}
         f.update({k: v for k, v in d["fuentes"].get(ident, {}).items() if k in CLAVES_FUENTE})

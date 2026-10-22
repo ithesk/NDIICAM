@@ -135,7 +135,10 @@ class Cortafuegos:
                 self.guion = None
             self.error = None
             return
-        srt = [f["srt_puerto"] for f in fuentes if f.get("gpu_salida") == "srt" and f.get("activa", True)]
+        varias = simultaneo(cfg)        # salidas adicionales por cámara
+        srt = [f["srt_puerto"] for f in fuentes if f.get("activa", True) and (
+            f.get("gpu_salida") == "srt"
+            or varias and f.get("gpu_salida", "no") != "no" and "srt" in (f.get("gpu_extra") or []))]
         modos = {cfg["modo"]}
         if cfg["modo"] != "emisor" and simultaneo(cfg):
             modos.add("emisor")         # las cámaras siguen emitiendo
