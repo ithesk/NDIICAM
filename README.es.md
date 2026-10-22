@@ -54,7 +54,7 @@ gestiona desde un panel web: tras la instalación no hace falta la terminal.
 - **Modo receptor**: el equipo para sus cámaras y se convierte en receptor NDI: eliges cualquier
   fuente NDI de la red (OBS, vMix, una app del móvil, otro NDIICAM…) y sale por el HDMI con su
   audio. Si la fuente se va, se reconecta solo. Un Atom pequeño no da para emitir y recibir a la
-  vez, así que es un modo o el otro.
+  vez, así que es un modo o el otro; en un equipo potente las cámaras siguen emitiendo (ver abajo).
 - **Salida H.264 por la GPU**, por cámara y a la vez que el NDI: **grabar** archivos MP4 en el
   equipo (se descargan desde el panel), servir un flujo **SRT** para OBS, vMix o VLC, o **emitir
   por RTMP** a YouTube, Twitch y similares. La GPU decodifica el JPEG de la cámara y codifica el
@@ -62,6 +62,17 @@ gestiona desde un panel web: tras la instalación no hace falta la terminal.
 - **Modo puente, como un ATEM Streaming Bridge**: un ATEM Mini Pro, OBS o vMix emite al equipo
   por RTMP o SRT y sale por su HDMI con el sonido. El panel da el archivo de ajustes para cargarlo
   en ATEM Software Control.
+- **Varias cosas a la vez en equipos potentes** (4 núcleos y una GPU que decodifica de verdad,
+  o 8 núcleos; NDIICAM lo mide y en los equipos justos todo sigue como siempre):
+  - **Emitir y recibir a la vez**: en modo receptor o puente las cámaras siguen saliendo por NDI
+    mientras el HDMI muestra lo recibido.
+  - **Varias salidas por cámara**: grabar, SRT y RTMP a la vez, cada una en su propio pipeline de
+    la GPU (si una falla, las otras siguen). El botón Grabar, con la cámara emitiendo por SRT o
+    RTMP, añade la grabación sin cortar la emisión.
+  - **Puente a NDI**: lo que llega al modo puente (ATEM, OBS, el móvil) sale también como fuente
+    NDI `EQUIPO (Puente)`, con su audio, aunque no haya monitor.
+  - **Reemitir una fuente NDI**: cualquier fuente NDI de la red se graba y/o se emite por SRT o
+    RTMP, codificada en la GPU, sin pasar por OBS.
 - **Uso de la GPU en el panel**: lo ocupada que está, su motor de vídeo, frecuencia y consumo.
 - **Medidor de audio**: pico y nivel medio en dBFS de cada cámara, y de lo que reproducen el
   receptor o el puente. Sabes antes de salir al aire si un micro está mudo, bajo o saturado.

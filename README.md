@@ -54,7 +54,8 @@ sound. Everything is managed from a web panel: no terminal needed after installa
 - **Receiver mode**: the device stops its cameras and becomes an NDI receiver: pick any NDI source
   on the network (OBS, vMix, a phone app, another NDIICAM…) and it plays on the HDMI output with
   its audio. It reconnects by itself if the source goes away. A small Atom cannot send and receive
-  at the same time, so it is one mode or the other.
+  at the same time, so it is one mode or the other; on a powerful device the cameras keep
+  streaming (see below).
 - **H.264 output on the GPU**, per camera and alongside NDI: **record** MP4 files on the device
   (download them from the panel), serve an **SRT** stream for OBS, vMix or VLC, or **push RTMP** to
   YouTube, Twitch and the like. The GPU decodes the camera's JPEG and encodes H.264, so it costs
@@ -62,6 +63,17 @@ sound. Everything is managed from a web panel: no terminal needed after installa
 - **Bridge mode, like an ATEM Streaming Bridge**: an ATEM Mini Pro, OBS or vMix streams to the
   device over RTMP or SRT and it plays on the HDMI output with its audio. The panel gives you the
   settings file to load into ATEM Software Control.
+- **Several things at once on powerful devices** (4 cores and a GPU that really decodes, or 8
+  cores; NDIICAM measures it, and on tight devices everything stays as before):
+  - **Send and receive at once**: in receiver or bridge mode the cameras keep going out over NDI
+    while HDMI shows what is received.
+  - **Several outputs per camera**: record, SRT and RTMP at the same time, each in its own GPU
+    pipeline (if one fails, the others carry on). The Record button, on a camera streaming over
+    SRT or RTMP, adds the recording without cutting the stream.
+  - **Bridge to NDI**: what reaches bridge mode (ATEM, OBS, a phone) also goes out as the NDI
+    source `DEVICE (Puente)`, with its audio, even with no monitor attached.
+  - **Re-stream an NDI source**: any NDI source on the network is recorded and/or streamed over
+    SRT or RTMP, encoded on the GPU, without OBS.
 - **GPU usage in the panel**: how busy it is, its video engine, frequency and power.
 - **Audio meter**: peak and average level in dBFS for every camera, and for what the receiver or
   the bridge plays. You know before going live whether a microphone is dead, low or clipping.
