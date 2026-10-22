@@ -14,6 +14,9 @@ Vistas:
     entrada    la pantalla que pide la contraseña
     portal     como lo ve un móvil desde la WiFi de configuración
     receptor   el equipo en modo receptor, mostrando una fuente NDI por HDMI
+    rutas      pestaña Rutas (lienzo): el culto con ATEM, consola, una cámara y el multiview
+    rutas-lista  la misma, en la vista lista (la del móvil)
+    rutas-monitor  pestaña Monitor con el motor de rutas
 
 Los datos son inventados: nada de una instalación real sale en las capturas.
 Las vistas previas de las cámaras se dibujan aquí mismo (Pillow).
@@ -80,6 +83,17 @@ def preview(escena):
                 d.ellipse([x - tam / 2, y0 - tam, x + tam / 2, y0], fill=(150, 112, 90))
                 d.rectangle([x - tam * 0.75, y0 - 2, x + tam * 0.75, y0 + tam], fill=color)
     im = im.filter(ImageFilter.GaussianBlur(1.2))
+    if escena == "multiview":
+        # cuatro entradas abajo, previo y programa arriba con sus marcos
+        im = Image.new("RGB", (w, h), (12, 12, 14))
+        d = ImageDraw.Draw(im)
+        for i, c in enumerate([(40, 60, 110), (70, 50, 40), (30, 80, 60), (90, 70, 120)]):
+            x0 = 4 + i * 158
+            d.rectangle([x0, 186, x0 + 154, 272], fill=c)
+            d.rectangle([x0, 276, x0 + 154, 356], fill=tuple(int(v * 0.7) for v in c))
+        d.rectangle([4, 4, 316, 180], fill=(60, 50, 80)); d.rectangle([4, 4, 316, 180], outline=(40, 200, 90), width=4)
+        d.rectangle([324, 4, 636, 180], fill=(38, 30, 46)); d.rectangle([324, 4, 636, 180], outline=(230, 50, 50), width=4)
+        d.ellipse([440, 60, 520, 140], fill=(196, 150, 116))
     b = io.BytesIO()
     im.save(b, "JPEG", quality=82)
     return "data:image/jpeg;base64," + base64.b64encode(b.getvalue()).decode()
@@ -110,7 +124,9 @@ def fuente(ident, camara, nombre, modo, fps, mbps, audio, receptores, res, gpu=N
     }
 
 
-def estado(paso, vista):
+def estado(paso, vista, lang="es"):
+    if vista.startswith("rutas"):
+        return estado_rutas(paso, lang)
     portal, receptor = vista == "portal", vista == "receptor"
     fuentes = [
         fuente("cam1", "DJI Osmo Pocket 3", "Stage", "1920×1080 @30", ruido(paso, 30, 0.1), ruido(paso, 50, 3),
@@ -225,6 +241,70 @@ def estado(paso, vista):
     }
 
 
+NOMBRES = {"es": {"culto": "Culto", "cam2": "Cámara 2", "operador": "Operador", "pulpito": "Púlpito", "consola": "Consola X32"},
+           "en": {"culto": "Service", "cam2": "Camera 2", "operador": "Operator", "pulpito": "Pulpit", "consola": "X32 console"}}
+
+
+def rutas_demo(paso, lang="es"):
+    """/api/rutas de ejemplo: un culto con un ATEM que llega por SRT, el audio de la
+    consola por USB, una cámara con su micro y el multiview del ATEM al monitor."""
+    n = NOMBRES[lang]
+    entradas = [
+        {"id": "atem", "tipo": "ingesta", "nombre": "ATEM Mini Pro", "clave": "Qm7kT2xR9a",
+         "llega": {"activo": True, "publicando": True, "protocolo": "SRT", "desde": "192.168.1.40", "lectores": 3}},
+        {"id": "audio:X32", "tipo": "usb_audio", "nombre": n["consola"], "dev": "plughw:CARD=X32,DEV=0"},
+        {"id": "usb-pocket", "tipo": "usb_cam", "nombre": "DJI Osmo Pocket 3", "dev": "/dev/video0",
+         "audio_dev": "plughw:CARD=Pocket3,DEV=0"},
+        {"id": "usb-mview", "tipo": "usb_cam", "nombre": "ATEM multiview", "dev": "/dev/video2", "audio_dev": None},
+    ]
+    rutas = [
+        {"id": "culto", "nombre": n["culto"], "camino": n["culto"].lower(), "video": "atem", "audio": "audio:X32",
+         "ganancia": -3, "retraso": 480, "mudo": False, "activa": True,
+         "salidas": [{"id": "culto-obs", "tipo": "obs"}, {"id": "culto-ndi", "tipo": "ndi", "nombre": n["culto"]},
+                     {"id": "culto-grabar", "tipo": "grabar", "formato": "mkv"},
+                     {"id": "culto-yt", "tipo": "rtmp", "url": "rtmp://a.rtmp.youtube.com/live2/xxxx-xxxx-xxxx"}]},
+        {"id": "cam2", "nombre": n["cam2"], "camino": n["cam2"].lower().replace("á", "a").replace(" ", "-"), "video": "usb-pocket", "audio": "usb-pocket",
+         "ganancia": 0, "retraso": 0, "mudo": False, "activa": True,
+         "salidas": [{"id": "cam2-ndi", "tipo": "ndi", "nombre": n["pulpito"]}]},
+        {"id": "operador", "nombre": n["operador"], "camino": n["operador"].lower(), "video": "usb-mview", "audio": "",
+         "ganancia": 0, "retraso": 0, "mudo": False, "activa": True,
+         "salidas": [{"id": "operador-hdmi", "tipo": "hdmi"}]},
+    ]
+    pico = ruido(paso, -14, 4)
+    estado = {
+        "culto": {"estado": "en_marcha", "errores": [], "lectores": 3, "fps": 30.0, "copia": True,
+                  "audio_db": {"peak": pico, "rms": pico - 6}, "calibracion": None,
+                  "salidas": {"culto-obs": "ok", "culto-ndi": "ok", "culto-grabar": "ok", "culto-yt": "ok"}},
+        "cam2": {"estado": "en_marcha", "errores": [], "lectores": 0, "fps": 30.0, "copia": False,
+                 "audio_db": {"peak": pico - 6, "rms": pico - 12}, "calibracion": None, "salidas": {"cam2-ndi": "ok"}},
+        "operador": {"estado": "en_marcha", "errores": [], "lectores": 0, "fps": 60.0, "copia": False,
+                     "audio_db": None, "calibracion": None, "salidas": {"operador-hdmi": "ok"}},
+    }
+    return {"motor": "rutas", "entradas": entradas, "rutas": rutas, "errores": {}, "estado": estado,
+            "activas": ["culto", "cam2", "operador"], "pausadas": [],
+            "red_ndi": [{"nombre": "STUDIO-PC (OBS Program)"}, {"nombre": "VMIX-CONTROL (Output 1)"}],
+            "puertos": {"rtmp": 1935, "srt": 8890, "hls": 8888}, "limite_lite": 1, "pro": True}
+
+
+def estado_rutas(paso, lang="es"):
+    """El estado general con el motor de rutas: sin cámaras por modos, con rutas."""
+    e = estado(paso, "monitor")
+    e.update(fuentes=[], modo="emisor",
+             rutas={"total": 3, "en_marcha": 3,
+                    "nombres": [NOMBRES[lang][k] for k in ("culto", "cam2", "operador")]},
+             capacidad={"edicion": "pro", "potente": True, "nucleos": 4, "memoria_gb": 7.6, "gpu": True,
+                        "falta": [], "simultaneo": True, "midiendo": False})
+    e["emision"] = {"estado": "emitiendo", "emitiendo": 0, "activas": 0, "receptores": 4}
+    e["config"] = {**e["config"], "motor": "rutas", "simultaneo": True}
+    e["hdmi"]["mostrando"] = None
+    e["eventos"] = [{"t": AHORA - s, "c": c, "d": d} for s, c, d in [
+        (20, "rutas_guardadas", {"rutas": 3}), (60, "programa_activa", {"fuente": NOMBRES[lang]["culto"], "salidas": [], "consola": True, "grabar": False}),
+        (62, "relevo_activa", {"fuente": NOMBRES[lang]["culto"], "salidas": [], "consola": False, "grabar": False}),
+        (70, "emitiendo", {"fuente": "DJI Osmo Pocket 3", "nombre": NOMBRES[lang]["pulpito"], "modo": "1920×1080 @30", "formato": "MJPG", "audio": True}),
+        (80, "puente_servidor", {"puerto": 1935}), (90, "motor", {"motor": "rutas"}), (120, "inicio", {"version": VERSION})]]
+    return e
+
+
 REDES = [
     {"ssid": "Studio-5G", "senal": 92, "seguridad": "WPA2", "canal": "149", "banda": "5", "activa": False},
     {"ssid": "Studio", "senal": 84, "seguridad": "WPA2", "canal": "6", "banda": "2.4", "activa": False},
@@ -254,8 +334,8 @@ def registro():
 
 
 def estatico(salida, lang="en", tema="claro", vista="monitor"):
-    pestana = {"config": "config", "sistema": "sistema"}.get(vista, "monitor")
-    estados = [estado(paso, vista) for paso in range(1, 31)]
+    pestana = {"config": "config", "sistema": "sistema", "rutas": "rutas", "rutas-lista": "rutas"}.get(vista, "monitor")
+    estados = [estado(paso, vista, lang) for paso in range(1, 31)]
     portal = vista == "portal"
     respuestas = {
         "/api/sesion": {"autenticado": vista != "entrada", "clave_creada": True, "desde_ap": portal, "espera": 0,
@@ -265,6 +345,9 @@ def estatico(salida, lang="en", tema="claro", vista="monitor"):
                                 {"id": "Studio-5G", "ssid": "Studio-5G", "prioridad": 40, "activa": True},
                                 {"id": "Studio", "ssid": "Studio", "prioridad": 20, "activa": False}]},
         "/api/grabaciones": {"lista": [] if vista == "receptor" else [
+            {"nombre": "culto_2026-10-25_11-10-00.mkv", "bytes": 1_480_000_000, "fecha": AHORA - 40},
+            {"nombre": "culto_2026-10-25_11-00-00.mkv", "bytes": 1_495_000_000, "fecha": AHORA - 640}]
+            if vista.startswith("rutas") else [
             {"nombre": "Stage_2026-10-21_10-02-11.mp4", "bytes": 1_412_000_000, "fecha": AHORA - 40},
             {"nombre": "Stage_2026-10-20_18-30-05.mp4", "bytes": 3_850_000_000, "fecha": AHORA - 61000}],
             "libre": 41_200_000_000},
@@ -272,11 +355,13 @@ def estatico(salida, lang="en", tema="claro", vista="monitor"):
             {"id": "", "desde": AHORA - 330, "hasta": AHORA, "actual": True},
             {"id": "b" * 32, "desde": AHORA - 4 * 86400, "hasta": AHORA - 340, "actual": False}]},
         "/api/registro": registro(),
+        "/api/rutas": rutas_demo(5, lang),
         "/api/sistema/zonas": {"zonas": ["America/Mexico_City", "America/New_York", "Europe/Lisbon",
                                          "Europe/London", "Europe/Madrid", "UTC"],
                                "zona": "Europe/Madrid", "sincronizada": True},
     }
-    previas = {"cam1": preview("escenario"), "cam2": preview("sala")}
+    previas = {"cam1": preview("escenario"), "cam2": preview("sala"),
+               "usb-pocket": preview("escenario"), "usb-mview": preview("multiview")}
     # fetch local: cada consulta del estado recibe el siguiente de la lista
     falso = ("const DEMO_ESTADOS = " + json.dumps(estados) + ";\n"
              "const DEMO_API = " + json.dumps(respuestas) + ";\n"
@@ -288,7 +373,9 @@ def estatico(salida, lang="en", tema="claro", vista="monitor"):
              "  const ok = d !== undefined && !(camino === '/api/estado' && !DEMO_API['/api/sesion'].autenticado);\n"
              "  return { ok, status: ok ? 200 : 401, json: async () => JSON.parse(JSON.stringify(d || {})) };\n"
              "};\n"
-             f'try {{ localStorage.setItem("ndiicam-lang", "{lang}"); localStorage.setItem("ndiicam-tab", "{pestana}"); }} catch (_) {{}}\n')
+             f'try {{ localStorage.setItem("ndiicam-lang", "{lang}"); localStorage.setItem("ndiicam-tab", "{pestana}");'
+             f' localStorage.removeItem("ndiicam-rt-pos");'
+             f' localStorage.setItem("ndiicam-rt-vista", "{"lista" if vista == "rutas-lista" else "lienzo"}"); }} catch (_) {{}}\n')
     html = open(WEB, encoding="utf-8").read()
     html = html.replace('<script>\n"use strict";', '<script>\n"use strict";\n' + falso, 1)
     # 30 consultas rápidas que llenan las gráficas y luego parar: Chrome sin ventana
@@ -297,6 +384,12 @@ def estatico(salida, lang="en", tema="claro", vista="monitor"):
                         "if ((window.vueltas = (window.vueltas || 0) + 1) < 30) setTimeout(refrescar, 30);", 1)
     html = html.replace("c.img.src = `/api/fuente/preview?id=${encodeURIComponent(id)}&t=${Date.now()}`;",
                         "c.img.src = DEMO_PREVIAS[id];", 1)
+    # las vistas previas de las cámaras de las rutas, también inventadas
+    html = html.replace("src: `/api/fuente/preview?id=${encodeURIComponent(n.e.id)}&t=${Date.now()}`",
+                        "src: DEMO_PREVIAS[n.e.id] || ''", 1)
+    if vista == "rutas":
+        # con la ruta del culto abierta en el panel de ajustes
+        html = html.replace("rtIniciar();\n</script>", 'rtIniciar();\nsetTimeout(() => rtSeleccionar("r:culto"), 600);\n</script>', 1)
     if tema == "oscuro":
         html = html.replace("@media (prefers-color-scheme: dark)", "@media all", 1)
     if portal:

@@ -34,10 +34,18 @@ gestiona desde un panel web: tras la instalación no hace falta la terminal.
 
 ![Modo receptor: una fuente NDI de OBS en la salida HDMI del equipo](docs/screenshots/receiver-es.png)
 
+![Pestaña Rutas: el ATEM y la consola juntos hacia OBS, NDI, grabación y YouTube; una cámara por NDI; el multiview al monitor](docs/screenshots/routes-es.png)
+
 <sub>Las capturas usan datos de demostración (<code>docs/screenshots/demo.py</code>).</sub>
 
 ## Funciones
 
+- **Rutas: entradas → rutas → salidas** (ver [docs/rutas.md](docs/rutas.md)). Se dibuja en el
+  panel qué entra (cámaras y audio USB, fuentes NDI, un ATEM u OBS que emite al equipo), cómo se
+  junta (una imagen con el audio de otra entrada, con ganancia y retraso) y por dónde sale: NDI,
+  monitor HDMI, OBS/TV/móvil, SRT, YouTube por RTMP o grabación, **todo a la vez**. Lienzo con
+  cables en el ordenador y lista en el móvil; cada cambio se guarda y se aplica solo, sin cortar
+  lo demás.
 - **Emite cada cámara UVC conectada como fuente NDI propia** (MJPEG o YUYV) a 720p o 1080p,
   hasta 60 fps, **con el micrófono de la cámara** como audio NDI si lo tiene.
 - **Panel web** en `https://<equipo>.local`, con contraseña: estado en vivo, fps, tasa de datos, receptores
@@ -115,6 +123,7 @@ ser Pro.
 | El puente publica lo recibido como fuente NDI | No | Sí |
 | Reemitir una fuente NDI (grabarla o emitirla) | No | Sí |
 | Retraso del audio y calibración con palmadas | Sí | Sí |
+| [Rutas](docs/rutas.md) en marcha a la vez | Una | **Todas** |
 
 En un equipo Pro, el interruptor *Funciones Pro* (en *Configuración › Modo del equipo*) las
 apaga y lo deja como un Lite.

@@ -34,10 +34,18 @@ sound. Everything is managed from a web panel: no terminal needed after installa
 
 ![Receiver mode: an NDI source from OBS shown on the device's HDMI output](docs/screenshots/receiver-en.png)
 
+![Routes tab: the ATEM and the mixing console together to OBS, NDI, recording and YouTube; a camera to NDI; the multiview to the monitor](docs/screenshots/routes-en.png)
+
 <sub>Screenshots use demo data (<code>docs/screenshots/demo.py</code>).</sub>
 
 ## Features
 
+- **Routes: inputs → routes → outputs** (see [docs/routes.md](docs/routes.md)). You draw in the
+  panel what comes in (USB cameras and audio, NDI sources, an ATEM or OBS streaming to the
+  device), how it is combined (a picture with another input's audio, with gain and delay) and
+  where it goes out: NDI, HDMI monitor, OBS/TV/phone, SRT, YouTube over RTMP or recording, **all
+  at once**. A canvas with wires on a computer and a list on a phone; every change saves and
+  applies itself without cutting anything else.
 - **Streams every UVC camera plugged in as its own NDI source** (MJPEG or YUYV) at 720p or 1080p,
   up to 60 fps, **with the camera's microphone** as NDI audio when it has one.
 - **Web panel** at `https://<device>.local`, password protected: live status, frame rate, bitrate, connected
@@ -115,6 +123,7 @@ Lite device is missing to be Pro.
 | Bridge publishes what it receives as an NDI source | No | Yes |
 | Re-stream an NDI source (record or stream it) | No | Yes |
 | Audio delay and clap calibration | Yes | Yes |
+| [Routes](docs/routes.md) running at once | One | **All** |
 
 On a Pro device, the *Pro features* switch (in *Settings › Device mode*) turns them off and
 makes it behave like Lite.
