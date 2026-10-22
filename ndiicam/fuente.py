@@ -268,6 +268,13 @@ def tramo_salida(cfg):
         video += (" ! tee name=t t. ! queue name=qh max-size-buffers=1 leaky=downstream"
                   f" ! kmssink name=hdmi sync=false connector-id={cfg['hdmi']}"
                   " t. ! queue name=q4 max-size-buffers=2 leaky=downstream")
+    if cfg.get("solo_monitor"):
+        # solo al HDMI (el multiview del ATEM para el operador): sin NDI ni audio. El
+        # sumidero es el propio HDMI, con su nombre de 'sink' para que todo lo demás
+        # (contadores, retardo) funcione igual
+        return (f"queue name=q2 {Q} ! videoconvert n-threads={os.cpu_count() or 2}"
+                f" ! video/x-raw,format=UYVY ! queue name=q3 {Q}"
+                f" ! kmssink name=sink sync=false connector-id={cfg['hdmi']}")
     if cfg.get("audio"):
         # Retraso del audio (audio de otra interfaz USB, que llega antes que la imagen
         # de la cámara): se desplaza el tiempo del audio en el pad de 'retraso' (ver
@@ -774,7 +781,8 @@ def main():
     else:
         flujo = Directo(cfg)
     flujo.elemento("src").set_property("device", cfg["dev"])
-    flujo.elemento("sink").set_property("ndi-name", cfg["nombre"])
+    if not cfg.get("solo_monitor"):
+        flujo.elemento("sink").set_property("ndi-name", cfg["nombre"])
     combinador = flujo.elemento("c")
     if cfg.get("baja_latencia") and combinador is not None:
         # la imagen sale sin esperar al audio de su intervalo (plugin parcheado:

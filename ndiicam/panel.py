@@ -514,6 +514,8 @@ class Panel(BaseHTTPRequestHandler):
             if d["latencia"] not in LATENCIAS:
                 return self._error("modo_invalido")
             cambios["latencia"] = d["latencia"]
+        if "solo_monitor" in d:
+            cambios["solo_monitor"] = bool(d["solo_monitor"])
         if "retraso_audio" in d:
             try:
                 v = int(d["retraso_audio"])

@@ -241,6 +241,11 @@ class Puente(unittest.TestCase):
         configs = raiz.findall("service/profiles/profile/config")
         self.assertEqual({c.get("fps") for c in configs}, {"60", "50", "30", "25", "24"})
         self.assertTrue(all(c.get("resolution") == "1080p" for c in configs))
+        # dos perfiles: el de siempre y uno para editar, con más tasa
+        perfiles = {pf.find("name").text: pf for pf in raiz.findall("service/profiles/profile")}
+        self.assertEqual(set(perfiles), {"NDIICAM", "NDIICAM edición"})
+        tasa = lambda n: int(perfiles[n].find("config[@fps='30']/bitrate").text)
+        self.assertGreaterEqual(tasa("NDIICAM edición"), 2 * tasa("NDIICAM"))
 
 
 class JpegDeLaCamara(unittest.TestCase):

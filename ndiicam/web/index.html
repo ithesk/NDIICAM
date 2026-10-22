@@ -681,7 +681,8 @@ const T = {
     hdmi_rx_recibiendo: (r) => `${r.ancho}×${r.alto} · ${r.fps ? r.fps + " fps" : "imagen fija"}` + (r.audio_activo ? " · con audio" : r.audio_fallido ? " · sin audio (falló la salida de sonido)" : "") + (r.latencia_ms != null ? ` · retardo interno ${Math.round(r.latencia_ms)} ms` : ""),
     latency: "Retardo interno", latency_value: (ms) => `${Math.round(ms)} ms (cámara → NDI)`,
     hdmi_rx_error: (n) => `${n} no responde; reintentando…`,
-    st_recibiendo: "Recibiendo", st_conectando: "Conectando", st_sin_fuente: "Sin fuente", st_sin_monitor: "Sin monitor", st_rx_error: "Sin señal", st_pausada: "En pausa",
+    st_recibiendo: "Recibiendo", st_conectando: "Conectando", st_sin_fuente: "Sin fuente", st_sin_monitor: "Sin monitor", st_rx_error: "Sin señal", st_pausada: "En pausa", st_solo_monitor: "Solo monitor (el HDMI muestra otra cosa)",
+    solo_monitor: "Solo monitor: al HDMI, sin NDI (p. ej., el multiview del ATEM)",
     sub_sin_fuente: "Elige qué fuente NDI mostrar.", sub_sin_monitor: "Conecta un monitor al HDMI del equipo.",
     hdmi_rx_tam: (r, p) => `La fuente es ${r.ancho}×${r.alto} y la pantalla está a ${p}: se escala por CPU, lo que gasta bastante más. Emítela a ${p} (en OBS, la resolución de salida) para que no cueste nada.`,
     hdmi_no_monitor: "No hay ningún monitor conectado", hdmi_monitor: (p) => `Monitor en ${p.conector} (${p.modo || "?"})`,
@@ -1000,7 +1001,8 @@ const T = {
     hdmi_rx_recibiendo: (r) => `${r.ancho}×${r.alto} · ${r.fps ? r.fps + " fps" : "still image"}` + (r.audio_activo ? " · with audio" : r.audio_fallido ? " · no audio (sound output failed)" : "") + (r.latencia_ms != null ? ` · internal delay ${Math.round(r.latencia_ms)} ms` : ""),
     latency: "Internal delay", latency_value: (ms) => `${Math.round(ms)} ms (camera → NDI)`,
     hdmi_rx_error: (n) => `${n} is not responding; retrying…`,
-    st_recibiendo: "Receiving", st_conectando: "Connecting", st_sin_fuente: "No source", st_sin_monitor: "No monitor", st_rx_error: "No signal", st_pausada: "Paused",
+    st_recibiendo: "Receiving", st_conectando: "Connecting", st_sin_fuente: "No source", st_sin_monitor: "No monitor", st_rx_error: "No signal", st_pausada: "Paused", st_solo_monitor: "Monitor only (HDMI is showing something else)",
+    solo_monitor: "Monitor only: to HDMI, no NDI (e.g. the ATEM multiview)",
     sub_sin_fuente: "Pick which NDI source to show.", sub_sin_monitor: "Plug a monitor into the device's HDMI.",
     hdmi_rx_tam: (r, p) => `The source is ${r.ancho}×${r.alto} and the screen is at ${p}: it is scaled on the CPU, which costs a lot more. Send it at ${p} (in OBS, the output resolution) so it costs nothing.`,
     hdmi_no_monitor: "No monitor connected", hdmi_monitor: (p) => `Monitor on ${p.conector} (${p.modo || "?"})`,
@@ -1473,7 +1475,7 @@ function rellenar(input, valor, clave) {
 
 // ----------------------------------------------------------------- fuentes
 const CLASES = { emitiendo: "ok", iniciando: "aviso", sin_camara: "aviso", error: "mal", desactivada: "",
-  recibiendo: "ok", conectando: "aviso", sin_fuente: "aviso", sin_monitor: "aviso", rx_error: "mal", pausada: "",
+  recibiendo: "ok", conectando: "aviso", sin_fuente: "aviso", sin_monitor: "aviso", rx_error: "mal", pausada: "", solo_monitor: "",
   esperando_atem: "aviso" };
 
 function crearTarjeta(f) {
@@ -1524,7 +1526,12 @@ function crearTarjeta(f) {
       c.pastillaCfg),
     el("div", { class: "fuente-cuerpo" },
       el("div", null,
-        el("label", { class: "conmutador", style: "margin-bottom:12px" }, c.conmutador, el("span", { text: t("source_stream") })),
+        el("label", { class: "conmutador", style: "margin-bottom:4px" }, c.conmutador, el("span", { text: t("source_stream") })),
+        // solo al HDMI, sin NDI (el multiview del ATEM para el operador)
+        el("label", { class: "conmutador", style: "margin-bottom:12px" },
+          c.soloMonitor = el("input", { type: "checkbox", onchange: () => {
+            api("/api/fuente", { id, solo_monitor: c.soloMonitor.checked }).catch((err) => mensaje(c.msg, err.message, "mal"));
+          } }), el("span", { text: t("solo_monitor") })),
         el("label", { text: t("ndi_name") }),
         c.nombre = el("input", { type: "text", maxlength: "48", autocomplete: "off", spellcheck: "false",
           oninput: () => editado.add(k("nombre")) }),
@@ -1682,6 +1689,7 @@ function pintarFuente(c, f, e) {
   poner(c.emitiendoDesde, f.desde ? duracion(Date.now() / 1000 - f.desde) : "—");
   // ajustes, sin pisar lo que se está editando
   if (document.activeElement !== c.conmutador) c.conmutador.checked = aj.activa;
+  if (document.activeElement !== c.soloMonitor) c.soloMonitor.checked = !!aj.solo_monitor;
   rellenar(c.nombre, aj.ndi_nombre, k("nombre"));
   const noAdmite = Object.keys(f.admite).filter((r) => !f.admite[r]);
   segmentadoEn(c.segRes, null, elegido[k("res")] || aj.resolucion, noAdmite);

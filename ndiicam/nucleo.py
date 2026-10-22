@@ -88,7 +88,7 @@ MODOS_CONSOLA = {"nativa": None, "1080p": "1920x1080@60", "720p": "1280x720@60"}
 CLAVES_FUENTE = ("activa", "ndi_nombre", "resolucion", "fps", "audio",
                  "gpu_salida", "gpu_extra", "gpu_kbps", "srt_puerto", "rtmp_url",
                  "grabar_cuando", "grabar_desde", "grabar_hasta", "grabar_manual", "formato",
-                 "latencia", "srt_latencia", "retraso_audio")
+                 "latencia", "srt_latencia", "retraso_audio", "solo_monitor")
 # latencia de la emisión NDI: normal (audio sincronizado), baja (la imagen sale sin
 # esperar al audio de su intervalo; plugin parcheado) o minima (sin audio). En baja y
 # minima se sube a 60 fps si la cámara los da sin comprimir. Medido en un Celeron
@@ -343,7 +343,7 @@ class Config:
              "gpu_salida": "no", "gpu_extra": [], "gpu_kbps": 8000, "srt_puerto": 9000, "rtmp_url": "",
              "grabar_cuando": "siempre", "grabar_desde": "09:00", "grabar_hasta": "18:00",
              "grabar_manual": False, "formato": "auto", "latencia": "normal", "srt_latencia": 200,
-             "retraso_audio": 0}
+             "retraso_audio": 0, "solo_monitor": False}
         f.update({k: v for k, v in d["fuentes"].get(ident, {}).items() if k in CLAVES_FUENTE})
         return f
 

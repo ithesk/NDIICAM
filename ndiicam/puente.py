@@ -123,21 +123,31 @@ def xml_atem(ip, clave):
     """Ajustes de emisión para ATEM Software Control (Stream > Load Streaming
     Settings): el ATEM publica en este equipo como en un Streaming Bridge."""
     nombre = f"NDIICAM {socket.gethostname()}"
-    configs = "".join(
-        f'        <config resolution="1080p" fps="{fps}">\n'
-        f"          <bitrate>{bps}</bitrate>\n"
-        "          <audio-bitrate>128000</audio-bitrate>\n"
-        # un fotograma clave por segundo: el puente (RTMP) empieza a mostrar desde el
-        # último, así que con 1 s se recorta hasta un segundo de retardo
-        "          <keyframe-interval>1</keyframe-interval>\n"
-        "        </config>\n"
-        for fps, bps in (("60", 12000000), ("50", 12000000), ("30", 8000000),
-                         ("25", 8000000), ("24", 8000000)))
+
+    def perfil(titulo, tasas, audio):
+        configs = "".join(
+            f'        <config resolution="1080p" fps="{fps}">\n'
+            f"          <bitrate>{bps}</bitrate>\n"
+            f"          <audio-bitrate>{audio}</audio-bitrate>\n"
+            # un fotograma clave por segundo: el puente (RTMP) empieza a mostrar desde
+            # el último, así que con 1 s se recorta hasta un segundo de retardo; y al
+            # editar la grabación se puede cortar en cualquier segundo
+            "          <keyframe-interval>1</keyframe-interval>\n"
+            "        </config>\n"
+            for fps, bps in tasas)
+        return f"      <profile>\n        <name>{titulo}</name>\n{configs}      </profile>\n"
+    # el de siempre, y otro con más calidad para grabar y editar después (la
+    # grabación del programa copia lo que manda el ATEM, sin recodificar: no puede
+    # mejorarlo). En la red local cabe de sobra; si un ATEM no aguanta la tasa
+    # alta, queda el otro
+    perfiles = (perfil("NDIICAM", (("60", 12000000), ("50", 12000000), ("30", 8000000),
+                                   ("25", 8000000), ("24", 8000000)), 128000)
+                + perfil("NDIICAM edición", (("60", 25000000), ("50", 25000000), ("30", 20000000),
+                                            ("25", 20000000), ("24", 20000000)), 256000))
     return ('<?xml version="1.0" encoding="UTF-8"?>\n<streaming>\n  <service>\n'
             f"    <name>{nombre}</name>\n    <servers>\n      <server>\n"
             f"        <name>{socket.gethostname()}</name>\n"
             f"        <url>rtmp://{ip}:{PUERTO_RTMP}/live</url>\n"
             "      </server>\n    </servers>\n"
             f"    <key>{clave}</key>\n"
-            "    <profiles>\n      <profile>\n        <name>NDIICAM</name>\n"
-            f"{configs}      </profile>\n    </profiles>\n  </service>\n</streaming>\n")
+            f"    <profiles>\n{perfiles}    </profiles>\n  </service>\n</streaming>\n")

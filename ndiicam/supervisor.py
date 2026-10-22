@@ -543,7 +543,8 @@ class Fuentes:
             usb3 = velocidad_usb(f.cam.get("usb")) >= 5000     # por USB 2.0 no cabe
             if usb3 and fmt60 == "YUYV" and any(m[2] == 60 and m[3] == "YUYV" for m in mismos):
                 fps, fmt = 60, fmt60
-        audio = None if latencia == "minima" else self.audio_para(f, aj["audio"])
+        audio = (None if latencia == "minima" or aj.get("solo_monitor")
+                 else self.audio_para(f, aj["audio"]))
         return {"dev": f.cam["dev"], "ancho": ancho, "alto": alto, "fps": fps, "fmt": fmt,
                 "nombre": aj["ndi_nombre"], "audio": audio,
                 # audio de otra interfaz, que llega antes que la imagen: se retrasa
@@ -552,8 +553,9 @@ class Fuentes:
                 "decodificadores": self.decodificadores(f, fmt),
                 "hdmi": self.hdmi_conector if f.cam["id"] == self.hdmi_para
                 and not f.hdmi_fallido else None,
-                "gpu": self.salida_gpu(aj, fmt),
-                "gpu_extra": self.salidas_extra(aj, fmt),
+                "gpu": None if aj.get("solo_monitor") else self.salida_gpu(aj, fmt),
+                "gpu_extra": [] if aj.get("solo_monitor") else self.salidas_extra(aj, fmt),
+                "solo_monitor": bool(aj.get("solo_monitor")),
                 "preview": ruta_preview(f.cam["id"])}
 
     @staticmethod
@@ -737,8 +739,11 @@ class Fuentes:
                     evento("cam_detectada", fuente=cam["nombre"])
                 f.cam = cam
                 aj = self.config.fuente(ident)
-                if pausar or not aj["activa"]:
-                    parada = "pausada" if pausar else "desactivada"
+                # solo monitor (el multiview del ATEM): solo corre mientras el HDMI la muestra
+                sin_hdmi = aj.get("solo_monitor") and (ident != self.hdmi_para or f.hdmi_fallido)
+                if pausar or not aj["activa"] or sin_hdmi:
+                    parada = ("pausada" if pausar else "desactivada" if not aj["activa"]
+                              else "solo_monitor")
                     if f.proc is not None or f.estado != parada:
                         f.detener()
                         f.estado, f.error = parada, ""
