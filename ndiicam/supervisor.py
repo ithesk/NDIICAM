@@ -11,8 +11,8 @@ import time
 
 import nucleo
 from nucleo import (AP_IF, AP_IP, FUENTE_PY, GRABACIONES, MAX_DECODIFICADORES, PUERTO_RTMP,
-    NOMBRE_NDI_PUENTE, RECEPTOR_PY, REEMISION_PY, REPOSO_PY, RESOLUCIONES, SALIDAS_EXTRA, VERSION,
-    conexiones_por_pid, dispositivo_por_defecto, evento, ip_de, ips_propias, leer)
+    NOMBRE_NDI_PUENTE, PROGRAMA_PY, PUERTO_RTMP_LOCAL, RECEPTOR_PY, REEMISION_PY, REPOSO_PY,
+    RESOLUCIONES, RUTA_PROGRAMA, SALIDAS_EXTRA, VERSION, conexiones_por_pid, dispositivo_por_defecto, evento, ip_de, ips_propias, leer)
 from camaras import audio_dispositivos, audio_hdmi, camaras, pantallas, resolucion_pantalla
 from gpu import capacidad_gpu, capacidad_vpp, decodificador_h264, edicion, entorno_va, simultaneo
 from puente import PUENTE, clave_puente
@@ -406,11 +406,14 @@ class Receptor:
                    modo=f"{c.get('ancho')}×{c.get('alto')}" + (f" @{fps:g}" if fps else ""))
         self.prev = (t, c)
 
-class Reemision:
-    """Una fuente NDI de la red grabada o emitida por SRT/RTMP desde un proceso
-    reemision.py (equipo potente). Si falla, se reintenta cada vez más espaciado."""
+class Auxiliar:
+    """Un proceso de la edición Pro que no es una cámara ni el receptor: la
+    reemisión de una fuente NDI (reemision.py) o el programa final del puente
+    (programa.py). Si falla, se reintenta cada vez más espaciado. 'prefijo' da
+    nombre a sus eventos (reem_activa, programa_error...)."""
 
-    def __init__(self):
+    def __init__(self, script, prefijo):
+        self.script, self.prefijo = script, prefijo
         self.proc = None
         self.obj = None
         self.estado = "apagado"     # apagado | conectando | activa | error
@@ -427,9 +430,20 @@ class Reemision:
         self.estado, self.error = "conectando", ""
         self.c, self.prev = {}, None
         self.stats = {"fps": 0, "mbps": 0, "audio_activo": False}
-        self.proc = subprocess.Popen([sys.executable, REEMISION_PY, json.dumps(obj)],
-                                     stdout=subprocess.PIPE, text=True, env=entorno_va())
+        self.proc = subprocess.Popen([sys.executable, self.script, json.dumps(obj)],
+                                     stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True,
+                                     env=entorno_va())
         threading.Thread(target=self._leer, args=(self.proc,), daemon=True).start()
+
+    def orden(self, d):
+        proc = self.proc
+        if proc is None or proc.poll() is not None:
+            return
+        try:
+            proc.stdin.write(json.dumps(d) + "\n")
+            proc.stdin.flush()
+        except (OSError, ValueError):
+            pass
 
     def _leer(self, proc):
         for linea in proc.stdout:
@@ -453,7 +467,7 @@ class Reemision:
         if error == "eos" or "demultiplex" in error.lower():
             error = "sin_senal"
         if self.estado == "activa" or self.fallos == 0:
-            evento("reem_error", fuente=self.obj["nombre"], detalle=error)
+            evento(f"{self.prefijo}_error", fuente=self.obj.get("nombre", ""), detalle=error)
         self.fallos += 1
         self.detener()
         self.estado, self.error = "error", error
@@ -482,11 +496,14 @@ class Reemision:
             dt = c["t"] - p["t"]
             self.stats = {"fps": round((c["out"] - p["out"]) / dt, 1),
                           "mbps": round((c["bytes"] - p["bytes"]) * 8 / dt / 1e6, 1),
-                          "audio_activo": c["aud"] > p["aud"]}
+                          "audio_activo": c["aud"] > p["aud"],
+                          "audio_db": {"peak": c.get("db_peak"), "rms": c.get("db_rms")},
+                          "desfase_ms": c.get("desfase_ms")}
         if c.get("out", 0) > 0 and self.estado != "activa":
             self.estado, self.desde, self.fallos = "activa", t, 0
-            evento("reem_activa", fuente=self.obj["nombre"],
-                   salidas=[s["modo"] for s in self.obj["salidas"]])
+            evento(f"{self.prefijo}_activa", fuente=self.obj.get("nombre", ""),
+                   salidas=[s["modo"] for s in self.obj.get("salidas", [])],
+                   consola=bool(self.obj.get("audio")), grabar=bool(self.obj.get("grabar")))
         self.prev = (t, c)
 
 class Fuentes:
@@ -502,7 +519,8 @@ class Fuentes:
         self.hdmi_conector = None  # conector DRM del monitor (hay que indicarlo para
                                    # cambiar su modo: kmssink coge el primero, aunque esté vacío)
         self.receptor = Receptor()  # o una fuente NDI de la red en el HDMI
-        self.reemision = Reemision()  # y una fuente NDI grabada o emitida (equipo potente)
+        self.reemision = Auxiliar(REEMISION_PY, "reem")  # una fuente NDI grabada o emitida (Pro)
+        self.programa = Auxiliar(PROGRAMA_PY, "programa")  # el programa final del puente (Pro)
         self.edicion = None     # lite | pro, según el equipo
         self.reposo = Reposo()      # y si no, la pantalla de ayuda
 
@@ -644,26 +662,32 @@ class Fuentes:
         # HDMI, que es del receptor); en uno justo, se paran para dejarle la CPU
         pausar = receptor and not simultaneo(cfg)
         rx_obj = None
+        pro = simultaneo(cfg)
         if puente and PUENTE.disponible():
-            PUENTE.arrancar(clave_puente(self.config))
+            # en Pro, además el programa final y el reparto (HLS)
+            PUENTE.arrancar(clave_puente(self.config), reparto=pro)
         elif not puente:
             PUENTE.detener()
         info_puente = PUENTE.info() if puente and PUENTE.disponible() else {}
+        url_rx = self._programa(cfg, puente and pro, info_puente)
         # equipo potente: lo que llega al puente sale también como fuente NDI
-        puente_ndi = puente and cfg["puente_ndi"] and simultaneo(cfg)
-        if info_puente.get("publicando") and (monitor or puente_ndi):
+        puente_ndi = puente and cfg["puente_ndi"] and pro
+        # en Pro el HDMI del puente puede mostrar el programa, una cámara (el multiview
+        # del ATEM por USB) o nada
+        hdmi_puente = cfg["puente_hdmi"] if pro else "programa"
+        monitor_rx = monitor if hdmi_puente == "programa" else None
+        if url_rx and (monitor_rx or puente_ndi):
             # como un ATEM Streaming Bridge: lo que publique el ATEM, al HDMI
-            rx_obj = {"origen": "puente", "nombre": "ATEM",
-                      "url": f"rtmp://127.0.0.1:{PUERTO_RTMP}/live/{PUENTE.clave}",
+            rx_obj = {"origen": "puente", "nombre": "ATEM", "url": url_rx,
                       "decodificador": decodificador_h264(),
-                      "hdmi": monitor["id"] if monitor else None,
-                      "pantalla": resolucion_pantalla(monitor) if monitor else None,
+                      "hdmi": monitor_rx["id"] if monitor_rx else None,
+                      "pantalla": resolucion_pantalla(monitor_rx) if monitor_rx else None,
                       "gpu_h264": capacidad_vpp()["h264"] and not self.receptor.gpu_fallida}
             if puente_ndi:
                 rx_obj["ndi_nombre"] = NOMBRE_NDI_PUENTE
                 rx_obj["ndi_audio"] = any("audio" in str(p).lower() or "aac" in str(p).lower()
                                           for p in info_puente.get("pistas") or [])
-            audio = audio_hdmi() if monitor else None
+            audio = audio_hdmi() if monitor_rx else None
             if self.receptor.destino != "puente":
                 self.receptor.destino = "puente"
                 self.receptor.fallos, self.receptor.audio_fallido = 0, None
@@ -680,7 +704,9 @@ class Fuentes:
                 self.receptor.fallos, self.receptor.audio_fallido = 0, None
                 self.receptor.reintento = 0.0
             rx_obj["audio"] = None if audio == self.receptor.audio_fallido else audio
-        if receptor or not cfg["hdmi"] or not monitor or not activas:
+        if puente and pro and hdmi_puente in activas and monitor:
+            self.hdmi_para = hdmi_puente     # el multiview (u otra cámara) al monitor
+        elif receptor or not cfg["hdmi"] or not monitor or not activas:
             self.hdmi_para = None
         else:
             self.hdmi_para = cfg["hdmi_fuente"] if cfg["hdmi_fuente"] in activas else activas[0]
@@ -749,6 +775,37 @@ class Fuentes:
             if reposo_obj and self.reposo.proc is None and time.time() >= self.reposo.reintento:
                 self.reposo.arrancar(reposo_obj)
             self._grabacion_condicional()
+
+    def _programa(self, cfg, activo, info_puente):
+        """El programa final del puente (Pro): arranca o para programa.py y dice de
+        dónde tienen que leer el HDMI y el NDI: del programa en cuanto está, y de lo
+        que manda el ATEM tal cual mientras no (o si el programa falla)."""
+        crudo = f"{PUERTO_RTMP_LOCAL}/live/{PUENTE.clave}" if info_puente.get("publicando") else None
+        obj = None
+        if activo and crudo:
+            dev = next((a["dev"] for a in self.audio if a["id"] == cfg["programa_audio"]), None)
+            obj = {"nombre": "programa", "entrada": crudo,
+                   "salida": f"{PUERTO_RTMP_LOCAL}/{RUTA_PROGRAMA}", "audio": dev,
+                   "retraso_audio": int(cfg["programa_retraso"]) if dev else 0,
+                   "grabar": {"dir": GRABACIONES} if cfg["programa_grabar"] else None}
+        pr = self.programa
+        if (pr.proc is not None and obj and pr.obj
+                and {**obj, "retraso_audio": 0} == {**pr.obj, "retraso_audio": 0}
+                and obj["retraso_audio"] != pr.obj["retraso_audio"]):
+            pr.orden({"retraso_audio": obj["retraso_audio"]})     # en marcha, sin cortar
+            pr.obj = obj
+        if pr.proc is not None and pr.obj != obj:
+            pr.detener()
+            pr.fallos, pr.reintento = 0, 0.0
+        if obj is None:
+            pr.estado, pr.error = "apagado", ""
+        elif pr.proc is None and time.time() >= pr.reintento:
+            pr.arrancar(obj)
+        if obj is None:
+            return crudo
+        if PUENTE.ruta_lista(RUTA_PROGRAMA):
+            return f"{PUERTO_RTMP_LOCAL}/{RUTA_PROGRAMA}"
+        return crudo if pr.estado == "error" else None
 
     def objetivo_reemision(self, cfg, puertos=()):
         """Qué tiene que hacer la reemisión, o None: hace falta un equipo potente,
@@ -898,6 +955,7 @@ class Fuentes:
                 f.detener()
             self.receptor.detener()
             self.reemision.detener()
+            self.programa.detener()
             self.reposo.detener()
 
     def lista(self):

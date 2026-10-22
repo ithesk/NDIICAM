@@ -10,7 +10,7 @@ import time
 
 import nucleo
 from gpu import simultaneo
-from nucleo import PUERTO_RTMP, PUERTO_SRT, cache_funcion, evento, sh
+from nucleo import PUERTO_HLS, PUERTO_RTMP, PUERTO_SRT, cache_funcion, evento, sh
 
 TABLA = "ndiicam"
 # NDI: descubrimiento (5959), mensajes (5960) y un puerto por fuente desde 5961,
@@ -77,6 +77,8 @@ def reglas(modo, srt, extra, ssh):
     if "puente" in modos:
         tcp.add(PUERTO_RTMP)
         udp.add(PUERTO_SRT)
+        if "emisor" in modos:       # Pro: el programa final también se reparte por HLS
+            tcp.add(PUERTO_HLS)
     for proto, a, b in extra:
         if a == b:
             (tcp if proto == "tcp" else udp).add(a)

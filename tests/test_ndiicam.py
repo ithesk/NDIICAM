@@ -908,5 +908,35 @@ class CalibracionDelAudio(unittest.TestCase):
         self.assertEqual(fuente.analizar_calibracion(audio, quieto)["error"], "sin_movimiento")
 
 
+class ProgramaFinal(unittest.TestCase):
+    """Modo puente en Pro: el ATEM publica, el equipo reparte el programa final."""
+
+    def test_mediamtx_lite_solo_recibe(self):
+        c = puente.conf_mediamtx("K")
+        self.assertIn("hls: no", c)
+        self.assertIn("live/K: {}", c)
+        self.assertNotIn(nucleo.RUTA_PROGRAMA, c)
+
+    def test_mediamtx_pro_reparte_y_solo_el_equipo_publica_el_programa(self):
+        c = puente.conf_mediamtx("K", reparto=True)
+        self.assertIn(f"hlsAddress: :{nucleo.PUERTO_HLS}", c)
+        self.assertIn(f"  {nucleo.RUTA_PROGRAMA}: {{}}", c)
+        # desde fuera solo se publica en la ruta del ATEM; leer, todo
+        fuera = c.split("ips: []")[1].split("paths:")[0]
+        self.assertIn("action: publish\n    path: live/K", fuera)
+        self.assertNotIn(nucleo.RUTA_PROGRAMA, fuera)
+        self.assertIn("action: read", fuera)
+
+    def test_cortafuegos_abre_hls_solo_en_pro(self):
+        pro = cortafuegos.reglas(["emisor", "puente"], [], [], [22])
+        self.assertRegex(pro, rf"tcp dport \{{[^}}]*\b{nucleo.PUERTO_HLS}\b")
+        lite = cortafuegos.reglas("puente", [], [], [22])
+        self.assertNotIn(str(nucleo.PUERTO_HLS), lite)
+
+    def test_grabaciones_mkv(self):
+        self.assertTrue(nucleo.NOMBRE_GRABACION.match("programa_2026-10-22_16-25-04.mkv"))
+        self.assertFalse(nucleo.NOMBRE_GRABACION.match("../x.mkv"))
+
+
 if __name__ == "__main__":
     unittest.main()

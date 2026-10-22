@@ -278,6 +278,32 @@
       <div><label data-t="hdmi_state"></label><div id="ptEstado">—</div></div>
       <div id="ptNdiBloque" class="oculto"><label data-t="pt_ndi"></label><div class="mono" id="ptNdi">—</div></div>
     </div>
+    <div id="ptPrograma" class="oculto" style="margin-top:16px">
+      <h3 data-t="pg_title" style="margin:0 0 4px"></h3>
+      <div class="sub" id="pgSub"></div>
+      <div class="campos" style="margin-top:10px">
+        <div>
+          <label for="pgAudio" data-t="pg_audio"></label>
+          <select id="pgAudio"></select>
+          <div id="pgBloqueRetraso">
+            <label data-t="delay_label" style="margin-top:12px"></label>
+            <div style="display:flex;gap:10px;align-items:center">
+              <input type="range" id="pgRetraso" min="0" max="1000" step="10" style="flex:1">
+              <b id="pgRetrasoVal" style="min-width:64px;text-align:right"></b>
+            </div>
+            <div class="ayuda" data-t="pg_delay_help"></div>
+          </div>
+          <label class="conmutador" style="margin-top:12px"><input type="checkbox" id="pgGrabar"><span data-t="pg_record"></span></label>
+          <label for="pgHdmi" data-t="pg_hdmi" style="margin-top:12px"></label>
+          <select id="pgHdmi"></select>
+        </div>
+        <div>
+          <label data-t="pg_where"></label>
+          <ul class="lista" id="pgUrls"></ul>
+        </div>
+      </div>
+      <div class="botones"><button class="boton principal" id="pgGuardar" data-t="save"></button></div>
+    </div>
     <div id="ptNdiAjuste" class="oculto" style="margin-top:12px">
       <label class="conmutador"><input type="checkbox" id="chkPuenteNdi"><span data-t="pt_ndi_on"></span></label>
       <div class="ayuda" data-t="pt_ndi_help"></div>
@@ -815,6 +841,12 @@ const T = {
     reem_help: "Coge una fuente NDI de la red (OBS, vMix, otro NDIICAM…) y la graba en el equipo o la emite por SRT o RTMP, codificada en la GPU, sin pasar por OBS. Con audio si la fuente lo trae.",
     reem_sub: (r) => `${r.fps.toFixed(1)} fps · ${r.mbps.toFixed(1)} Mbit/s` + (r.audio_activo ? " · audio" : ""),
     reem_st: { apagado: "Apagada", conectando: "Conectando", activa: "Activa", error: "Error, reintentando" },
+    pg_title: "Programa final", pg_audio: "Audio del programa", pg_audio_atem: "El que manda el ATEM",
+    pg_delay_help: "El ATEM tarda en codificar y mandar la imagen, así que la consola llega antes: retrásala hasta que la voz case con la boca. Se ajusta en marcha.",
+    pg_record: "Grabar el programa (MKV, sin recodificar)", pg_hdmi: "Monitor HDMI",
+    pg_hdmi_programa: "El programa", pg_hdmi_no: "Nada", pg_where: "Dónde verlo",
+    pg_sub: (g) => g.estado === "activa" ? `${g.fps.toFixed(0)} fps · ${g.mbps.toFixed(1)} Mbit/s` + (g.consola ? " · audio de la consola" : " · audio del ATEM") + (g.grabar ? " · grabando" : "") : g.estado === "error" ? `Error: ${g.error}` : "Esperando a que publique el ATEM…",
+    pg_url: { obs: "OBS (Medios › fuente multimedia)", vlc: "VLC, Smart TV (HLS)", web: "Navegador, móvil", srt: "SRT (vMix, VLC)", ndi: "NDI" },
     pt_ndi: "Fuente NDI", pt_ndi_on: "Publicar también como fuente NDI",
     pt_ndi_help: "Lo que llega del ATEM, OBS o el móvil sale además como fuente NDI en la red (con su audio), aunque no haya monitor conectado.",
     pt_ndi_espera: "Aparecerá en cuanto llegue la emisión",
@@ -882,7 +914,7 @@ const T = {
     stream_errors: { arranque: "No se pudo arrancar la emisión.", eos: "La cámara cerró el flujo.", sin_imagen: "La cámara no entregaba imagen.", proceso: "El proceso de la fuente terminó." },
     fields: { activa: "emitir", ndi_nombre: "nombre NDI", resolucion: "resolución", fps: "fps", audio: "audio",
       transporte: "transporte", ap_ssid: "nombre de la WiFi de configuración", ap_clave: "clave de la WiFi de configuración",
-      pais: "país", clave_panel: "contraseña del panel", hdmi: "salida HDMI", hdmi_fuente: "cámara en HDMI", rx_fuente: "fuente del receptor", hdmi_consola: "resolución de la pantalla", decodificadores: "decodificación JPEG", cortafuegos: "cortafuegos", puertos_extra: "puertos extra", simultaneo: "cámaras mientras recibe", puente_ndi: "puente a NDI", reem_fuente: "fuente a reemitir", reem_salidas: "salidas de la reemisión", reem_kbps: "calidad de la reemisión", reem_srt_puerto: "puerto SRT de la reemisión", reem_rtmp_url: "URL RTMP de la reemisión" },
+      pais: "país", clave_panel: "contraseña del panel", hdmi: "salida HDMI", hdmi_fuente: "cámara en HDMI", rx_fuente: "fuente del receptor", hdmi_consola: "resolución de la pantalla", decodificadores: "decodificación JPEG", cortafuegos: "cortafuegos", puertos_extra: "puertos extra", simultaneo: "cámaras mientras recibe", puente_ndi: "puente a NDI", programa_audio: "audio del programa", programa_retraso: "retraso del programa", programa_grabar: "grabar el programa", puente_hdmi: "monitor del puente", reem_fuente: "fuente a reemitir", reem_salidas: "salidas de la reemisión", reem_kbps: "calidad de la reemisión", reem_srt_puerto: "puerto SRT de la reemisión", reem_rtmp_url: "URL RTMP de la reemisión" },
     ev: {
       inicio: (d) => `NDIICAM ${d.version} arrancado`,
       cam_detectada: (d) => `Cámara detectada: ${d.fuente}`, cam_desconectada: (d) => `Cámara desconectada: ${d.fuente}`,
@@ -893,6 +925,8 @@ const T = {
       reinicio_manual: (d) => d.modo !== "emisor" ? "Recepción reiniciada desde el panel" : "Emisión reiniciada desde el panel",
       decodificacion_paralela: (d) => `${d.fuente}: la decodificación no da abasto; repartida en ${d.hilos} hilos`,
       edicion: (d) => T.es.ed_evento(d),
+      programa_activa: (d) => `Programa final en marcha` + (d.consola ? " con el audio de la consola" : "") + (d.grabar ? ", grabando" : ""),
+      programa_error: (d) => `Programa final: ${d.detalle}; se reintenta`,
       calibracion: (d) => d.error ? `${d.fuente}: calibración del audio sin resultado (${d.error})` : `${d.fuente}: el audio va ${d.ms} ms por delante de la imagen (${d.palmadas} palmadas)`,
       reem_activa: (d) => `Reemitiendo ${d.fuente}: ${(d.salidas || []).map((m) => T.es["gpu_" + m]).join(", ")}`,
       reem_error: (d) => `Reemisión de ${d.fuente}: ${d.detalle}; se reintenta`,
@@ -1126,6 +1160,12 @@ const T = {
     reem_help: "Takes an NDI source from the network (OBS, vMix, another NDIICAM…) and records it on this device or streams it over SRT or RTMP, encoded on the GPU, without OBS. With audio if the source has it.",
     reem_sub: (r) => `${r.fps.toFixed(1)} fps · ${r.mbps.toFixed(1)} Mbit/s` + (r.audio_activo ? " · audio" : ""),
     reem_st: { apagado: "Off", conectando: "Connecting", activa: "Active", error: "Error, retrying" },
+    pg_title: "Final program", pg_audio: "Program audio", pg_audio_atem: "The ATEM's own",
+    pg_delay_help: "The ATEM takes time to encode and send the picture, so the console arrives earlier: delay it until the voice matches the lips. It applies live.",
+    pg_record: "Record the program (MKV, no re-encoding)", pg_hdmi: "HDMI monitor",
+    pg_hdmi_programa: "The program", pg_hdmi_no: "Nothing", pg_where: "Where to watch it",
+    pg_sub: (g) => g.estado === "activa" ? `${g.fps.toFixed(0)} fps · ${g.mbps.toFixed(1)} Mbit/s` + (g.consola ? " · console audio" : " · ATEM audio") + (g.grabar ? " · recording" : "") : g.estado === "error" ? `Error: ${g.error}` : "Waiting for the ATEM to publish…",
+    pg_url: { obs: "OBS (Media › media source)", vlc: "VLC, Smart TV (HLS)", web: "Browser, phone", srt: "SRT (vMix, VLC)", ndi: "NDI" },
     pt_ndi: "NDI source", pt_ndi_on: "Also publish as an NDI source",
     pt_ndi_help: "What comes from the ATEM, OBS or the phone also goes out as an NDI source on the network (with its audio), even with no monitor attached.",
     pt_ndi_espera: "It will appear as soon as the stream arrives",
@@ -1193,7 +1233,7 @@ const T = {
     stream_errors: { arranque: "Could not start the stream.", eos: "The camera closed the stream.", sin_imagen: "The camera stopped sending frames.", proceso: "The source process ended." },
     fields: { activa: "stream", ndi_nombre: "NDI name", resolucion: "resolution", fps: "fps", audio: "audio",
       transporte: "transport", ap_ssid: "setup WiFi name", ap_clave: "setup WiFi password",
-      pais: "country", clave_panel: "panel password", hdmi: "HDMI output", hdmi_fuente: "HDMI camera", rx_fuente: "receiver source", hdmi_consola: "screen resolution", decodificadores: "JPEG decoding", cortafuegos: "firewall", puertos_extra: "extra ports", simultaneo: "cameras while receiving", puente_ndi: "bridge to NDI", reem_fuente: "re-stream source", reem_salidas: "re-stream outputs", reem_kbps: "re-stream quality", reem_srt_puerto: "re-stream SRT port", reem_rtmp_url: "re-stream RTMP URL" },
+      pais: "country", clave_panel: "panel password", hdmi: "HDMI output", hdmi_fuente: "HDMI camera", rx_fuente: "receiver source", hdmi_consola: "screen resolution", decodificadores: "JPEG decoding", cortafuegos: "firewall", puertos_extra: "extra ports", simultaneo: "cameras while receiving", puente_ndi: "bridge to NDI", programa_audio: "program audio", programa_retraso: "program delay", programa_grabar: "record the program", puente_hdmi: "bridge monitor", reem_fuente: "re-stream source", reem_salidas: "re-stream outputs", reem_kbps: "re-stream quality", reem_srt_puerto: "re-stream SRT port", reem_rtmp_url: "re-stream RTMP URL" },
     ev: {
       inicio: (d) => `NDIICAM ${d.version} started`,
       cam_detectada: (d) => `Camera detected: ${d.fuente}`, cam_desconectada: (d) => `Camera disconnected: ${d.fuente}`,
@@ -1204,6 +1244,8 @@ const T = {
       reinicio_manual: (d) => d.modo !== "emisor" ? "Receiving restarted from the panel" : "Streaming restarted from the panel",
       decodificacion_paralela: (d) => `${d.fuente}: decoding cannot keep up; split across ${d.hilos} threads`,
       edicion: (d) => T.en.ed_evento(d),
+      programa_activa: (d) => `Final program running` + (d.consola ? " with console audio" : "") + (d.grabar ? ", recording" : ""),
+      programa_error: (d) => `Final program: ${d.detalle}; retrying`,
       calibracion: (d) => d.error ? `${d.fuente}: audio calibration without result (${d.error})` : `${d.fuente}: audio is ${d.ms} ms ahead of the picture (${d.palmadas} claps)`,
       reem_activa: (d) => `Re-streaming ${d.fuente}: ${(d.salidas || []).map((m) => T.en["gpu_" + m]).join(", ")}`,
       reem_error: (d) => `Re-stream of ${d.fuente}: ${d.detalle}; retrying`,
@@ -1887,6 +1929,50 @@ function pintarModo(e) {
   $("rxTam").classList.toggle("oculto", !tam);
 }
 
+// ------------------------------------------------------------ programa final (puente, Pro)
+const pgEditado = new Set();
+function pintarPrograma(e, host) {
+  const pt = e.puente || {}, g = pt.programa || {}, cfg = e.config || {};
+  $("ptPrograma").classList.toggle("oculto", !g.disponible);
+  if (!g.disponible) return;
+  poner("pgSub", T[lang].pg_sub(g));
+  if (!pgEditado.has("audio") && document.activeElement !== $("pgAudio")) {
+    $("pgAudio").replaceChildren(new Option(t("pg_audio_atem"), ""),
+      ...(e.audio_dispositivos || []).map((a) => new Option(a.nombre, a.id)));
+    $("pgAudio").value = cfg.programa_audio || "";
+  }
+  if (!pgEditado.has("retraso") && document.activeElement !== $("pgRetraso")) $("pgRetraso").value = cfg.programa_retraso || 0;
+  poner("pgRetrasoVal", `${$("pgRetraso").value} ms`);
+  $("pgBloqueRetraso").classList.toggle("oculto", !$("pgAudio").value);
+  if (!pgEditado.has("grabar")) $("pgGrabar").checked = !!cfg.programa_grabar;
+  if (!pgEditado.has("hdmi") && document.activeElement !== $("pgHdmi")) {
+    $("pgHdmi").replaceChildren(new Option(t("pg_hdmi_programa"), "programa"),
+      ...(e.fuentes || []).map((f) => new Option(f.camara, f.id)), new Option(t("pg_hdmi_no"), "no"));
+    $("pgHdmi").value = cfg.puente_hdmi || "programa";
+  }
+  const r = pt.ruta_programa || "live/programa", u = T[lang].pg_url;
+  const lineas = [[u.obs, `rtmp://${host}:${pt.puerto_rtmp || 1935}/${r}`],
+    [u.vlc, `http://${host}:${pt.puerto_hls || 8888}/${r}/index.m3u8`],
+    [u.web, `http://${host}:${pt.puerto_hls || 8888}/${r}/`],
+    [u.srt, `srt://${host}:${pt.puerto_srt || 8890}?streamid=read:${r}`]];
+  if (pt.ndi) lineas.push([u.ndi, pt.ndi]);
+  $("pgUrls").replaceChildren(...lineas.map(([n, v]) => el("li", null, el("span", { text: n }),
+    el("span", { class: "mono", text: v, style: "user-select:all;word-break:break-all" }))));
+}
+$("pgAudio").addEventListener("change", () => { pgEditado.add("audio"); $("pgBloqueRetraso").classList.toggle("oculto", !$("pgAudio").value); });
+$("pgRetraso").addEventListener("input", () => { pgEditado.add("retraso"); poner("pgRetrasoVal", `${$("pgRetraso").value} ms`); });
+$("pgGrabar").addEventListener("change", () => pgEditado.add("grabar"));
+$("pgHdmi").addEventListener("change", () => pgEditado.add("hdmi"));
+$("pgGuardar").addEventListener("click", async () => {
+  const datos = {};
+  if (pgEditado.has("audio")) datos.programa_audio = $("pgAudio").value;
+  if (pgEditado.has("retraso")) datos.programa_retraso = Number($("pgRetraso").value);
+  if (pgEditado.has("grabar")) datos.programa_grabar = $("pgGrabar").checked;
+  if (pgEditado.has("hdmi")) datos.puente_hdmi = $("pgHdmi").value;
+  try { await api("/api/config", datos); pgEditado.clear(); mensaje("msgPuente", t("saved_ok"), "ok"); refrescar(); }
+  catch (err) { mensaje("msgPuente", err.message, "mal"); }
+});
+
 // ------------------------------------------------------------ reemisión
 const reemEditado = new Set();
 function pintarReem(e) {
@@ -1958,6 +2044,7 @@ function pintarPuente(e) {
   if (document.activeElement !== $("chkPuenteNdi")) $("chkPuenteNdi").checked = pt.ndi_activado !== false;
   $("ptNdiBloque").classList.toggle("oculto", !(pt.ndi_disponible && pt.ndi_activado));
   poner("ptNdi", pt.ndi || (pt.publicando ? t("st_conectando") : t("pt_ndi_espera")));
+  pintarPrograma(e, host);
   let sub = pt.decodificador ? T[lang].pt_dec(pt.decodificador) : "";
   if (pt.publicando) sub = `${T[lang].pt_from(pt)} · ${sub}`;
   poner("ptSub", sub);

@@ -216,6 +216,8 @@ class Panel(BaseHTTPRequestHandler):
                 "clave_panel": bool(cfg["clave_panel"]), "decodificadores": cfg["decodificadores"],
                 "cortafuegos": cfg["cortafuegos"], "puertos_extra": cfg["puertos_extra"],
                 "simultaneo": cfg["simultaneo"],
+                **{k: cfg[k] for k in ("programa_audio", "programa_retraso", "programa_grabar",
+                                       "puente_hdmi")},
                 **{k: cfg[k] for k in ("reem_fuente", "reem_salidas", "reem_kbps", "reem_srt_puerto",
                                        "reem_srt_latencia")},
                 "reem_rtmp_url": ocultar_clave_rtmp(cfg["reem_rtmp_url"])},
@@ -298,7 +300,7 @@ class Panel(BaseHTTPRequestHandler):
             return self._error("no_encontrado", 404)
         with f:
             self.send_response(200)
-            self.send_header("Content-Type", "video/mp4")
+            self.send_header("Content-Type", "video/x-matroska" if nombre.endswith(".mkv") else "video/mp4")
             self.send_header("Content-Disposition", f'attachment; filename="{nombre}"')
             self.send_header("Content-Length", str(os.fstat(f.fileno()).st_size))
             self.end_headers()
@@ -641,6 +643,27 @@ class Panel(BaseHTTPRequestHandler):
             cambios["simultaneo"] = bool(d["simultaneo"])
         if "puente_ndi" in d:
             cambios["puente_ndi"] = bool(d["puente_ndi"])
+        # programa final del puente (Pro)
+        if "programa_audio" in d:
+            v = str(d["programa_audio"])
+            if v and v not in {a["id"] for a in nucleo.FUENTES.audio}:
+                return self._error("audio_invalido")
+            cambios["programa_audio"] = v
+        if "programa_retraso" in d:
+            try:
+                v = int(d["programa_retraso"])
+            except (TypeError, ValueError):
+                v = -1
+            if not 0 <= v <= RETRASO_MAX_MS:
+                return self._error("retraso_invalido")
+            cambios["programa_retraso"] = v
+        if "programa_grabar" in d:
+            cambios["programa_grabar"] = bool(d["programa_grabar"])
+        if "puente_hdmi" in d:
+            v = str(d["puente_hdmi"])
+            if v not in ("programa", "no") and v not in {f.cam["id"] for f in nucleo.FUENTES.lista()}:
+                return self._error("fuente_invalida")
+            cambios["puente_hdmi"] = v
         # reemisión de una fuente NDI (equipo potente)
         if "reem_fuente" in d:
             v = str(d["reem_fuente"]).strip()

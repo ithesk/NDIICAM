@@ -35,6 +35,7 @@ WEB = os.path.join(AQUI, "web", "index.html")
 FUENTE_PY = os.path.join(AQUI, "fuente.py")
 RECEPTOR_PY = os.path.join(AQUI, "receptor.py")
 REEMISION_PY = os.path.join(AQUI, "reemision.py")
+PROGRAMA_PY = os.path.join(AQUI, "programa.py")
 REPOSO_PY = os.path.join(AQUI, "reposo.py")     # pantalla de ayuda cuando el HDMI está libre
 IDIOMAS = ("es", "en")
 MODOS = ("emisor", "receptor", "puente")   # un Atom no da para emitir y recibir a la vez
@@ -44,6 +45,9 @@ MODOS = ("emisor", "receptor", "puente")   # un Atom no da para emitir y recibir
 MEDIAMTX = "/usr/local/lib/ndiicam/mediamtx"
 PUERTO_RTMP = 1935
 PUERTO_SRT = 8890
+PUERTO_RTMP_LOCAL = "rtmp://127.0.0.1:1935"    # MediaMTX visto desde el propio equipo
+PUERTO_HLS = 8888       # reparto del programa final por HLS (edición Pro)
+RUTA_PROGRAMA = "live/programa"  # ruta de MediaMTX del programa final (vídeo del ATEM + audio de consola)
 API_MEDIAMTX = "http://127.0.0.1:9997"
 CLAVE_PUENTE = re.compile(r"^[A-Za-z0-9_-]{4,64}$")
 RUN = "/run/ndiicam"
@@ -66,7 +70,11 @@ POR_DEFECTO = {"ndi_nombre": "NDIICAM", "resolucion": "1080p", "fps": 30, "audio
                "simultaneo": True, "puente_ndi": True,
                # reemisión (equipo potente): una fuente NDI de la red, grabada o emitida
                "reem_fuente": "", "reem_salidas": [], "reem_kbps": 8000,
-               "reem_srt_puerto": 9100, "reem_srt_latencia": 200, "reem_rtmp_url": ""}
+               "reem_srt_puerto": 9100, "reem_srt_latencia": 200, "reem_rtmp_url": "",
+               # programa final del puente (Pro): audio de la consola (id ALSA, "" = el del
+               # ATEM), su retraso, grabarlo en MKV y qué sale por el HDMI
+               "programa_audio": "", "programa_retraso": 0, "programa_grabar": False,
+               "puente_hdmi": "programa"}
 AP_CLAVE_DEFECTO = POR_DEFECTO["ap_clave"]
 
 # decodificadores JPEG por fuente: jpegdec va en un solo hilo y con imágenes muy
@@ -101,7 +109,7 @@ SALIDAS_EXTRA = ("grabar", "srt", "rtmp")     # las que se pueden sumar a la pri
 RETRASO_MAX_MS = 1000       # retraso del audio respecto a la imagen que se puede aplicar
 NOMBRE_NDI_PUENTE = "Puente"    # la fuente NDI del modo puente: "EQUIPO (Puente)"
 GRABACIONES = "/var/lib/ndiicam/grabaciones"
-NOMBRE_GRABACION = re.compile(r"^[\w.-]{1,120}\.mp4$")
+NOMBRE_GRABACION = re.compile(r"^[\w.-]{1,120}\.(mp4|mkv)$")
 URL_RTMP = re.compile(r"^rtmps?://[^\s\"'<>]{3,500}$")
 NOMBRE_NDI = re.compile(r"^[\w .\-]{1,48}$")
 NOMBRE_EQUIPO = re.compile(r"^[A-Za-z0-9](?:[A-Za-z0-9-]{0,30}[A-Za-z0-9])?$")

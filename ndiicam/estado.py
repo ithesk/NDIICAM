@@ -8,8 +8,8 @@ import socket
 import time
 
 import nucleo
-from nucleo import (ESTADO, FPS_VALIDOS, GRABACIONES, NOMBRE_GRABACION, PUERTO_RTMP,
-    PUERTO_SRT, RESOLUCIONES, VERSION, bytes_red, conexiones_por_pid, evento, ip_de, leer,
+from nucleo import (ESTADO, FPS_VALIDOS, GRABACIONES, NOMBRE_GRABACION, PUERTO_HLS, PUERTO_RTMP,
+    PUERTO_SRT, RESOLUCIONES, RUTA_PROGRAMA, VERSION, bytes_red, conexiones_por_pid, evento, ip_de, leer,
     nombre_de)
 from camaras import modo_consola_activo, pantallas
 from gpu import (capacidad_gpu, capacidad_vpp, decodificador_h264, energia_rapl,
@@ -29,6 +29,7 @@ def medidor():
                 f.medir(t)
             nucleo.FUENTES.receptor.medir(t)
             nucleo.FUENTES.reemision.medir(t)
+            nucleo.FUENTES.programa.medir(t)
             if prev:
                 dt = t - prev["t"]
                 potencia = {k: vatios(v, prev["rapl"].get(k), dt) for k, v in rapl.items()}
@@ -73,6 +74,18 @@ def grabaciones():
         lista.append({"nombre": n, "bytes": st.st_size, "fecha": st.st_mtime})
     lista.sort(key=lambda x: x["fecha"], reverse=True)
     return {"lista": lista, "libre": shutil.disk_usage(GRABACIONES).free}
+
+def estado_programa(cfg):
+    """El programa final del puente (Pro): vídeo del ATEM + audio de la consola."""
+    pr = nucleo.FUENTES.programa
+    activo = pr.estado == "activa"
+    return {"disponible": simultaneo(cfg), "estado": pr.estado, "error": pr.error,
+            "desde": pr.desde, "fps": pr.stats["fps"] if activo else 0,
+            "mbps": pr.stats["mbps"] if activo else 0,
+            "audio_activo": activo and pr.stats["audio_activo"],
+            "nivel": pr.stats.get("audio_db") if activo else None,
+            "consola": cfg["programa_audio"], "retraso": cfg["programa_retraso"],
+            "grabar": cfg["programa_grabar"], "hdmi": cfg["puente_hdmi"]}
 
 def estado_reemision(cfg):
     r = nucleo.FUENTES.reemision
@@ -153,7 +166,9 @@ def construir_estado(tx_mbps, rx_mbps, cpu_pct, potencia, gpu_uso=None):
                        # también como fuente NDI (equipo potente)
                        "ndi": (f"{host.upper()} ({nucleo.FUENTES.receptor.obj['ndi_nombre']})"
                                if (nucleo.FUENTES.receptor.obj or {}).get("ndi_nombre") else None),
-                       "ndi_disponible": simultaneo(cfg), "ndi_activado": cfg["puente_ndi"]}
+                       "ndi_disponible": simultaneo(cfg), "ndi_activado": cfg["puente_ndi"],
+                       "programa": estado_programa(cfg), "puerto_hls": PUERTO_HLS,
+                       "ruta_programa": RUTA_PROGRAMA}
     if cfg["modo"] == "puente":
         if not puente_info["instalado"]:
             agregado = "rx_error"
