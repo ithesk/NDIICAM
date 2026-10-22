@@ -621,6 +621,8 @@ class Panel(BaseHTTPRequestHandler):
             cambios["cortafuegos"] = bool(d["cortafuegos"])
         if "simultaneo" in d:
             cambios["simultaneo"] = bool(d["simultaneo"])
+        if "puente_ndi" in d:
+            cambios["puente_ndi"] = bool(d["puente_ndi"])
         if "puertos_extra" in d:
             v = str(d["puertos_extra"]).strip()
             if len(v) > 300 or puertos_extra(v) is None:

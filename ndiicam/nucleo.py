@@ -62,7 +62,7 @@ POR_DEFECTO = {"ndi_nombre": "NDIICAM", "resolucion": "1080p", "fps": 30, "audio
                "hdmi": False, "hdmi_fuente": "auto", "hdmi_consola": "nativa",
                "modo": "emisor", "rx_fuente": "", "decodificadores": "auto",
                "puente_clave": "", "idioma": "es", "cortafuegos": True, "puertos_extra": "",
-               "simultaneo": True}
+               "simultaneo": True, "puente_ndi": True}
 AP_CLAVE_DEFECTO = POR_DEFECTO["ap_clave"]
 
 # decodificadores JPEG por fuente: jpegdec va en un solo hilo y con imágenes muy
@@ -94,6 +94,7 @@ HORA = re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")
 # salida H.264 por GPU de cada cámara (además del NDI): grabar a disco, SRT o RTMP
 SALIDAS_GPU = ("no", "grabar", "srt", "rtmp")
 SALIDAS_EXTRA = ("grabar", "srt", "rtmp")     # las que se pueden sumar a la principal
+NOMBRE_NDI_PUENTE = "Puente"    # la fuente NDI del modo puente: "EQUIPO (Puente)"
 GRABACIONES = "/var/lib/ndiicam/grabaciones"
 NOMBRE_GRABACION = re.compile(r"^[\w.-]{1,120}\.mp4$")
 URL_RTMP = re.compile(r"^rtmps?://[^\s\"'<>]{3,500}$")

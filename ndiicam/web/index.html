@@ -273,6 +273,11 @@
       <div><label data-t="pt_key"></label><div class="mono" id="ptClave">—</div></div>
       <div><label data-t="pt_srt"></label><div class="mono" id="ptSrt">—</div></div>
       <div><label data-t="hdmi_state"></label><div id="ptEstado">—</div></div>
+      <div id="ptNdiBloque" class="oculto"><label data-t="pt_ndi"></label><div class="mono" id="ptNdi">—</div></div>
+    </div>
+    <div id="ptNdiAjuste" class="oculto" style="margin-top:12px">
+      <label class="conmutador"><input type="checkbox" id="chkPuenteNdi"><span data-t="pt_ndi_on"></span></label>
+      <div class="ayuda" data-t="pt_ndi_help"></div>
     </div>
     <div class="botones">
       <a class="boton principal" id="ptXml" href="/api/puente/atem.xml" data-t="pt_xml"></a>
@@ -758,6 +763,9 @@ const T = {
     pt_title: "Puente", pt_rtmp: "Servidor RTMP (para el ATEM)", pt_key: "Clave de emisión", pt_srt: "SRT (OBS, vMix, Larix…)",
     pt_xml: "Descargar ajustes para ATEM", pt_new_key: "Clave nueva", pt_new_key_ok: "Clave nueva: vuelve a cargar los ajustes en el ATEM.",
     pt_confirm: "Con una clave nueva, quien emite ahora se corta y tendrá que usar la nueva. ¿Seguir?",
+    pt_ndi: "Fuente NDI", pt_ndi_on: "Publicar también como fuente NDI",
+    pt_ndi_help: "Lo que llega del ATEM, OBS o el móvil sale además como fuente NDI en la red (con su audio), aunque no haya monitor conectado.",
+    pt_ndi_espera: "Aparecerá en cuanto llegue la emisión",
     pt_help: "En ATEM Software Control: Stream › Load Streaming Settings con el archivo descargado; elige el servicio y pulsa On Air. También vale cualquier programa que emita por RTMP o SRT.",
     pt_waiting: "Esperando a que el ATEM emita", pt_from: (d) => `${d.protocolo} desde ${d.desde || "?"}`,
     pt_not_installed: "Falta MediaMTX: vuelve a instalar NDIICAM.", pt_dec: (d) => d === "vah264dec" ? "decodifica la GPU" : d === "avdec_h264" ? "decodifica FFmpeg" : "decodificador lento (instala gstreamer1.0-libav)",
@@ -822,7 +830,7 @@ const T = {
     stream_errors: { arranque: "No se pudo arrancar la emisión.", eos: "La cámara cerró el flujo.", sin_imagen: "La cámara no entregaba imagen.", proceso: "El proceso de la fuente terminó." },
     fields: { activa: "emitir", ndi_nombre: "nombre NDI", resolucion: "resolución", fps: "fps", audio: "audio",
       transporte: "transporte", ap_ssid: "nombre de la WiFi de configuración", ap_clave: "clave de la WiFi de configuración",
-      pais: "país", clave_panel: "contraseña del panel", hdmi: "salida HDMI", hdmi_fuente: "cámara en HDMI", rx_fuente: "fuente del receptor", hdmi_consola: "resolución de la pantalla", decodificadores: "decodificación JPEG", cortafuegos: "cortafuegos", puertos_extra: "puertos extra", simultaneo: "cámaras mientras recibe" },
+      pais: "país", clave_panel: "contraseña del panel", hdmi: "salida HDMI", hdmi_fuente: "cámara en HDMI", rx_fuente: "fuente del receptor", hdmi_consola: "resolución de la pantalla", decodificadores: "decodificación JPEG", cortafuegos: "cortafuegos", puertos_extra: "puertos extra", simultaneo: "cámaras mientras recibe", puente_ndi: "puente a NDI" },
     ev: {
       inicio: (d) => `NDIICAM ${d.version} arrancado`,
       cam_detectada: (d) => `Cámara detectada: ${d.fuente}`, cam_desconectada: (d) => `Cámara desconectada: ${d.fuente}`,
@@ -1046,6 +1054,9 @@ const T = {
     pt_title: "Bridge", pt_rtmp: "RTMP server (for the ATEM)", pt_key: "Stream key", pt_srt: "SRT (OBS, vMix, Larix…)",
     pt_xml: "Download ATEM settings", pt_new_key: "New key", pt_new_key_ok: "New key: load the settings into the ATEM again.",
     pt_confirm: "With a new key, whoever is streaming now is cut off and must use the new one. Continue?",
+    pt_ndi: "NDI source", pt_ndi_on: "Also publish as an NDI source",
+    pt_ndi_help: "What comes from the ATEM, OBS or the phone also goes out as an NDI source on the network (with its audio), even with no monitor attached.",
+    pt_ndi_espera: "It will appear as soon as the stream arrives",
     pt_help: "In ATEM Software Control: Stream › Load Streaming Settings with the downloaded file; pick the service and press On Air. Any software that streams over RTMP or SRT works too.",
     pt_waiting: "Waiting for the ATEM to stream", pt_from: (d) => `${d.protocolo} from ${d.desde || "?"}`,
     pt_not_installed: "MediaMTX is missing: reinstall NDIICAM.", pt_dec: (d) => d === "vah264dec" ? "GPU decoding" : d === "avdec_h264" ? "FFmpeg decoding" : "slow decoder (install gstreamer1.0-libav)",
@@ -1110,7 +1121,7 @@ const T = {
     stream_errors: { arranque: "Could not start the stream.", eos: "The camera closed the stream.", sin_imagen: "The camera stopped sending frames.", proceso: "The source process ended." },
     fields: { activa: "stream", ndi_nombre: "NDI name", resolucion: "resolution", fps: "fps", audio: "audio",
       transporte: "transport", ap_ssid: "setup WiFi name", ap_clave: "setup WiFi password",
-      pais: "country", clave_panel: "panel password", hdmi: "HDMI output", hdmi_fuente: "HDMI camera", rx_fuente: "receiver source", hdmi_consola: "screen resolution", decodificadores: "JPEG decoding", cortafuegos: "firewall", puertos_extra: "extra ports", simultaneo: "cameras while receiving" },
+      pais: "country", clave_panel: "panel password", hdmi: "HDMI output", hdmi_fuente: "HDMI camera", rx_fuente: "receiver source", hdmi_consola: "screen resolution", decodificadores: "JPEG decoding", cortafuegos: "firewall", puertos_extra: "extra ports", simultaneo: "cameras while receiving", puente_ndi: "bridge to NDI" },
     ev: {
       inicio: (d) => `NDIICAM ${d.version} started`,
       cam_detectada: (d) => `Camera detected: ${d.fuente}`, cam_desconectada: (d) => `Camera disconnected: ${d.fuente}`,
@@ -1767,6 +1778,11 @@ function pintarPuente(e) {
   poner("ptRtmp", `rtmp://${host}:${pt.puerto_rtmp || 1935}/live`);
   poner("ptClave", pt.clave || "—");
   poner("ptSrt", `srt://${host}:${pt.puerto_srt || 8890}?streamid=publish:live/${pt.clave || ""}`);
+  // equipo potente: lo recibido sale también como fuente NDI
+  $("ptNdiAjuste").classList.toggle("oculto", !pt.ndi_disponible);
+  if (document.activeElement !== $("chkPuenteNdi")) $("chkPuenteNdi").checked = pt.ndi_activado !== false;
+  $("ptNdiBloque").classList.toggle("oculto", !(pt.ndi_disponible && pt.ndi_activado));
+  poner("ptNdi", pt.ndi || (pt.publicando ? t("st_conectando") : t("pt_ndi_espera")));
   let sub = pt.decodificador ? T[lang].pt_dec(pt.decodificador) : "";
   if (pt.publicando) sub = `${T[lang].pt_from(pt)} · ${sub}`;
   poner("ptSub", sub);
@@ -2135,6 +2151,10 @@ async function guardarHdmi(datos) {
 }
 for (const r of document.querySelectorAll("input[name=modo]")) r.addEventListener("change", async () => {
   try { await api("/api/config", { modo: r.value }); refrescar(); } catch (err) { mensaje("msgModo", err.message, "mal"); }
+});
+$("chkPuenteNdi").addEventListener("change", async () => {
+  try { await api("/api/config", { puente_ndi: $("chkPuenteNdi").checked }); refrescar(); }
+  catch (err) { mensaje("msgPuente", err.message, "mal"); }
 });
 $("chkSimultaneo").addEventListener("change", async () => {
   try { await api("/api/config", { simultaneo: $("chkSimultaneo").checked }); refrescar(); }

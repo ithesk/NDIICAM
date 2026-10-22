@@ -136,11 +136,15 @@ def construir_estado(tx_mbps, rx_mbps, cpu_pct, potencia, gpu_uso=None):
                        "clave": cfg["puente_clave"], "puerto_rtmp": PUERTO_RTMP,
                        "puerto_srt": PUERTO_SRT,
                        "decodificador": "vah264dec" if (nucleo.FUENTES.receptor.obj or {}).get("gpu_h264")
-                       else decodificador_h264()}
+                       else decodificador_h264(),
+                       # también como fuente NDI (equipo potente)
+                       "ndi": (f"{host.upper()} ({nucleo.FUENTES.receptor.obj['ndi_nombre']})"
+                               if (nucleo.FUENTES.receptor.obj or {}).get("ndi_nombre") else None),
+                       "ndi_disponible": simultaneo(cfg), "ndi_activado": cfg["puente_ndi"]}
     if cfg["modo"] == "puente":
         if not puente_info["instalado"]:
             agregado = "rx_error"
-        elif not monitor:
+        elif not monitor and not (cfg["puente_ndi"] and simultaneo(cfg)):
             agregado = "sin_monitor"
         elif not puente_info.get("publicando"):
             agregado = "esperando_atem"

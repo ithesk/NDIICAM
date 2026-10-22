@@ -121,14 +121,34 @@ def main():
             # deja en UYVY: la CPU solo baja la imagen. Si falla, el servicio vuelve
             # a avdec_h264
             dec = "vah264dec name=dec ! vapostproc name=vpp ! video/x-raw,format=UYVY"
+        # sin monitor (puede ser que solo se quiera la fuente NDI) la imagen se tira
+        pantalla = (" ! kmssink name=hdmi sync=false async=false skip-vsync=true"
+                    f" connector-id={cfg['hdmi']}" if cfg.get("hdmi")
+                    else " ! fakesink name=hdmi sync=false async=false")
+        ndi = cfg.get("ndi_nombre")
+        con_audio = ndi and cfg.get("ndi_audio")
         desc = (f"rtmp2src name=src location={cfg['url']} ! flvdemux name=d "
                 "d.video ! queue name=qd max-size-time=1000000000 ! h264parse"
                 f" ! {dec} ! queue name=qv max-size-buffers=2 leaky=downstream"
-                f" ! videoconvert n-threads={hilos} ! video/x-raw,format=UYVY"
-                " ! kmssink name=hdmi sync=false async=false skip-vsync=true"
-                f" connector-id={cfg['hdmi']}")
+                f" ! videoconvert n-threads={hilos} ! video/x-raw,format=UYVY")
+        if ndi:
+            # equipo potente: lo que llega (ATEM, OBS, el móvil) sale también como
+            # fuente NDI, ya decodificado. Cada rama con su cola: si una se atasca,
+            # la otra no se entera
+            desc += " ! tee name=tv tv. ! queue name=qh max-size-buffers=2 leaky=downstream" + pantalla
+            desc += (" tv. ! queue name=qn max-size-buffers=4 leaky=downstream ! "
+                     + ("c.video" if con_audio else "ndisink name=ndi sync=false"))
+            if con_audio:
+                desc += " ndisinkcombiner name=c ! ndisink name=ndi sync=false"
+        else:
+            desc += pantalla
         desc += (" d.audio ! queue name=qa max-size-time=300000000 leaky=downstream"
                  " ! aacparse ! faad")
+        if con_audio:
+            # el combinador solo si la emisión trae audio: esperaría por él sin fin
+            desc += (" ! tee name=ta ta. ! queue max-size-time=300000000 leaky=downstream"
+                     " ! audioconvert ! audioresample ! audio/x-raw,format=F32LE,rate=48000"
+                     " ! c.audio ta. ! queue max-size-time=300000000 leaky=downstream")
     else:
         desc = ("ndisrc name=src ! ndisrcdemux name=d "
                 "d.video ! queue name=qv max-size-buffers=2 leaky=downstream" + escala +
@@ -144,6 +164,8 @@ def main():
     else:
         desc += " ! fakesink name=asink sync=false async=false"
     p = Gst.parse_launch(desc)
+    if puente and cfg.get("ndi_nombre"):
+        p.get_by_name("ndi").set_property("ndi-name", cfg["ndi_nombre"])
     if not puente:
         src = p.get_by_name("src")
         src.set_property("ndi-name", cfg["nombre"])

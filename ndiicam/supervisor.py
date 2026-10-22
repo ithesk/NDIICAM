@@ -11,7 +11,7 @@ import time
 
 import nucleo
 from nucleo import (AP_IF, AP_IP, FUENTE_PY, GRABACIONES, MAX_DECODIFICADORES, PUERTO_RTMP,
-    RECEPTOR_PY, REPOSO_PY, RESOLUCIONES, SALIDAS_EXTRA, VERSION, conexiones_por_pid,
+    NOMBRE_NDI_PUENTE, RECEPTOR_PY, REPOSO_PY, RESOLUCIONES, SALIDAS_EXTRA, VERSION, conexiones_por_pid,
     dispositivo_por_defecto, evento, ip_de, ips_propias, leer)
 from camaras import audio_dispositivos, audio_hdmi, camaras, pantallas, resolucion_pantalla
 from gpu import capacidad_gpu, capacidad_vpp, decodificador_h264, entorno_va, simultaneo
@@ -551,14 +551,22 @@ class Fuentes:
             PUENTE.arrancar(clave_puente(self.config))
         elif not puente:
             PUENTE.detener()
-        if puente and monitor and PUENTE.disponible() and PUENTE.info().get("publicando"):
+        info_puente = PUENTE.info() if puente and PUENTE.disponible() else {}
+        # equipo potente: lo que llega al puente sale también como fuente NDI
+        puente_ndi = puente and cfg["puente_ndi"] and simultaneo(cfg)
+        if info_puente.get("publicando") and (monitor or puente_ndi):
             # como un ATEM Streaming Bridge: lo que publique el ATEM, al HDMI
             rx_obj = {"origen": "puente", "nombre": "ATEM",
                       "url": f"rtmp://127.0.0.1:{PUERTO_RTMP}/live/{PUENTE.clave}",
-                      "decodificador": decodificador_h264(), "hdmi": monitor["id"],
-                      "pantalla": resolucion_pantalla(monitor),
+                      "decodificador": decodificador_h264(),
+                      "hdmi": monitor["id"] if monitor else None,
+                      "pantalla": resolucion_pantalla(monitor) if monitor else None,
                       "gpu_h264": capacidad_vpp()["h264"] and not self.receptor.gpu_fallida}
-            audio = audio_hdmi()
+            if puente_ndi:
+                rx_obj["ndi_nombre"] = NOMBRE_NDI_PUENTE
+                rx_obj["ndi_audio"] = any("audio" in str(p).lower() or "aac" in str(p).lower()
+                                          for p in info_puente.get("pistas") or [])
+            audio = audio_hdmi() if monitor else None
             if self.receptor.destino != "puente":
                 self.receptor.destino = "puente"
                 self.receptor.fallos, self.receptor.audio_fallido = 0, None
