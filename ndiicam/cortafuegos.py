@@ -140,8 +140,12 @@ class Cortafuegos:
             f.get("gpu_salida") == "srt"
             or varias and f.get("gpu_salida", "no") != "no" and "srt" in (f.get("gpu_extra") or []))]
         modos = {cfg["modo"]}
-        if cfg["modo"] != "emisor" and simultaneo(cfg):
+        if cfg["modo"] != "emisor" and varias:
             modos.add("emisor")         # las cámaras siguen emitiendo
+        if varias and cfg.get("reem_fuente") and cfg.get("reem_salidas"):
+            modos.add("receptor")       # la reemisión recibe NDI
+            if "srt" in cfg["reem_salidas"]:
+                srt.append(int(cfg.get("reem_srt_puerto", 9100)))
         guion = reglas(sorted(modos), srt, puertos_extra(cfg.get("puertos_extra", "")) or [],
                        puertos_ssh())
         if guion == self.guion:

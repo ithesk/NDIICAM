@@ -28,6 +28,7 @@ def medidor():
             for f in nucleo.FUENTES.lista():
                 f.medir(t)
             nucleo.FUENTES.receptor.medir(t)
+            nucleo.FUENTES.reemision.medir(t)
             if prev:
                 dt = t - prev["t"]
                 potencia = {k: vatios(v, prev["rapl"].get(k), dt) for k, v in rapl.items()}
@@ -72,6 +73,17 @@ def grabaciones():
         lista.append({"nombre": n, "bytes": st.st_size, "fecha": st.st_mtime})
     lista.sort(key=lambda x: x["fecha"], reverse=True)
     return {"lista": lista, "libre": shutil.disk_usage(GRABACIONES).free}
+
+def estado_reemision(cfg):
+    r = nucleo.FUENTES.reemision
+    obj = r.obj or {}
+    activa = r.estado == "activa"
+    return {"disponible": simultaneo(cfg), "estado": r.estado, "error": r.error,
+            "desde": r.desde, "fuente": cfg["reem_fuente"],
+            "fps": r.stats["fps"] if activa else 0, "mbps": r.stats["mbps"] if activa else 0,
+            "audio_activo": activa and r.stats["audio_activo"],
+            "salidas": [{"modo": s["modo"], "puerto": s.get("puerto")}
+                        for s in obj.get("salidas", [])]}
 
 def construir_estado(tx_mbps, rx_mbps, cpu_pct, potencia, gpu_uso=None):
     host = socket.gethostname()
@@ -216,7 +228,9 @@ def construir_estado(tx_mbps, rx_mbps, cpu_pct, potencia, gpu_uso=None):
         "modo": cfg["modo"],
         "puente": puente_info,
         "receptor": {"fuente": cfg["rx_fuente"], "estado": rx_estado,
-                     "red_ndi": nucleo.BUSCADOR.lista() if receptor else []},
+                     # la lista también sirve para elegir qué reemitir (equipo potente)
+                     "red_ndi": nucleo.BUSCADOR.lista() if receptor or simultaneo(cfg) else []},
+        "reemision": estado_reemision(cfg),
         "hdmi": {"activa": cfg["hdmi"], "fuente": cfg["hdmi_fuente"], "mostrando": nucleo.FUENTES.hdmi_para,
                  "pantallas": pantallas(), "consola": cfg["hdmi_consola"],
                  "consola_activa": modo_consola_activo(),

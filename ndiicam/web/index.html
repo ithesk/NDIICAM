@@ -287,6 +287,38 @@
     <div class="mensaje oculto" id="msgPuente"></div>
   </section>
 
+  <section class="tarjeta seccion oculto" id="secReem" data-tab="config">
+    <div class="fuente-cab">
+      <div><h3 data-t="reem_title"></h3><div class="sub" id="reemSub"></div></div>
+      <span class="pastilla" id="reemPastilla">—</span>
+    </div>
+    <div class="campos">
+      <div>
+        <label for="reemFuente" data-t="rx_source"></label>
+        <select id="reemFuente"></select>
+        <label style="margin-top:12px" data-t="reem_outputs"></label>
+        <label class="conmutador"><input type="checkbox" id="reemGrabar"><span data-t="gpu_grabar"></span></label>
+        <label class="conmutador"><input type="checkbox" id="reemSrt"><span data-t="gpu_srt"></span></label>
+        <label class="conmutador"><input type="checkbox" id="reemRtmp"><span data-t="gpu_rtmp"></span></label>
+      </div>
+      <div>
+        <label for="reemKbps" data-t="gpu_quality"></label>
+        <select id="reemKbps"></select>
+        <div id="reemBloqueSrt">
+          <label for="reemPuerto" data-t="gpu_port" style="margin-top:12px"></label>
+          <input type="number" id="reemPuerto" min="1024" max="65535">
+        </div>
+        <div id="reemBloqueUrl">
+          <label for="reemUrl" data-t="gpu_url" style="margin-top:12px"></label>
+          <input type="text" id="reemUrl" autocomplete="off" spellcheck="false">
+        </div>
+      </div>
+    </div>
+    <div class="ayuda" id="reemAyuda" data-t="reem_help" style="margin-top:10px"></div>
+    <div class="botones"><button class="boton principal" id="reemGuardar" data-t="save"></button></div>
+    <div class="mensaje oculto" id="msgReem"></div>
+  </section>
+
   <section class="tarjeta seccion oculto" id="secGrab" data-tab="monitor">
     <div class="fuente-cab"><div><h3 data-t="rec_title"></h3><div class="sub" id="grabSub"></div></div></div>
     <ul class="lista" id="grabLista"></ul>
@@ -763,6 +795,10 @@ const T = {
     pt_title: "Puente", pt_rtmp: "Servidor RTMP (para el ATEM)", pt_key: "Clave de emisión", pt_srt: "SRT (OBS, vMix, Larix…)",
     pt_xml: "Descargar ajustes para ATEM", pt_new_key: "Clave nueva", pt_new_key_ok: "Clave nueva: vuelve a cargar los ajustes en el ATEM.",
     pt_confirm: "Con una clave nueva, quien emite ahora se corta y tendrá que usar la nueva. ¿Seguir?",
+    reem_title: "Reemitir una fuente NDI", reem_outputs: "Salidas (a la vez)",
+    reem_help: "Coge una fuente NDI de la red (OBS, vMix, otro NDIICAM…) y la graba en el equipo o la emite por SRT o RTMP, codificada en la GPU, sin pasar por OBS. Con audio si la fuente lo trae.",
+    reem_sub: (r) => `${r.fps.toFixed(1)} fps · ${r.mbps.toFixed(1)} Mbit/s` + (r.audio_activo ? " · audio" : ""),
+    reem_st: { apagado: "Apagada", conectando: "Conectando", activa: "Activa", error: "Error, reintentando" },
     pt_ndi: "Fuente NDI", pt_ndi_on: "Publicar también como fuente NDI",
     pt_ndi_help: "Lo que llega del ATEM, OBS o el móvil sale además como fuente NDI en la red (con su audio), aunque no haya monitor conectado.",
     pt_ndi_espera: "Aparecerá en cuanto llegue la emisión",
@@ -830,7 +866,7 @@ const T = {
     stream_errors: { arranque: "No se pudo arrancar la emisión.", eos: "La cámara cerró el flujo.", sin_imagen: "La cámara no entregaba imagen.", proceso: "El proceso de la fuente terminó." },
     fields: { activa: "emitir", ndi_nombre: "nombre NDI", resolucion: "resolución", fps: "fps", audio: "audio",
       transporte: "transporte", ap_ssid: "nombre de la WiFi de configuración", ap_clave: "clave de la WiFi de configuración",
-      pais: "país", clave_panel: "contraseña del panel", hdmi: "salida HDMI", hdmi_fuente: "cámara en HDMI", rx_fuente: "fuente del receptor", hdmi_consola: "resolución de la pantalla", decodificadores: "decodificación JPEG", cortafuegos: "cortafuegos", puertos_extra: "puertos extra", simultaneo: "cámaras mientras recibe", puente_ndi: "puente a NDI" },
+      pais: "país", clave_panel: "contraseña del panel", hdmi: "salida HDMI", hdmi_fuente: "cámara en HDMI", rx_fuente: "fuente del receptor", hdmi_consola: "resolución de la pantalla", decodificadores: "decodificación JPEG", cortafuegos: "cortafuegos", puertos_extra: "puertos extra", simultaneo: "cámaras mientras recibe", puente_ndi: "puente a NDI", reem_fuente: "fuente a reemitir", reem_salidas: "salidas de la reemisión", reem_kbps: "calidad de la reemisión", reem_srt_puerto: "puerto SRT de la reemisión", reem_rtmp_url: "URL RTMP de la reemisión" },
     ev: {
       inicio: (d) => `NDIICAM ${d.version} arrancado`,
       cam_detectada: (d) => `Cámara detectada: ${d.fuente}`, cam_desconectada: (d) => `Cámara desconectada: ${d.fuente}`,
@@ -840,6 +876,8 @@ const T = {
       audio_fallo: (d) => `${d.fuente}: el audio falló (${d.detalle}); emitiendo sin audio`,
       reinicio_manual: (d) => d.modo !== "emisor" ? "Recepción reiniciada desde el panel" : "Emisión reiniciada desde el panel",
       decodificacion_paralela: (d) => `${d.fuente}: la decodificación no da abasto; repartida en ${d.hilos} hilos`,
+      reem_activa: (d) => `Reemitiendo ${d.fuente}: ${(d.salidas || []).map((m) => T.es["gpu_" + m]).join(", ")}`,
+      reem_error: (d) => `Reemisión de ${d.fuente}: ${d.detalle}; se reintenta`,
       deco_gpu_fallida: (d) => `${d.fuente}: la GPU no pudo decodificar su JPEG (${d.detalle}); se sigue por CPU`,
       gpu_medida: (d) => `GPU medida: ${d.jpeg ? "decodifica las cámaras" : "las cámaras siguen por CPU (no compensa)"}; ${d.h264 ? "decodifica el modo puente" : "el modo puente sigue por CPU"}`,
       gpu_cuelgue: () => "El equipo se reinició mientras se medía la GPU: no se usará para decodificar",
@@ -1054,6 +1092,10 @@ const T = {
     pt_title: "Bridge", pt_rtmp: "RTMP server (for the ATEM)", pt_key: "Stream key", pt_srt: "SRT (OBS, vMix, Larix…)",
     pt_xml: "Download ATEM settings", pt_new_key: "New key", pt_new_key_ok: "New key: load the settings into the ATEM again.",
     pt_confirm: "With a new key, whoever is streaming now is cut off and must use the new one. Continue?",
+    reem_title: "Re-stream an NDI source", reem_outputs: "Outputs (at the same time)",
+    reem_help: "Takes an NDI source from the network (OBS, vMix, another NDIICAM…) and records it on this device or streams it over SRT or RTMP, encoded on the GPU, without OBS. With audio if the source has it.",
+    reem_sub: (r) => `${r.fps.toFixed(1)} fps · ${r.mbps.toFixed(1)} Mbit/s` + (r.audio_activo ? " · audio" : ""),
+    reem_st: { apagado: "Off", conectando: "Connecting", activa: "Active", error: "Error, retrying" },
     pt_ndi: "NDI source", pt_ndi_on: "Also publish as an NDI source",
     pt_ndi_help: "What comes from the ATEM, OBS or the phone also goes out as an NDI source on the network (with its audio), even with no monitor attached.",
     pt_ndi_espera: "It will appear as soon as the stream arrives",
@@ -1121,7 +1163,7 @@ const T = {
     stream_errors: { arranque: "Could not start the stream.", eos: "The camera closed the stream.", sin_imagen: "The camera stopped sending frames.", proceso: "The source process ended." },
     fields: { activa: "stream", ndi_nombre: "NDI name", resolucion: "resolution", fps: "fps", audio: "audio",
       transporte: "transport", ap_ssid: "setup WiFi name", ap_clave: "setup WiFi password",
-      pais: "country", clave_panel: "panel password", hdmi: "HDMI output", hdmi_fuente: "HDMI camera", rx_fuente: "receiver source", hdmi_consola: "screen resolution", decodificadores: "JPEG decoding", cortafuegos: "firewall", puertos_extra: "extra ports", simultaneo: "cameras while receiving", puente_ndi: "bridge to NDI" },
+      pais: "country", clave_panel: "panel password", hdmi: "HDMI output", hdmi_fuente: "HDMI camera", rx_fuente: "receiver source", hdmi_consola: "screen resolution", decodificadores: "JPEG decoding", cortafuegos: "firewall", puertos_extra: "extra ports", simultaneo: "cameras while receiving", puente_ndi: "bridge to NDI", reem_fuente: "re-stream source", reem_salidas: "re-stream outputs", reem_kbps: "re-stream quality", reem_srt_puerto: "re-stream SRT port", reem_rtmp_url: "re-stream RTMP URL" },
     ev: {
       inicio: (d) => `NDIICAM ${d.version} started`,
       cam_detectada: (d) => `Camera detected: ${d.fuente}`, cam_desconectada: (d) => `Camera disconnected: ${d.fuente}`,
@@ -1131,6 +1173,8 @@ const T = {
       audio_fallo: (d) => `${d.fuente}: audio failed (${d.detalle}); streaming without audio`,
       reinicio_manual: (d) => d.modo !== "emisor" ? "Receiving restarted from the panel" : "Streaming restarted from the panel",
       decodificacion_paralela: (d) => `${d.fuente}: decoding cannot keep up; split across ${d.hilos} threads`,
+      reem_activa: (d) => `Re-streaming ${d.fuente}: ${(d.salidas || []).map((m) => T.en["gpu_" + m]).join(", ")}`,
+      reem_error: (d) => `Re-stream of ${d.fuente}: ${d.detalle}; retrying`,
       deco_gpu_fallida: (d) => `${d.fuente}: the GPU could not decode its JPEG (${d.detalle}); falling back to the CPU`,
       gpu_medida: (d) => `GPU measured: ${d.jpeg ? "it decodes the cameras" : "cameras stay on the CPU (not worth it)"}; ${d.h264 ? "it decodes bridge mode" : "bridge mode stays on the CPU"}`,
       gpu_cuelgue: () => "The device restarted while the GPU was being measured: it will not be used for decoding",
@@ -1767,6 +1811,61 @@ function pintarModo(e) {
   $("rxTam").classList.toggle("oculto", !tam);
 }
 
+// ------------------------------------------------------------ reemisión
+const reemEditado = new Set();
+function pintarReem(e) {
+  const r = e.reemision || {}, cfg = e.config || {}, red = (e.receptor || {}).red_ndi || [];
+  $("secReem").classList.toggle("oculto", !r.disponible);
+  if (!r.disponible) return;
+  if (!reemEditado.has("fuente") && document.activeElement !== $("reemFuente")) {
+    const ops = red.map((x) => new Option(x.nombre, x.nombre));
+    if (cfg.reem_fuente && !red.some((x) => x.nombre === cfg.reem_fuente)) ops.unshift(new Option(T[lang].hdmi_ndi_falta(cfg.reem_fuente), cfg.reem_fuente));
+    const vacia = new Option(red.length ? t("rx_elegir") : t("hdmi_ndi_buscando"), "");
+    $("reemFuente").replaceChildren(vacia, ...ops);
+    $("reemFuente").value = cfg.reem_fuente || "";
+  }
+  const sal = cfg.reem_salidas || [];
+  for (const [m, id] of [["grabar", "reemGrabar"], ["srt", "reemSrt"], ["rtmp", "reemRtmp"]])
+    if (!reemEditado.has("salidas")) $(id).checked = sal.includes(m);
+  if (!reemEditado.has("kbps") && document.activeElement !== $("reemKbps")) {
+    $("reemKbps").replaceChildren(...[4000, 6000, 8000, 12000, 16000, 20000].map((v) =>
+      new Option(`${(v / 1000).toLocaleString(lang)} Mbit/s`, String(v))));
+    $("reemKbps").value = String(cfg.reem_kbps || 8000);
+  }
+  if (!reemEditado.has("puerto") && document.activeElement !== $("reemPuerto")) $("reemPuerto").value = cfg.reem_srt_puerto || 9100;
+  if (!reemEditado.has("url") && document.activeElement !== $("reemUrl")) $("reemUrl").value = cfg.reem_rtmp_url || "";
+  $("reemBloqueSrt").classList.toggle("oculto", !$("reemSrt").checked);
+  $("reemBloqueUrl").classList.toggle("oculto", !$("reemRtmp").checked);
+  $("reemPastilla").className = "pastilla " + ({ activa: "ok vivo", conectando: "aviso", error: "mal" }[r.estado] || "");
+  poner("reemPastilla", (T[lang].reem_st || {})[r.estado] || r.estado || "—");
+  let sub = r.estado === "activa" ? T[lang].reem_sub(r) : r.estado === "error" ? r.error : "";
+  const srt = (r.salidas || []).find((x) => x.modo === "srt");
+  if (srt && r.estado === "activa") sub += ` · srt://${location.hostname}:${srt.puerto}`;
+  poner("reemSub", sub);
+}
+$("reemFuente").addEventListener("change", () => reemEditado.add("fuente"));
+for (const id of ["reemGrabar", "reemSrt", "reemRtmp"]) $(id).addEventListener("change", () => {
+  reemEditado.add("salidas"); pintarReem(ultimo);
+});
+$("reemKbps").addEventListener("change", () => reemEditado.add("kbps"));
+$("reemPuerto").addEventListener("input", () => reemEditado.add("puerto"));
+$("reemUrl").addEventListener("input", () => reemEditado.add("url"));
+$("reemGuardar").addEventListener("click", async () => {
+  const datos = {};
+  if (reemEditado.has("fuente")) datos.reem_fuente = $("reemFuente").value;
+  if (reemEditado.has("salidas")) datos.reem_salidas = [["grabar", "reemGrabar"], ["srt", "reemSrt"], ["rtmp", "reemRtmp"]]
+    .filter(([, id]) => $(id).checked).map(([m]) => m);
+  if (reemEditado.has("kbps")) datos.reem_kbps = Number($("reemKbps").value);
+  if (reemEditado.has("puerto")) datos.reem_srt_puerto = Number($("reemPuerto").value);
+  if (reemEditado.has("url")) datos.reem_rtmp_url = $("reemUrl").value.trim();
+  try {
+    await api("/api/config", datos);
+    reemEditado.clear();
+    mensaje("msgReem", t("saved_ok"), "ok"); refrescar();
+  } catch (err) { mensaje("msgReem", err.message, "mal"); }
+  setTimeout(() => mensaje("msgReem"), 6000);
+});
+
 function pintarPuente(e) {
   // la IP y no el nombre .local: el ATEM puede no resolver mDNS
   const r = e.red || {}, ip = r.modo === "ethernet" ? (r.ethernet || {}).ip : (r.wifi || {}).ip;
@@ -1853,6 +1952,7 @@ function pintar(e) {
   $("bloqueGrafW").classList.toggle("oculto", eq.potencia_w == null);
 
   pintarModo(e);
+  pintarReem(e);
   pintarFuentes(e);
   pintarGrabaciones(e);
   pintarHdmi(e);

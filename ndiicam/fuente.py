@@ -39,6 +39,17 @@ def informar(datos):
     sys.stdout.flush()
 
 
+def liberar_disco(d, reserva):
+    """Como un grabador continuo: si el disco se llena, fuera lo más viejo."""
+    os.makedirs(d, exist_ok=True)
+    viejos = sorted(glob.glob(os.path.join(d, "*.mp4")), key=os.path.getmtime)
+    while viejos and shutil.disk_usage(d).free < reserva:
+        try:
+            os.remove(viejos.pop(0))
+        except OSError:
+            pass
+
+
 def descartado(*_):
     CONTADORES["desc"] += 1
 
@@ -567,15 +578,7 @@ class SalidaGPU:
         return os.path.join(self.g["dir"], f"{nombre}_{time.strftime('%Y-%m-%d_%H-%M-%S')}.mp4")
 
     def _liberar_disco(self):
-        """Como un grabador continuo: si el disco se llena, fuera lo más viejo."""
-        d = self.g["dir"]
-        os.makedirs(d, exist_ok=True)
-        viejos = sorted(glob.glob(os.path.join(d, "*.mp4")), key=os.path.getmtime)
-        while viejos and shutil.disk_usage(d).free < self.RESERVA:
-            try:
-                os.remove(viejos.pop(0))
-            except OSError:
-                pass
+        liberar_disco(self.g["dir"], self.RESERVA)
 
     def _mensaje(self, bus, msg):
         if msg.type == Gst.MessageType.ERROR:

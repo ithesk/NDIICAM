@@ -11,8 +11,8 @@ import time
 
 import nucleo
 from nucleo import (AP_IF, AP_IP, FUENTE_PY, GRABACIONES, MAX_DECODIFICADORES, PUERTO_RTMP,
-    NOMBRE_NDI_PUENTE, RECEPTOR_PY, REPOSO_PY, RESOLUCIONES, SALIDAS_EXTRA, VERSION, conexiones_por_pid,
-    dispositivo_por_defecto, evento, ip_de, ips_propias, leer)
+    NOMBRE_NDI_PUENTE, RECEPTOR_PY, REEMISION_PY, REPOSO_PY, RESOLUCIONES, SALIDAS_EXTRA, VERSION,
+    conexiones_por_pid, dispositivo_por_defecto, evento, ip_de, ips_propias, leer)
 from camaras import audio_dispositivos, audio_hdmi, camaras, pantallas, resolucion_pantalla
 from gpu import capacidad_gpu, capacidad_vpp, decodificador_h264, entorno_va, simultaneo
 from puente import PUENTE, clave_puente
@@ -402,6 +402,89 @@ class Receptor:
                    modo=f"{c.get('ancho')}×{c.get('alto')}" + (f" @{fps:g}" if fps else ""))
         self.prev = (t, c)
 
+class Reemision:
+    """Una fuente NDI de la red grabada o emitida por SRT/RTMP desde un proceso
+    reemision.py (equipo potente). Si falla, se reintenta cada vez más espaciado."""
+
+    def __init__(self):
+        self.proc = None
+        self.obj = None
+        self.estado = "apagado"     # apagado | conectando | activa | error
+        self.error = ""
+        self.desde = None
+        self.reintento = 0.0
+        self.fallos = 0
+        self.c = {}
+        self.prev = None
+        self.stats = {"fps": 0, "mbps": 0, "audio_activo": False}
+
+    def arrancar(self, obj):
+        self.obj = obj
+        self.estado, self.error = "conectando", ""
+        self.c, self.prev = {}, None
+        self.stats = {"fps": 0, "mbps": 0, "audio_activo": False}
+        self.proc = subprocess.Popen([sys.executable, REEMISION_PY, json.dumps(obj)],
+                                     stdout=subprocess.PIPE, text=True, env=entorno_va())
+        threading.Thread(target=self._leer, args=(self.proc,), daemon=True).start()
+
+    def _leer(self, proc):
+        for linea in proc.stdout:
+            try:
+                d = json.loads(linea)
+            except ValueError:
+                continue
+            if proc is not self.proc:
+                break
+            if "error" in d:
+                self._fallo(d["error"])
+            else:
+                self.c = d
+        proc.wait()
+        if proc is self.proc and self.estado in ("conectando", "activa"):
+            self._fallo("proceso")
+
+    def _fallo(self, error):
+        if self.proc is None:
+            return
+        if error == "eos" or "demultiplex" in error.lower():
+            error = "sin_senal"
+        if self.estado == "activa" or self.fallos == 0:
+            evento("reem_error", fuente=self.obj["nombre"], detalle=error)
+        self.fallos += 1
+        self.detener()
+        self.estado, self.error = "error", error
+        self.reintento = time.time() + min(30, 3 * self.fallos)
+
+    def detener(self):
+        proc, self.proc = self.proc, None
+        if proc and proc.poll() is None:
+            proc.terminate()
+            try:
+                proc.wait(8)        # cierra el MP4 en curso
+            except subprocess.TimeoutExpired:
+                proc.kill()
+        self.obj = self.desde = None
+
+    def medir(self, t):
+        c = dict(self.c)
+        if self.proc is None:
+            return
+        if "t" not in c or (self.prev and c["t"] <= self.prev[1]["t"]):
+            if self.prev and t - self.prev[0] > 15:
+                self._fallo("proceso")
+            return
+        if self.prev:
+            p = self.prev[1]
+            dt = c["t"] - p["t"]
+            self.stats = {"fps": round((c["out"] - p["out"]) / dt, 1),
+                          "mbps": round((c["bytes"] - p["bytes"]) * 8 / dt / 1e6, 1),
+                          "audio_activo": c["aud"] > p["aud"]}
+        if c.get("out", 0) > 0 and self.estado != "activa":
+            self.estado, self.desde, self.fallos = "activa", t, 0
+            evento("reem_activa", fuente=self.obj["nombre"],
+                   salidas=[s["modo"] for s in self.obj["salidas"]])
+        self.prev = (t, c)
+
 class Fuentes:
     """Supervisa una Fuente por cámara: arranca, reinicia y para según las
     cámaras presentes y los ajustes."""
@@ -415,6 +498,7 @@ class Fuentes:
         self.hdmi_conector = None  # conector DRM del monitor (hay que indicarlo para
                                    # cambiar su modo: kmssink coge el primero, aunque esté vacío)
         self.receptor = Receptor()  # o una fuente NDI de la red en el HDMI
+        self.reemision = Reemision()  # y una fuente NDI grabada o emitida (equipo potente)
         self.reposo = Reposo()      # y si no, la pantalla de ayuda
 
     def objetivo(self, f):
@@ -642,9 +726,47 @@ class Fuentes:
             # y lo coge después de que la cámara que lo tenía se reinicie sin él
             if rx_obj and rx.proc is None and time.time() >= rx.reintento:
                 rx.arrancar(rx_obj)
+            self._reemision(cfg, puertos)
             if reposo_obj and self.reposo.proc is None and time.time() >= self.reposo.reintento:
                 self.reposo.arrancar(reposo_obj)
             self._grabacion_condicional()
+
+    def objetivo_reemision(self, cfg, puertos=()):
+        """Qué tiene que hacer la reemisión, o None: hace falta un equipo potente,
+        una fuente elegida, alguna salida y la GPU para codificar."""
+        cap = capacidad_gpu()
+        if not (simultaneo(cfg) and cfg["reem_fuente"] and cap["disponible"]):
+            return None
+        salidas = []
+        for modo in SALIDAS_EXTRA:
+            if modo not in cfg["reem_salidas"]:
+                continue
+            if modo == "grabar":
+                salidas.append({"modo": "grabar", "dir": GRABACIONES})
+            elif modo == "srt":
+                puerto = int(cfg["reem_srt_puerto"])
+                while puerto in puertos:        # el de una cámara
+                    puerto += 1
+                salidas.append({"modo": "srt", "puerto": puerto,
+                                "latencia": int(cfg["reem_srt_latencia"])})
+            elif cfg["reem_rtmp_url"]:
+                salidas.append({"modo": "rtmp", "url": cfg["reem_rtmp_url"]})
+        if not salidas:
+            return None
+        return {"nombre": cfg["reem_fuente"], "equipo": f"NDIICAM {socket.gethostname()}",
+                "codificador": cap["codificador"], "vpp": capacidad_vpp()["vpp"],
+                "kbps": int(cfg["reem_kbps"]), "salidas": salidas}
+
+    def _reemision(self, cfg, puertos):
+        r = self.reemision
+        obj = self.objetivo_reemision(cfg, puertos)
+        if r.proc is not None and r.obj != obj:
+            r.detener()
+            r.fallos, r.reintento = 0, 0.0
+        if obj is None:
+            r.estado, r.error = "apagado", ""
+        elif r.proc is None and time.time() >= r.reintento:
+            r.arrancar(obj)
 
     def _grabacion_condicional(self):
         """Enciende o apaga la grabación GPU de cada cámara según su regla:
@@ -745,6 +867,7 @@ class Fuentes:
             for f in self.fuentes.values():
                 f.detener()
             self.receptor.detener()
+            self.reemision.detener()
             self.reposo.detener()
 
     def lista(self):

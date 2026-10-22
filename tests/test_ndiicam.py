@@ -807,5 +807,45 @@ class VariasSalidas(unittest.TestCase):
             cortafuegos.aplicar, cortafuegos.puertos_ssh = orig
 
 
+class Reemision(unittest.TestCase):
+    """Una fuente NDI de la red grabada o emitida: solo en equipos potentes."""
+
+    def setUp(self):
+        self.orig = (supervisor.simultaneo, supervisor.capacidad_gpu, supervisor.capacidad_vpp)
+        self.potente = True
+        supervisor.simultaneo = lambda cfg: self.potente
+        supervisor.capacidad_gpu = lambda: {"disponible": True, "codificador": "vah264enc"}
+        supervisor.capacidad_vpp = lambda: {"vpp": True, "jpeg": True, "h264": True}
+        self.tmp = tempfile.TemporaryDirectory()
+        self.config_orig = nucleo.CONFIG
+        nucleo.CONFIG = os.path.join(self.tmp.name, "config.json")
+        self.sup = supervisor.Fuentes(nucleo.Config())
+        self.cfg = {"reem_fuente": "OBS (Programa)", "reem_salidas": ["grabar", "rtmp", "srt"],
+                    "reem_kbps": 6000, "reem_srt_puerto": 9100, "reem_srt_latencia": 200,
+                    "reem_rtmp_url": "rtmp://a/live/k"}
+
+    def tearDown(self):
+        supervisor.simultaneo, supervisor.capacidad_gpu, supervisor.capacidad_vpp = self.orig
+        nucleo.CONFIG = self.config_orig
+        self.tmp.cleanup()
+
+    def test_todas_las_salidas(self):
+        o = self.sup.objetivo_reemision(self.cfg)
+        self.assertEqual([s["modo"] for s in o["salidas"]], ["grabar", "srt", "rtmp"])
+        self.assertEqual((o["nombre"], o["kbps"], o["codificador"]), ("OBS (Programa)", 6000, "vah264enc"))
+
+    def test_srt_no_pisa_el_puerto_de_una_camara(self):
+        o = self.sup.objetivo_reemision(self.cfg, puertos={9100, 9101})
+        self.assertEqual(next(s for s in o["salidas"] if s["modo"] == "srt")["puerto"], 9102)
+
+    def test_nada_sin_fuente_sin_salidas_o_sin_potencia(self):
+        self.assertIsNone(self.sup.objetivo_reemision({**self.cfg, "reem_fuente": ""}))
+        self.assertIsNone(self.sup.objetivo_reemision({**self.cfg, "reem_salidas": []}))
+        self.assertIsNone(self.sup.objetivo_reemision(
+            {**self.cfg, "reem_salidas": ["rtmp"], "reem_rtmp_url": ""}))
+        self.potente = False
+        self.assertIsNone(self.sup.objetivo_reemision(self.cfg))
+
+
 if __name__ == "__main__":
     unittest.main()

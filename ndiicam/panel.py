@@ -24,6 +24,7 @@ from nucleo import (AP_CLAVE_DEFECTO, AP_IP, CLAVE_PUENTE, ESTADO, EVENTOS, FPS_
 from camaras import fijar_modo_consola
 from gpu import capacidad_gpu, simultaneo
 from puente import clave_puente, xml_atem
+from supervisor import ocultar_clave_rtmp
 from actualizador import (cambiar_nombre_equipo, reiniciar_servicio, respaldo, restaurar,
     valores_fabrica)
 from estado import grabaciones
@@ -214,7 +215,10 @@ class Panel(BaseHTTPRequestHandler):
                 "ap_clave": cfg["ap_clave"], "pais": cfg["pais"], "idioma": cfg["idioma"],
                 "clave_panel": bool(cfg["clave_panel"]), "decodificadores": cfg["decodificadores"],
                 "cortafuegos": cfg["cortafuegos"], "puertos_extra": cfg["puertos_extra"],
-                "simultaneo": cfg["simultaneo"]},
+                "simultaneo": cfg["simultaneo"],
+                **{k: cfg[k] for k in ("reem_fuente", "reem_salidas", "reem_kbps", "reem_srt_puerto",
+                                       "reem_srt_latencia")},
+                "reem_rtmp_url": ocultar_clave_rtmp(cfg["reem_rtmp_url"])},
                 "desde_ap": self._desde_ap(), "eventos": list(EVENTOS)[:40],
                 "conexion_wifi": nucleo.RED.conexion,
                 "seguridad": {"https": bool(getattr(self.server, "tls", False)),
@@ -623,6 +627,44 @@ class Panel(BaseHTTPRequestHandler):
             cambios["simultaneo"] = bool(d["simultaneo"])
         if "puente_ndi" in d:
             cambios["puente_ndi"] = bool(d["puente_ndi"])
+        # reemisión de una fuente NDI (equipo potente)
+        if "reem_fuente" in d:
+            v = str(d["reem_fuente"]).strip()
+            if len(v) > 200:
+                return self._error("fuente_invalida")
+            cambios["reem_fuente"] = v
+        if "reem_salidas" in d:
+            v = d["reem_salidas"]
+            if not isinstance(v, list) or any(str(x) not in SALIDAS_EXTRA for x in v):
+                return self._error("salida_gpu_invalida")
+            if v and not capacidad_gpu()["disponible"]:
+                return self._error("gpu_no_disponible")
+            cambios["reem_salidas"] = sorted({str(x) for x in v})
+        if "reem_kbps" in d:
+            try:
+                v = int(d["reem_kbps"])
+            except (TypeError, ValueError):
+                v = 0
+            if not 1000 <= v <= 50000:
+                return self._error("kbps_invalido")
+            cambios["reem_kbps"] = v
+        if "reem_srt_puerto" in d:
+            try:
+                v = int(d["reem_srt_puerto"])
+            except (TypeError, ValueError):
+                v = 0
+            if not 1024 <= v <= 65535:
+                return self._error("puerto_invalido")
+            cambios["reem_srt_puerto"] = v
+        if "reem_rtmp_url" in d:
+            v = str(d["reem_rtmp_url"]).strip()
+            if "•" not in v:                # con puntos es la que ya había, oculta
+                if v and not URL_RTMP.match(v):
+                    return self._error("url_rtmp_invalida")
+                cambios["reem_rtmp_url"] = v
+        if "rtmp" in cambios.get("reem_salidas", []) and not (
+                cambios.get("reem_rtmp_url") or antes["reem_rtmp_url"]):
+            return self._error("url_rtmp_invalida")
         if "puertos_extra" in d:
             v = str(d["puertos_extra"]).strip()
             if len(v) > 300 or puertos_extra(v) is None:

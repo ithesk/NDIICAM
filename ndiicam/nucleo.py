@@ -34,6 +34,7 @@ AQUI = os.path.dirname(os.path.abspath(__file__))
 WEB = os.path.join(AQUI, "web", "index.html")
 FUENTE_PY = os.path.join(AQUI, "fuente.py")
 RECEPTOR_PY = os.path.join(AQUI, "receptor.py")
+REEMISION_PY = os.path.join(AQUI, "reemision.py")
 REPOSO_PY = os.path.join(AQUI, "reposo.py")     # pantalla de ayuda cuando el HDMI está libre
 IDIOMAS = ("es", "en")
 MODOS = ("emisor", "receptor", "puente")   # un Atom no da para emitir y recibir a la vez
@@ -62,7 +63,10 @@ POR_DEFECTO = {"ndi_nombre": "NDIICAM", "resolucion": "1080p", "fps": 30, "audio
                "hdmi": False, "hdmi_fuente": "auto", "hdmi_consola": "nativa",
                "modo": "emisor", "rx_fuente": "", "decodificadores": "auto",
                "puente_clave": "", "idioma": "es", "cortafuegos": True, "puertos_extra": "",
-               "simultaneo": True, "puente_ndi": True}
+               "simultaneo": True, "puente_ndi": True,
+               # reemisión (equipo potente): una fuente NDI de la red, grabada o emitida
+               "reem_fuente": "", "reem_salidas": [], "reem_kbps": 8000,
+               "reem_srt_puerto": 9100, "reem_srt_latencia": 200, "reem_rtmp_url": ""}
 AP_CLAVE_DEFECTO = POR_DEFECTO["ap_clave"]
 
 # decodificadores JPEG por fuente: jpegdec va en un solo hilo y con imágenes muy
