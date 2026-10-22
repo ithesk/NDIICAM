@@ -741,6 +741,14 @@ class EquipoPotente(unittest.TestCase):
         self.mem_kb = 2 * 1024 ** 2
         self.assertFalse(gpu.equipo_potente()["potente"])
 
+    def test_edicion_lite_dice_que_le_falta(self):
+        self.assertEqual(gpu.edicion()["edicion"], "pro")
+        self.assertEqual(gpu.edicion()["falta"], [])
+        self.nucleos, self.vpp = 2, {"jpeg": False, "h264": False}     # un Celeron J3355
+        e = gpu.edicion()
+        self.assertEqual(e["edicion"], "lite")
+        self.assertEqual(e["falta"], ["nucleos", "gpu"])
+
     def test_el_ajuste_las_apaga(self):
         self.assertTrue(gpu.simultaneo({}))
         self.assertTrue(gpu.simultaneo({"simultaneo": True}))

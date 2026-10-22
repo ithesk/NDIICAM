@@ -99,6 +99,26 @@ sound. Everything is managed from a web panel: no terminal needed after installa
   small modules (see the header of `ndiicam/ndiicam.py`), with tests that run without hardware
   (`python3 -m unittest discover -s tests`).
 
+## Lite and Pro editions
+
+It is the same NDIICAM and the same installer: the edition is chosen by itself at startup,
+from the hardware. NDIICAM measures the GPU the first time (see [Technical notes](#technical-notes))
+and the panel shows **LITE** or **PRO** next to the name, and under *System › Device* what a
+Lite device is missing to be Pro.
+
+| | Lite | Pro |
+|---|---|---|
+| Device | Any x86_64 PC (an Atom or a 2-core Celeron will do) | 4 cores, 3.5 GB and an Intel GPU that really decodes (or 8 cores without one) |
+| Cameras over NDI, panel, setup WiFi, tally, HDMI | Yes | Yes |
+| Receiver and bridge modes | Yes, with the cameras paused | Yes, **with the cameras streaming** |
+| GPU H.264 output per camera | One (record, SRT or RTMP) | **Several at once** |
+| Bridge publishes what it receives as an NDI source | No | Yes |
+| Re-stream an NDI source (record or stream it) | No | Yes |
+| Audio delay and clap calibration | Yes | Yes |
+
+On a Pro device, the *Pro features* switch (in *Settings › Device mode*) turns them off and
+makes it behave like Lite.
+
 ## Requirements
 
 | | |

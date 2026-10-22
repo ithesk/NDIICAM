@@ -123,6 +123,20 @@ def equipo_potente():
             "nucleos": nucleos, "memoria_gb": memoria, "gpu": gpu,
             "midiendo": bool(vpp.get("midiendo"))}
 
+def edicion():
+    """Lite o Pro: el mismo NDIICAM, que en un equipo que da la talla (equipo_potente)
+    se convierte en Pro y suma las funciones simultáneas. Con lo que le falta a un
+    Lite para ser Pro: nucleos, memoria, gpu."""
+    c = equipo_potente()
+    falta = []
+    if c["nucleos"] < 4:
+        falta.append("nucleos")
+    if c["memoria_gb"] < 3.5:
+        falta.append("memoria")
+    if not c["gpu"] and c["nucleos"] < 8:
+        falta.append("gpu")
+    return {**c, "edicion": "pro" if c["potente"] else "lite", "falta": [] if c["potente"] else falta}
+
 def simultaneo(cfg):
     """Las funciones simultáneas están en marcha: el equipo da para ellas y el
     ajuste (activado por defecto) no las apaga."""

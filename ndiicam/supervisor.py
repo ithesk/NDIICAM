@@ -14,7 +14,7 @@ from nucleo import (AP_IF, AP_IP, FUENTE_PY, GRABACIONES, MAX_DECODIFICADORES, P
     NOMBRE_NDI_PUENTE, RECEPTOR_PY, REEMISION_PY, REPOSO_PY, RESOLUCIONES, SALIDAS_EXTRA, VERSION,
     conexiones_por_pid, dispositivo_por_defecto, evento, ip_de, ips_propias, leer)
 from camaras import audio_dispositivos, audio_hdmi, camaras, pantallas, resolucion_pantalla
-from gpu import capacidad_gpu, capacidad_vpp, decodificador_h264, entorno_va, simultaneo
+from gpu import capacidad_gpu, capacidad_vpp, decodificador_h264, edicion, entorno_va, simultaneo
 from puente import PUENTE, clave_puente
 
 
@@ -503,6 +503,7 @@ class Fuentes:
                                    # cambiar su modo: kmssink coge el primero, aunque esté vacío)
         self.receptor = Receptor()  # o una fuente NDI de la red en el HDMI
         self.reemision = Reemision()  # y una fuente NDI grabada o emitida (equipo potente)
+        self.edicion = None     # lite | pro, según el equipo
         self.reposo = Reposo()      # y si no, la pantalla de ayuda
 
     def objetivo(self, f):
@@ -624,6 +625,12 @@ class Fuentes:
             time.sleep(2)
 
     def _paso(self):
+        ed = edicion()
+        if ed["edicion"] != self.edicion and not ed.get("midiendo"):
+            # la primera vez, o al cambiar el equipo (más memoria, otra GPU, otro driver)
+            self.edicion = ed["edicion"]
+            evento("edicion", edicion=ed["edicion"], nucleos=ed["nucleos"],
+                   memoria=ed["memoria_gb"], gpu=ed["gpu"], falta=ed["falta"])
         cams = {c["id"]: c for c in camaras()}
         self.audio = audio_dispositivos()
         # una sola cámara al HDMI: la elegida o, en automático, la primera activa
@@ -850,7 +857,8 @@ class Fuentes:
         ap = {"ssid": cfg["ap_ssid"], "clave": cfg["ap_clave"]} if nucleo.RED.ap_activo else None
         url = f"http://{ip}/" if ip else (f"http://{AP_IP}/" if ap else "")
         return {"hdmi": monitor["id"], "pantalla": resolucion_pantalla(monitor),
-                "idioma": cfg["idioma"], "equipo": socket.gethostname(), "version": VERSION,
+                "idioma": cfg["idioma"], "equipo": socket.gethostname(),
+                "version": f"{VERSION} {'Pro' if self.edicion == 'pro' else 'Lite'}",
                 "estado": estado, "modo": modo, "detalle": detalle, "ip": ip, "red": red,
                 "url": url, "ap": ap}
 

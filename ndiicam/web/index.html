@@ -40,6 +40,9 @@
   .pastilla::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
   .pastilla.ok { background: var(--ok-f); color: var(--ok); }
   .pastilla.aviso { background: var(--aviso-f); color: var(--aviso); }
+  .edicion { font-size: 11px; font-weight: 700; letter-spacing: .04em; padding: 2px 7px; border-radius: 6px;
+    vertical-align: 2px; background: var(--borde, #e5e7eb); color: var(--suave, #555); }
+  .edicion.pro { background: var(--acento); color: #fff; }
   .pastilla.mal { background: var(--mal-f); color: var(--mal); }
   .pastilla.vivo::before { animation: latido 1.6s ease-in-out infinite; }
   @keyframes latido { 50% { opacity: .35; } }
@@ -183,7 +186,7 @@
       <div class="logo" aria-hidden="true">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 10l5-3v10l-5-3z"/><rect x="3" y="6" width="12" height="12" rx="2"/></svg>
       </div>
-      <div>NDIICAM <small id="equipo"></small></div>
+      <div>NDIICAM <span class="edicion oculto" id="edicion"></span> <small id="equipo"></small></div>
     </div>
     <div class="cabecera-dcha">
       <span class="pastilla" id="pastilla">…</span>
@@ -569,6 +572,7 @@
   <section class="tarjeta seccion" data-tab="sistema" id="secSistema">
     <h2 data-t="system"></h2>
     <dl>
+      <dt data-t="edition"></dt><dd id="sisEdicion">—</dd>
       <dt data-t="last_boot"></dt><dd id="sisArranque">—</dd>
       <dt data-t="watchdog"></dt><dd id="sisWatchdog">—</dd>
       <dt data-t="clock"></dt><dd id="sisHora">—</dd>
@@ -635,9 +639,13 @@ const T = {
     hdmi_help: "Muestra la imagen de una cámara en el monitor conectado al equipo, para encuadrar. No consume CPU. Activarla o cambiar de cámara corta su NDI unos 2 s.",
     modo_title: "Modo del equipo", modo_sub: "Este equipo no da para emitir y recibir a la vez.", modo_sub_si: "Este equipo puede emitir y recibir a la vez.",
     modo_emisor: "Emisor", modo_emisor_d: "Sus cámaras salen por NDI a la red.",
-    modo_receptor: "Receptor", modo_receptor_d: "Muestra en su monitor HDMI una fuente NDI de la red, con su sonido. Las cámaras se paran, salvo en un equipo potente.",
-    simul_on: "Seguir emitiendo las cámaras mientras recibe",
-    simul_si: (c) => `Este equipo da para ello (${c.nucleos} núcleos, ${c.memoria_gb} GB${c.gpu ? ", GPU que decodifica" : ""}): en modo receptor o puente las cámaras siguen saliendo por NDI; el HDMI muestra lo recibido.`,
+    modo_receptor: "Receptor", modo_receptor_d: "Muestra en su monitor HDMI una fuente NDI de la red, con su sonido. Las cámaras se paran, salvo en la edición Pro.",
+    simul_on: "Funciones Pro",
+    edition: "Edición",
+    ed_pro: (c) => `Pro: ${c.nucleos} núcleos, ${c.memoria_gb} GB${c.gpu ? ", GPU que decodifica" : ""}. Cámaras mientras recibe, varias salidas por cámara, puente a NDI y reemisión.`,
+    ed_lite: (c) => `Lite: ${c.nucleos} núcleos, ${c.memoria_gb} GB. Para Pro falta ${c.falta.map((x) => ({ nucleos: "tener 4 núcleos", memoria: "3,5 GB de memoria", gpu: "una GPU Intel que decodifique (u 8 núcleos)" })[x]).join(", ") || "medir la GPU"}.`,
+    ed_evento: (d) => d.edicion === "pro" ? `Edición Pro: ${d.nucleos} núcleos, ${d.memoria} GB${d.gpu ? ", GPU que decodifica" : ""}` : `Edición Lite (${d.nucleos} núcleos, ${d.memoria} GB)`,
+    simul_si: (c) => `Edición Pro (${c.nucleos} núcleos, ${c.memoria_gb} GB${c.gpu ? ", GPU que decodifica" : ""}): las cámaras siguen emitiendo mientras recibe, varias salidas por cámara, puente a NDI y reemitir fuentes NDI. Apágalas si prefieres que se comporte como Lite.`,
     simul_no: (c) => `Este equipo es justo para ello (${c.nucleos} núcleos, ${c.memoria_gb} GB${c.gpu ? "" : ", sin GPU que decodifique"}): las cámaras se paran mientras recibe.`,
     simul_midiendo: "Midiendo la GPU para saber si el equipo da para hacer varias cosas a la vez…",
     rx_title: "Receptor NDI", rx_source: "Fuente", rx_elegir: "Elige una fuente…",
@@ -884,6 +892,7 @@ const T = {
       audio_fallo: (d) => `${d.fuente}: el audio falló (${d.detalle}); emitiendo sin audio`,
       reinicio_manual: (d) => d.modo !== "emisor" ? "Recepción reiniciada desde el panel" : "Emisión reiniciada desde el panel",
       decodificacion_paralela: (d) => `${d.fuente}: la decodificación no da abasto; repartida en ${d.hilos} hilos`,
+      edicion: (d) => T.es.ed_evento(d),
       calibracion: (d) => d.error ? `${d.fuente}: calibración del audio sin resultado (${d.error})` : `${d.fuente}: el audio va ${d.ms} ms por delante de la imagen (${d.palmadas} palmadas)`,
       reem_activa: (d) => `Reemitiendo ${d.fuente}: ${(d.salidas || []).map((m) => T.es["gpu_" + m]).join(", ")}`,
       reem_error: (d) => `Reemisión de ${d.fuente}: ${d.detalle}; se reintenta`,
@@ -941,9 +950,13 @@ const T = {
     hdmi_help: "Shows one camera on the monitor plugged into the device, for framing. It uses no CPU. Turning it on or switching camera interrupts that camera's NDI for about 2 s.",
     modo_title: "Device mode", modo_sub: "This device cannot send and receive at the same time.", modo_sub_si: "This device can send and receive at the same time.",
     modo_emisor: "Sender", modo_emisor_d: "Its cameras go out to the network over NDI.",
-    modo_receptor: "Receiver", modo_receptor_d: "Shows an NDI source from the network on its HDMI monitor, with sound. Cameras are stopped, except on a powerful device.",
-    simul_on: "Keep streaming the cameras while receiving",
-    simul_si: (c) => `This device can do it (${c.nucleos} cores, ${c.memoria_gb} GB${c.gpu ? ", GPU decoding" : ""}): in receiver or bridge mode the cameras keep going out over NDI; HDMI shows what is received.`,
+    modo_receptor: "Receiver", modo_receptor_d: "Shows an NDI source from the network on its HDMI monitor, with sound. Cameras are stopped, except on the Pro edition.",
+    simul_on: "Pro features",
+    edition: "Edition",
+    ed_pro: (c) => `Pro: ${c.nucleos} cores, ${c.memoria_gb} GB${c.gpu ? ", GPU decoding" : ""}. Cameras while receiving, several outputs per camera, bridge to NDI and re-streaming.`,
+    ed_lite: (c) => `Lite: ${c.nucleos} cores, ${c.memoria_gb} GB. For Pro it needs ${c.falta.map((x) => ({ nucleos: "4 cores", memoria: "3.5 GB of memory", gpu: "an Intel GPU that decodes (or 8 cores)" })[x]).join(", ") || "to measure the GPU"}.`,
+    ed_evento: (d) => d.edicion === "pro" ? `Pro edition: ${d.nucleos} cores, ${d.memoria} GB${d.gpu ? ", GPU decoding" : ""}` : `Lite edition (${d.nucleos} cores, ${d.memoria} GB)`,
+    simul_si: (c) => `Pro edition (${c.nucleos} cores, ${c.memoria_gb} GB${c.gpu ? ", GPU decoding" : ""}): cameras keep streaming while receiving, several outputs per camera, bridge to NDI and re-streaming NDI sources. Turn them off to make it behave like Lite.`,
     simul_no: (c) => `This device is too tight for it (${c.nucleos} cores, ${c.memoria_gb} GB${c.gpu ? "" : ", no GPU decoding"}): cameras stop while receiving.`,
     simul_midiendo: "Measuring the GPU to know whether this device can do several things at once…",
     rx_title: "NDI receiver", rx_source: "Source", rx_elegir: "Pick a source…",
@@ -1190,6 +1203,7 @@ const T = {
       audio_fallo: (d) => `${d.fuente}: audio failed (${d.detalle}); streaming without audio`,
       reinicio_manual: (d) => d.modo !== "emisor" ? "Receiving restarted from the panel" : "Streaming restarted from the panel",
       decodificacion_paralela: (d) => `${d.fuente}: decoding cannot keep up; split across ${d.hilos} threads`,
+      edicion: (d) => T.en.ed_evento(d),
       calibracion: (d) => d.error ? `${d.fuente}: audio calibration without result (${d.error})` : `${d.fuente}: audio is ${d.ms} ms ahead of the picture (${d.palmadas} claps)`,
       reem_activa: (d) => `Re-streaming ${d.fuente}: ${(d.salidas || []).map((m) => T.en["gpu_" + m]).join(", ")}`,
       reem_error: (d) => `Re-stream of ${d.fuente}: ${d.detalle}; retrying`,
@@ -1964,7 +1978,12 @@ function pintar(e) {
   $("pastilla").className = "pastilla " + (CLASES[em.estado] || "") + (["emitiendo", "recibiendo"].includes(em.estado) ? " vivo" : "");
   poner("pastilla", texto);
   poner("equipo", eq.nombre ? eq.nombre.toUpperCase() : "");
-  poner("version", e.version ? "v" + e.version : "");
+  const ed = (e.capacidad || {}).edicion;
+  poner("version", e.version ? "v" + e.version + (ed ? (ed === "pro" ? " Pro" : " Lite") : "") : "");
+  $("edicion").classList.toggle("oculto", !ed);
+  $("edicion").className = "edicion " + (ed === "pro" ? "pro" : "") + (ed ? "" : " oculto");
+  poner("edicion", ed === "pro" ? "PRO" : "LITE");
+  if (ed) poner("sisEdicion", ed === "pro" ? T[lang].ed_pro(e.capacidad) : T[lang].ed_lite(e.capacidad));
   poner("estado", texto);
   let sub = "";
   const rx = (e.receptor || {}).estado;

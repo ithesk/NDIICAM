@@ -99,6 +99,26 @@ gestiona desde un panel web: tras la instalación no hace falta la terminal.
   Dividido en módulos pequeños (ver la cabecera de `ndiicam/ndiicam.py`), con pruebas que corren
   sin hardware (`python3 -m unittest discover -s tests`).
 
+## Ediciones Lite y Pro
+
+Es el mismo NDIICAM y el mismo instalador: la edición se decide sola al arrancar, según el
+equipo. NDIICAM mide la GPU la primera vez (ver [Notas técnicas](#notas-técnicas)) y el panel
+muestra **LITE** o **PRO** junto al nombre, y en *Sistema › Equipo* qué le falta a un Lite para
+ser Pro.
+
+| | Lite | Pro |
+|---|---|---|
+| Equipo | Cualquier PC x86_64 (un Atom o un Celeron de 2 núcleos bastan) | 4 núcleos, 3,5 GB y una GPU Intel que decodifique de verdad (u 8 núcleos sin ella) |
+| Cámaras por NDI, panel, WiFi de configuración, tally, HDMI | Sí | Sí |
+| Modo receptor y modo puente | Sí, con las cámaras en pausa | Sí, **con las cámaras emitiendo** |
+| Salida H.264 por GPU por cámara | Una (grabar, SRT o RTMP) | **Varias a la vez** |
+| El puente publica lo recibido como fuente NDI | No | Sí |
+| Reemitir una fuente NDI (grabarla o emitirla) | No | Sí |
+| Retraso del audio y calibración con palmadas | Sí | Sí |
+
+En un equipo Pro, el interruptor *Funciones Pro* (en *Configuración › Modo del equipo*) las
+apaga y lo deja como un Lite.
+
 ## Requisitos
 
 | | |

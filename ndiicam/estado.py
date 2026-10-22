@@ -13,7 +13,7 @@ from nucleo import (ESTADO, FPS_VALIDOS, GRABACIONES, NOMBRE_GRABACION, PUERTO_R
     nombre_de)
 from camaras import modo_consola_activo, pantallas
 from gpu import (capacidad_gpu, capacidad_vpp, decodificador_h264, energia_rapl,
-    equipo_potente, simultaneo, tiempos_cpu, tiempos_gpu, uso_gpu, vatios)
+    edicion, simultaneo, tiempos_cpu, tiempos_gpu, uso_gpu, vatios)
 from puente import PUENTE
 from supervisor import ocultar_clave_rtmp
 import sistema
@@ -212,7 +212,7 @@ def construir_estado(tx_mbps, rx_mbps, cpu_pct, potencia, gpu_uso=None):
         "version": VERSION,
         "gpu": {**capacidad_gpu(), **capacidad_vpp()},
         # si da para varias cosas a la vez, y si están en marcha
-        "capacidad": {**equipo_potente(), "simultaneo": simultaneo(cfg)},
+        "capacidad": {**edicion(), "simultaneo": simultaneo(cfg)},
         "equipo": {"nombre": host,
                    "uptime": float(leer("/proc/uptime", "0").split()[0]),
                    "cpu": round(cpu_pct), "nucleos": os.cpu_count(),
