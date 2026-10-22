@@ -228,7 +228,7 @@
   <div id="fuentes" data-tab="monitor"></div>
 
   <section class="tarjeta seccion" id="secModo" data-tab="config">
-    <div class="fuente-cab"><div><h3 data-t="modo_title"></h3><div class="sub" data-t="modo_sub"></div></div></div>
+    <div class="fuente-cab"><div><h3 data-t="modo_title"></h3><div class="sub" id="modoSub"></div></div></div>
     <div class="modos">
       <label class="modo-op"><input type="radio" name="modo" value="emisor">
         <span><b data-t="modo_emisor"></b><small data-t="modo_emisor_d"></small></span></label>
@@ -633,7 +633,7 @@ const T = {
   es: {
     hdmi_title: "Salida HDMI", hdmi_on: "Mostrar", hdmi_camera: "Cámara en pantalla", hdmi_state: "Estado",
     hdmi_help: "Muestra la imagen de una cámara en el monitor conectado al equipo, para encuadrar. No consume CPU. Activarla o cambiar de cámara corta su NDI unos 2 s.",
-    modo_title: "Modo del equipo", modo_sub: "Este equipo no da para emitir y recibir a la vez.",
+    modo_title: "Modo del equipo", modo_sub: "Este equipo no da para emitir y recibir a la vez.", modo_sub_si: "Este equipo puede emitir y recibir a la vez.",
     modo_emisor: "Emisor", modo_emisor_d: "Sus cámaras salen por NDI a la red.",
     modo_receptor: "Receptor", modo_receptor_d: "Muestra en su monitor HDMI una fuente NDI de la red, con su sonido. Las cámaras se paran, salvo en un equipo potente.",
     simul_on: "Seguir emitiendo las cámaras mientras recibe",
@@ -939,7 +939,7 @@ const T = {
   en: {
     hdmi_title: "HDMI output", hdmi_on: "Show", hdmi_camera: "Camera on screen", hdmi_state: "Status",
     hdmi_help: "Shows one camera on the monitor plugged into the device, for framing. It uses no CPU. Turning it on or switching camera interrupts that camera's NDI for about 2 s.",
-    modo_title: "Device mode", modo_sub: "This device cannot send and receive at the same time.",
+    modo_title: "Device mode", modo_sub: "This device cannot send and receive at the same time.", modo_sub_si: "This device can send and receive at the same time.",
     modo_emisor: "Sender", modo_emisor_d: "Its cameras go out to the network over NDI.",
     modo_receptor: "Receiver", modo_receptor_d: "Shows an NDI source from the network on its HDMI monitor, with sound. Cameras are stopped, except on a powerful device.",
     simul_on: "Keep streaming the cameras while receiving",
@@ -1838,6 +1838,7 @@ function pintarModo(e) {
   $("fuentesCfg").classList.toggle("oculto", !camaras);
   // el interruptor solo en equipos que dan para ello (o mientras se mide la GPU)
   $("bloqueSimultaneo").classList.toggle("oculto", !cap.potente && !cap.midiendo);
+  poner("modoSub", t(cap.potente ? "modo_sub_si" : "modo_sub"));
   if (document.activeElement !== $("chkSimultaneo")) $("chkSimultaneo").checked = (e.config || {}).simultaneo !== false;
   $("chkSimultaneo").disabled = !cap.potente;
   poner("simulAyuda", cap.midiendo && !cap.potente ? t("simul_midiendo") : cap.potente ? T[lang].simul_si(cap) : T[lang].simul_no(cap));
