@@ -847,5 +847,51 @@ class Reemision(unittest.TestCase):
         self.assertIsNone(self.sup.objetivo_reemision(self.cfg))
 
 
+class CalibracionDelAudio(unittest.TestCase):
+    """Palmadas: golpe seco en el audio y pico de movimiento en la imagen, más tarde."""
+
+    @staticmethod
+    def sesion(palmadas, desfase, fps=30, ruido=0.01):
+        import random
+        rnd = random.Random(1)
+        audio = [(i / 1000, ruido * rnd.random()) for i in range(6000)]
+        for t in palmadas:
+            for j in range(40):             # golpe y eco que se apaga
+                k = int(t * 1000) + j
+                audio[k] = (audio[k][0], 0.9 * (1 - j / 40))
+        video = []
+        for n in range(int(6 * fps)):
+            t = n / fps
+            cambio = 2 + rnd.random()
+            for tp in palmadas:
+                d = t - (tp + desfase)
+                if -0.2 < d <= 0.5 / fps:   # las manos se acercan y chocan
+                    cambio += 40 * (1 + d / 0.2)
+            video.append((t, cambio))
+        return audio, video
+
+    def test_mide_el_desfase(self):
+        r = fuente.analizar_calibracion(*self.sesion([1.0, 2.3, 3.6], 0.12))
+        self.assertEqual(r["palmadas"], 3)
+        self.assertLessEqual(abs(r["ms"] - 120), 34)    # un fotograma a 30 fps
+        self.assertLess(r["dispersion"], 40)
+
+    def test_audio_que_va_tarde(self):
+        r = fuente.analizar_calibracion(*self.sesion([1.0, 2.5, 4.0], -0.3))
+        self.assertLess(r["ms"], -250)
+
+    def test_el_eco_no_cuenta_como_otra_palmada(self):
+        audio, video = self.sesion([1.0], 0.1)
+        audio[1100] = (1.1, 0.5)            # rebote 100 ms después
+        self.assertEqual(fuente.analizar_calibracion(audio, video)["palmadas"], 1)
+
+    def test_sin_palmadas_ni_movimiento(self):
+        audio, video = self.sesion([], 0.1)
+        self.assertEqual(fuente.analizar_calibracion(audio, video)["error"], "sin_palmadas")
+        audio, _ = self.sesion([1.0, 2.0], 0.1)
+        quieto = [(n / 30, 2.0) for n in range(180)]
+        self.assertEqual(fuente.analizar_calibracion(audio, quieto)["error"], "sin_movimiento")
+
+
 if __name__ == "__main__":
     unittest.main()

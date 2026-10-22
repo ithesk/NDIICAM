@@ -29,6 +29,8 @@ import gi
 gi.require_version("Gst", "1.0")
 from gi.repository import GLib, Gst  # noqa: E402
 
+from nucleo import RETRASO_MAX_MS  # noqa: E402
+
 CONTADORES = {"cam": 0, "bytes": 0, "out": 0, "desc": 0, "aud": 0, "gpu": 0, "gpu_bytes": 0}
 NIVEL = {"db_peak": None, "db_rms": None}     # audio, dBFS, lo último que dijo 'level'
 Q = "max-size-buffers=3 leaky=downstream"
@@ -48,6 +50,132 @@ def liberar_disco(d, reserva):
             os.remove(viejos.pop(0))
         except OSError:
             pass
+
+
+def fijar_retraso(flujo, ms):
+    """Retrasa el audio ms milisegundos respecto a la imagen; se puede cambiar en marcha."""
+    ns = max(0, min(RETRASO_MAX_MS, int(ms))) * 1000000
+    retraso = flujo.elemento("retraso")
+    if retraso is None:
+        return 0
+    retraso.get_static_pad("src").set_offset(ns)
+    qr = flujo.elemento("qr")
+    if qr is not None:
+        qr.set_property("min-threshold-time", ns)
+    return ns
+
+
+def analizar_calibracion(audio, video):
+    """Desfase entre audio e imagen a partir de unas palmadas delante de la cámara.
+
+    audio: [(t, pico)] cada milisegundo; video: [(t, cambio)] por fotograma (cuánto
+    cambió la imagen respecto a la anterior). Tiempos en segundos, en el reloj del
+    pipeline y sin retraso aplicado. Cada palmada es un golpe seco en el audio; en
+    la imagen, el fotograma de más movimiento cerca de él (las manos chocan y se
+    paran). Devuelve {"ms": mediana de imagen menos audio, "palmadas": n,
+    "dispersion": ms entre la mayor y la menor} o {"error": ...}."""
+    if not audio or len(video) < 3:
+        return {"error": "sin_datos"}
+    picos = sorted(v for _, v in audio)
+    fondo = picos[len(picos) // 2]
+    umbral = max(0.08, 6 * fondo, 0.3 * picos[-1])
+    golpes, ultimo = [], None
+    for t, v in audio:
+        # un golpe nuevo si supera el umbral tras un rato de calma (las palmadas
+        # tienen eco y rebote: lo que viene en los 300 ms siguientes es la misma)
+        if v >= umbral and (ultimo is None or t - ultimo > 0.3):
+            golpes.append(t)
+        if v >= umbral / 2:
+            ultimo = t
+    if not golpes:
+        return {"error": "sin_palmadas"}
+    medidas = []
+    for i, ta in enumerate(golpes):
+        # la imagen suele venir detrás (hasta RETRASO_MAX_MS), pero también se mira
+        # medio segundo antes, para avisar si es el audio el que va tarde; sin
+        # pisar la palmada anterior ni la siguiente
+        ini = max(ta - 0.5, (golpes[i - 1] + ta) / 2 if i else -1e9)
+        fin = min(ta + RETRASO_MAX_MS / 1000, golpes[i + 1] - 0.05 if i + 1 < len(golpes) else 1e9)
+        ventana = [(c, t) for t, c in video if ini <= t <= fin]
+        if len(ventana) < 2:
+            continue
+        cambio, tv = max(ventana)
+        resto = sorted(c for c, _ in ventana)
+        if cambio > 3 * resto[len(resto) // 2] + 1:     # se movió algo de verdad
+            medidas.append((tv - ta) * 1000)
+    if not medidas:
+        return {"error": "sin_movimiento", "palmadas": len(golpes)}
+    medidas.sort()
+    return {"ms": round(medidas[len(medidas) // 2]), "palmadas": len(medidas),
+            "dispersion": round(medidas[-1] - medidas[0])}
+
+
+CALIBRANDO = {}
+
+
+def calibrar(flujo, segundos):
+    """Escucha y mira unos segundos y luego informa {"calibracion": {...}}."""
+    if CALIBRANDO or flujo.elemento("retraso") is None:
+        informar({"calibracion": {"error": "sin_audio" if not CALIBRANDO else "ocupado"}})
+        return
+    audio, video, previo = [], [], [None]
+    CALIBRANDO["activo"] = True
+
+    def oir(pad, info):
+        buf = info.get_buffer()
+        caps = pad.get_current_caps()
+        if buf.pts == Gst.CLOCK_TIME_NONE or caps is None:
+            return Gst.PadProbeReturn.OK
+        st = caps.get_structure(0)
+        ok_c, canales = st.get_int("channels")
+        canales = canales if ok_c and canales else 1
+        ok, mapa = buf.map(Gst.MapFlags.READ)
+        if not ok:
+            return Gst.PadProbeReturn.OK
+        try:
+            muestras = memoryview(mapa.data).cast("f")
+            bloque = 48 * canales                   # 1 ms a 48 kHz
+            t0 = buf.pts / 1e9
+            for i in range(0, len(muestras) - bloque + 1, bloque):
+                trozo = muestras[i:i + bloque]
+                audio.append((t0 + i / canales / 48000, max(max(trozo), -min(trozo))))
+        finally:
+            buf.unmap(mapa)
+        return Gst.PadProbeReturn.OK
+
+    def mirar(pad, info):
+        buf = info.get_buffer()
+        if buf.pts == Gst.CLOCK_TIME_NONE:
+            return Gst.PadProbeReturn.OK
+        ok, mapa = buf.map(Gst.MapFlags.READ)
+        if not ok:
+            return Gst.PadProbeReturn.OK
+        try:
+            datos = mapa.data
+            # unas 8000 muestras repartidas por la imagen bastan para ver el movimiento.
+            # Salto impar: en UYVY/YUY2 uno par caería siempre en el color o siempre en
+            # la luz, y un destello blanco o una mano en gris no cambian el color
+            muestra = bytes(memoryview(datos)[::max(1, len(datos) // 8000) | 1])
+        finally:
+            buf.unmap(mapa)
+        if previo[0] is not None and len(previo[0]) == len(muestra):
+            cambio = sum(abs(x - y) for x, y in zip(muestra, previo[0])) / len(muestra)
+            video.append((buf.pts / 1e9, cambio))
+        previo[0] = muestra
+        return Gst.PadProbeReturn.OK
+
+    pa = flujo.elemento("retraso").get_static_pad("sink")
+    pv = flujo.elemento("q2").get_static_pad("sink")
+    sondas = [(pa, pa.add_probe(Gst.PadProbeType.BUFFER, oir)),
+              (pv, pv.add_probe(Gst.PadProbeType.BUFFER, mirar))]
+
+    def terminar():
+        for pad, sonda in sondas:
+            pad.remove_probe(sonda)
+        CALIBRANDO.clear()
+        informar({"calibracion": analizar_calibracion(audio, video)})
+        return False
+    GLib.timeout_add(int(segundos * 1000), terminar)
 
 
 def descartado(*_):
@@ -141,13 +269,21 @@ def tramo_salida(cfg):
                   f" ! kmssink name=hdmi sync=false connector-id={cfg['hdmi']}"
                   " t. ! queue name=q4 max-size-buffers=2 leaky=downstream")
     if cfg.get("audio"):
+        # Retraso del audio (audio de otra interfaz USB, que llega antes que la imagen
+        # de la cámara): se desplaza el tiempo del audio en el pad de 'retraso' (ver
+        # fijar_retraso). La cola de entrada aguanta lo que se retrase y medio segundo
+        # más. Con baja latencia el combinador no espera por tiempos: ahí el retraso
+        # es real, una cola que no suelta nada hasta tener ese tanto
+        real = (" ! queue name=qr max-size-time=0 max-size-buffers=0 max-size-bytes=0"
+                if cfg.get("baja_latencia") else "")
         return (f"{video} ! c.video "
-                "alsasrc name=asrc ! queue name=qa max-size-time=500000000 leaky=downstream"
-                " ! audioconvert ! audioresample"
+                f"alsasrc name=asrc ! queue name=qa max-size-time={(RETRASO_MAX_MS + 500) * 1000000}"
+                " leaky=downstream ! audioconvert ! audioresample"
                 " ! capsfilter name=af caps=audio/x-raw,format=F32LE,rate=48000"
+                " ! identity name=retraso"
                 # 'level' mide el nivel (dBFS) cada 200 ms para el medidor del panel
                 " ! level name=nivel interval=200000000 post-messages=true"
-                " ! c.audio ndisinkcombiner name=c ! ndisink name=sink")
+                f"{real} ! c.audio ndisinkcombiner name=c ! ndisink name=sink")
     return f"{video} ! ndisink name=sink"
 
 
@@ -448,6 +584,7 @@ class SalidaGPU:
         self.habilitada = self.g.get("cuando", "siempre") == "siempre"
         self.espera_hasta = 0.0
         self.primer_jpeg = None
+        self.retraso_ns = 0         # retraso del audio (ver fijar_retraso)
         if not self.habilitada:
             self._estado("en_espera")
 
@@ -476,7 +613,10 @@ class SalidaGPU:
         if p is not None and self.audio:
             ga = p.get_by_name("ga")
             if ga is not None:
-                ga.emit("push-buffer", info.get_buffer().copy_deep())
+                b = info.get_buffer().copy_deep()
+                if self.retraso_ns and b.pts != Gst.CLOCK_TIME_NONE:
+                    b.pts += self.retraso_ns    # el mismo retraso que en el NDI
+                ga.emit("push-buffer", b)
         return Gst.PadProbeReturn.OK
 
     # --- construcción (hilo principal)
@@ -645,6 +785,7 @@ def main():
             informar({"aviso": "sin_baja_latencia"})
     if cfg.get("audio"):
         flujo.elemento("asrc").set_property("device", cfg["audio"])
+    retraso = fijar_retraso(flujo, cfg.get("retraso_audio") or 0)
 
     flujo.elemento("src").get_static_pad("src").add_probe(
         Gst.PadProbeType.BUFFER, contar("cam", con_bytes=True))
@@ -676,6 +817,7 @@ def main():
         salidas += [SalidaGPU(cfg, origen, bool(cfg.get("audio")), g)
                     for g in cfg.get("gpu_extra") or []]
         for s in salidas:
+            s.retraso_ns = retraso
             flujo.elemento("src").get_static_pad("src").add_probe(Gst.PadProbeType.BUFFER, s.jpeg)
             if cfg.get("audio"):
                 flujo.elemento("af").get_static_pad("src").add_probe(Gst.PadProbeType.BUFFER, s.sonido)
@@ -736,6 +878,13 @@ def main():
             d = json.loads(linea)
         except ValueError:
             return True
+        if "retraso_audio" in d:
+            # se ajusta en marcha, sin cortar: el oído decide
+            ns = fijar_retraso(flujo, d["retraso_audio"])
+            for s in salidas:
+                s.retraso_ns = ns
+        if "calibrar" in d:
+            calibrar(flujo, float(d["calibrar"]))
         if "gpu_activa" in d:
             # la orden es para la salida de ese tipo (solo grabar tiene condición)
             for s in salidas:

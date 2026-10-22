@@ -772,6 +772,14 @@ const T = {
     none: "Ninguno", in_last_2s: "en 2 s", nobody_now: "ninguno ahora mismo",
     restart_all_emisor: "Reiniciar emisión", restart_all_receptor: "Reiniciar recepción",
     restarting_all: "Reiniciando… vuelve en unos segundos.",
+    delay_label: "Retraso del audio",
+    delay_help: "Si el audio entra por otra interfaz USB, suele llegar antes que la imagen de la cámara: retrásalo hasta que la voz case con la boca. Se ajusta en marcha, sin cortar la emisión.",
+    delay_calibrate: "Calibrar con palmadas",
+    delay_clap_now: "Ahora: da 3 palmadas secas delante de la cámara, con un segundo entre ellas…",
+    delay_result: (c) => `Medido: el audio va ${c.ms} ms por delante (${c.palmadas} palmadas, ±${Math.round(c.dispersion / 2)} ms).`,
+    delay_audio_late: (ms) => `Medido: el audio va ${ms} ms por detrás de la imagen; eso no se corrige retrasando el audio.`,
+    delay_apply: (ms) => `Aplicar ${ms} ms`,
+    delay_errors: { sin_palmadas: "No se oyó ninguna palmada: más fuerte, o acerca el micro.", sin_movimiento: "Se oyeron las palmadas, pero no se vieron: hazlas dentro del encuadre.", sin_datos: "No llegaron audio o imagen durante la medida.", sin_audio: "La cámara no tiene audio.", ocupado: "Ya se estaba midiendo." },
     gpu_out: "Salida H.264 por GPU", gpu_state: "Salida GPU", gpu_no: "Desactivada", gpu_also: "Y además, a la vez:",
     gpu_grabar: "Grabar en el equipo", gpu_srt: "SRT (para OBS, vMix, VLC…)", gpu_rtmp: "RTMP (YouTube, Twitch…)",
     gpu_quality: "Calidad", gpu_port: "Puerto SRT", gpu_url: "URL RTMP con la clave de emisión",
@@ -876,6 +884,7 @@ const T = {
       audio_fallo: (d) => `${d.fuente}: el audio falló (${d.detalle}); emitiendo sin audio`,
       reinicio_manual: (d) => d.modo !== "emisor" ? "Recepción reiniciada desde el panel" : "Emisión reiniciada desde el panel",
       decodificacion_paralela: (d) => `${d.fuente}: la decodificación no da abasto; repartida en ${d.hilos} hilos`,
+      calibracion: (d) => d.error ? `${d.fuente}: calibración del audio sin resultado (${d.error})` : `${d.fuente}: el audio va ${d.ms} ms por delante de la imagen (${d.palmadas} palmadas)`,
       reem_activa: (d) => `Reemitiendo ${d.fuente}: ${(d.salidas || []).map((m) => T.es["gpu_" + m]).join(", ")}`,
       reem_error: (d) => `Reemisión de ${d.fuente}: ${d.detalle}; se reintenta`,
       deco_gpu_fallida: (d) => `${d.fuente}: la GPU no pudo decodificar su JPEG (${d.detalle}); se sigue por CPU`,
@@ -1069,6 +1078,14 @@ const T = {
     none: "None", in_last_2s: "in 2 s", nobody_now: "none right now",
     restart_all_emisor: "Restart streaming", restart_all_receptor: "Restart receiving",
     restarting_all: "Restarting… back in a few seconds.",
+    delay_label: "Audio delay",
+    delay_help: "When audio comes in through another USB interface it usually arrives before the camera's picture: delay it until the voice matches the lips. It applies live, without cutting the stream.",
+    delay_calibrate: "Calibrate with claps",
+    delay_clap_now: "Now: clap 3 times sharply in front of the camera, a second apart…",
+    delay_result: (c) => `Measured: audio is ${c.ms} ms ahead (${c.palmadas} claps, ±${Math.round(c.dispersion / 2)} ms).`,
+    delay_audio_late: (ms) => `Measured: audio is ${ms} ms behind the picture; delaying the audio cannot fix that.`,
+    delay_apply: (ms) => `Apply ${ms} ms`,
+    delay_errors: { sin_palmadas: "No clap was heard: louder, or bring the mic closer.", sin_movimiento: "The claps were heard but not seen: clap inside the frame.", sin_datos: "No audio or picture arrived during the measurement.", sin_audio: "This camera has no audio.", ocupado: "A measurement was already running." },
     gpu_out: "H.264 output (GPU)", gpu_state: "GPU output", gpu_no: "Off", gpu_also: "And also, at the same time:",
     gpu_grabar: "Record on this device", gpu_srt: "SRT (for OBS, vMix, VLC…)", gpu_rtmp: "RTMP (YouTube, Twitch…)",
     gpu_quality: "Quality", gpu_port: "SRT port", gpu_url: "RTMP URL with the stream key",
@@ -1173,6 +1190,7 @@ const T = {
       audio_fallo: (d) => `${d.fuente}: audio failed (${d.detalle}); streaming without audio`,
       reinicio_manual: (d) => d.modo !== "emisor" ? "Receiving restarted from the panel" : "Streaming restarted from the panel",
       decodificacion_paralela: (d) => `${d.fuente}: decoding cannot keep up; split across ${d.hilos} threads`,
+      calibracion: (d) => d.error ? `${d.fuente}: audio calibration without result (${d.error})` : `${d.fuente}: audio is ${d.ms} ms ahead of the picture (${d.palmadas} claps)`,
       reem_activa: (d) => `Re-streaming ${d.fuente}: ${(d.salidas || []).map((m) => T.en["gpu_" + m]).join(", ")}`,
       reem_error: (d) => `Re-stream of ${d.fuente}: ${d.detalle}; retrying`,
       deco_gpu_fallida: (d) => `${d.fuente}: the GPU could not decode its JPEG (${d.detalle}); falling back to the CPU`,
@@ -1460,6 +1478,24 @@ function crearTarjeta(f) {
         c.segFps = el("div", { class: "segmentado" }),
         el("label", { text: t("audio"), style: "margin-top:12px" }),
         c.selAudio = el("select", { onchange: () => editado.add(k("audio")) }),
+        // audio de otra interfaz: llega antes que la imagen de la cámara
+        c.bloqueRetraso = el("div", null,
+          el("label", { text: t("delay_label"), style: "margin-top:12px" }),
+          el("div", { style: "display:flex;gap:10px;align-items:center" },
+            c.retraso = el("input", { type: "range", min: "0", max: "1000", step: "10", style: "flex:1",
+              oninput: () => { editado.add(k("retraso")); poner(c.retrasoVal, `${c.retraso.value} ms`); } }),
+            c.retrasoVal = el("b", { style: "min-width:64px;text-align:right" })),
+          el("div", { class: "botones", style: "margin-top:6px" },
+            c.btCalibrar = el("button", { class: "boton", text: t("delay_calibrate"), onclick: async () => {
+              try { await api("/api/fuente/calibrar", { id }); c.calibrando = Date.now(); pintar(ultimo); }
+              catch (err) { mensaje(c.msg, err.message, "mal"); }
+            } }),
+            c.btAplicarCal = el("button", { class: "boton principal oculto", onclick: async () => {
+              const ms = Math.max(0, Math.min(1000, Math.round(((f_actual(id).calibracion || {}).ms || 0) / 10) * 10));
+              try { await api("/api/fuente", { id, retraso_audio: ms }); editado.delete(k("retraso")); c.calVista = true; }
+              catch (err) { mensaje(c.msg, err.message, "mal"); }
+            } })),
+          c.ayudaRetraso = el("div", { class: "ayuda" })),
         el("label", { text: t("cam_format"), style: "margin-top:12px" }),
         c.selFormato = el("select", { onchange: () => editado.add(k("formato")) }),
         c.ayudaFormato = el("div", { class: "ayuda" }),
@@ -1507,6 +1543,7 @@ function crearTarjeta(f) {
         if (elegido[k("res")]) datos.resolucion = elegido[k("res")];
         if (elegido[k("fps")]) datos.fps = Number(elegido[k("fps")]);
         if (editado.has(k("audio"))) datos.audio = c.selAudio.value;
+        if (editado.has(k("retraso"))) datos.retraso_audio = Number(c.retraso.value);
         if (editado.has(k("formato"))) datos.formato = c.selFormato.value;
         if (editado.has(k("latencia"))) datos.latencia = c.selLatencia.value;
         if (editado.has(k("srtlat"))) datos.srt_latencia = Number(c.srtLat.value);
@@ -1522,7 +1559,7 @@ function crearTarjeta(f) {
         ev.target.disabled = true;
         try {
           await api("/api/fuente", datos);
-          ["nombre", "audio", "gpu", "extra", "kbps", "puerto", "url", "cuando", "desde", "hasta", "formato", "latencia", "srtlat"].forEach((x) => editado.delete(k(x)));
+          ["nombre", "audio", "retraso", "gpu", "extra", "kbps", "puerto", "url", "cuando", "desde", "hasta", "formato", "latencia", "srtlat"].forEach((x) => editado.delete(k(x)));
           delete elegido[k("res")]; delete elegido[k("fps")];
           mensaje(c.msg, t("saved_ok"), "ok");
         } catch (err) { mensaje(c.msg, err.message, "mal"); }
@@ -1600,6 +1637,7 @@ function pintarFuente(c, f, e) {
     c.selAudio.value = aj.audio;
     if (c.selAudio.value !== aj.audio) c.selAudio.value = "auto";
   }
+  pintarRetraso(c, f, k);
   if (!editado.has(k("formato")) && document.activeElement !== c.selFormato) {
     c.selFormato.replaceChildren(...["auto", "mjpeg", "crudo"].map((v) => new Option(t("fmt_" + v), v)));
     c.selFormato.value = aj.formato || "auto";
@@ -1612,6 +1650,29 @@ function pintarFuente(c, f, e) {
   poner(c.ayudaLatencia, t("lat_help_" + c.selLatencia.value));
   rellenar(c.srtLat, aj.srt_latencia ?? 200, k("srtlat"));
   pintarGpu(c, f, e, k);
+}
+
+function f_actual(id) { return ((ultimo || {}).fuentes || []).find((x) => x.id === id) || {}; }
+
+function pintarRetraso(c, f, k) {
+  const aj = f.ajustes, cal = f.calibracion || {};
+  c.bloqueRetraso.classList.toggle("oculto", aj.audio === "off");
+  if (!editado.has(k("retraso")) && document.activeElement !== c.retraso) {
+    c.retraso.value = aj.retraso_audio || 0;
+    poner(c.retrasoVal, `${c.retraso.value} ms`);
+  }
+  const midiendo = cal.estado === "midiendo" && cal.hasta * 1000 > Date.now() - 3000;
+  c.btCalibrar.disabled = midiendo || f.estado !== "emitiendo";
+  let ayuda = t("delay_help"), aplicable = false;
+  if (midiendo) ayuda = t("delay_clap_now");
+  else if (cal.estado === "hecha" && cal.t * 1000 > Date.now() - 300000) {
+    if (cal.error) ayuda = T[lang].delay_errors[cal.error] || cal.error;
+    else if (cal.ms < 0) ayuda = T[lang].delay_audio_late(-cal.ms);
+    else { ayuda = T[lang].delay_result(cal); aplicable = cal.ms !== (aj.retraso_audio || 0); }
+  }
+  poner(c.ayudaRetraso, ayuda);
+  c.btAplicarCal.classList.toggle("oculto", !aplicable);
+  if (aplicable) poner(c.btAplicarCal, T[lang].delay_apply(Math.max(0, Math.min(1000, Math.round(cal.ms / 10) * 10))));
 }
 
 function pintarGpu(c, f, e, k) {

@@ -34,6 +34,7 @@ class Fuente:
         self.audio_fallido = None   # dispositivo de audio que hizo caer el pipeline
         self.hilos = 1              # decodificadores JPEG en modo automático
         self.deco_gpu_fallida = False   # la GPU no pudo con su JPEG: seguir por CPU
+        self.calibracion = None     # última medida del desfase audio/imagen (palmadas)
         self.retrasos = 0           # mediciones seguidas con la emisión por detrás de la cámara
         self.hdmi_fallido = False   # el HDMI hizo caer el pipeline: seguir sin él
         self.gpu = {"estado": None, "error": ""}   # salida H.264: activa | error
@@ -99,6 +100,9 @@ class Fuente:
                                         "error": d.get("error", "")}
             elif "error" in d:
                 self._fallo(d["error"], d.get("elemento", ""))
+            elif "calibracion" in d:
+                self.calibracion = {**d["calibracion"], "estado": "hecha", "t": time.time()}
+                evento("calibracion", fuente=self.cam["nombre"], **d["calibracion"])
             elif "aviso" in d:
                 if d["aviso"] == "deco_gpu_fallida" and not self.deco_gpu_fallida:
                     # fuente.py ya siguió por CPU; los próximos arranques, también
@@ -523,6 +527,8 @@ class Fuentes:
         audio = None if latencia == "minima" else self.audio_para(f, aj["audio"])
         return {"dev": f.cam["dev"], "ancho": ancho, "alto": alto, "fps": fps, "fmt": fmt,
                 "nombre": aj["ndi_nombre"], "audio": audio,
+                # audio de otra interfaz, que llega antes que la imagen: se retrasa
+                "retraso_audio": int(aj.get("retraso_audio") or 0) if audio else 0,
                 "baja_latencia": latencia == "baja" and audio is not None,
                 "decodificadores": self.decodificadores(f, fmt),
                 "hdmi": self.hdmi_conector if f.cam["id"] == self.hdmi_para
@@ -717,6 +723,12 @@ class Fuentes:
                         while g["puerto"] in puertos:
                             g["puerto"] += 1
                         puertos.add(g["puerto"])
+                if (f.proc is not None and not f.forzar_reinicio and f.obj
+                        and obj["retraso_audio"] != f.obj.get("retraso_audio")
+                        and {**obj, "retraso_audio": 0} == {**f.obj, "retraso_audio": 0}):
+                    # solo cambia el retraso del audio: se ajusta en marcha, sin cortar
+                    f.orden({"retraso_audio": obj["retraso_audio"]})
+                    f.obj = obj
                 if f.proc is not None and (obj != f.obj or f.forzar_reinicio):
                     f.detener()
                     evento("aplicando", fuente=cam["nombre"])
@@ -841,6 +853,16 @@ class Fuentes:
                 "idioma": cfg["idioma"], "equipo": socket.gethostname(), "version": VERSION,
                 "estado": estado, "modo": modo, "detalle": detalle, "ip": ip, "red": red,
                 "url": url, "ap": ap}
+
+    def calibrar(self, ident, segundos=8):
+        """Mide el desfase entre el audio y la imagen de una cámara con unas palmadas."""
+        with self.lock:
+            f = self.fuentes.get(ident)
+            if f is None or f.proc is None or not (f.obj or {}).get("audio"):
+                return False
+            f.calibracion = {"estado": "midiendo", "hasta": time.time() + segundos}
+            f.orden({"calibrar": segundos})
+            return True
 
     def reiniciar(self, ident):
         with self.lock:

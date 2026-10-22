@@ -121,6 +121,7 @@ def construir_estado(tx_mbps, rx_mbps, cpu_pct, potencia, gpu_uso=None):
             "latencia_ms": f.stats["latencia_ms"] if en_marcha else None,
             "tally": f.tally if en_marcha else None,
             "hdmi": bool(obj.get("hdmi")), "hdmi_fallido": f.hdmi_fallido,
+            "calibracion": f.calibracion,
             "gpu": {"modo": (obj.get("gpu") or {}).get("modo", "no"),
                     "puerto": (obj.get("gpu") or {}).get("puerto"),
                     "estado": f.gpu["estado"] if en_marcha and obj.get("gpu") else None,

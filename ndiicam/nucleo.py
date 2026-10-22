@@ -80,7 +80,7 @@ MODOS_CONSOLA = {"nativa": None, "1080p": "1920x1080@60", "720p": "1280x720@60"}
 CLAVES_FUENTE = ("activa", "ndi_nombre", "resolucion", "fps", "audio",
                  "gpu_salida", "gpu_extra", "gpu_kbps", "srt_puerto", "rtmp_url",
                  "grabar_cuando", "grabar_desde", "grabar_hasta", "grabar_manual", "formato",
-                 "latencia", "srt_latencia")
+                 "latencia", "srt_latencia", "retraso_audio")
 # latencia de la emisión NDI: normal (audio sincronizado), baja (la imagen sale sin
 # esperar al audio de su intervalo; plugin parcheado) o minima (sin audio). En baja y
 # minima se sube a 60 fps si la cámara los da sin comprimir. Medido en un Celeron
@@ -98,6 +98,7 @@ HORA = re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")
 # salida H.264 por GPU de cada cámara (además del NDI): grabar a disco, SRT o RTMP
 SALIDAS_GPU = ("no", "grabar", "srt", "rtmp")
 SALIDAS_EXTRA = ("grabar", "srt", "rtmp")     # las que se pueden sumar a la principal
+RETRASO_MAX_MS = 1000       # retraso del audio respecto a la imagen que se puede aplicar
 NOMBRE_NDI_PUENTE = "Puente"    # la fuente NDI del modo puente: "EQUIPO (Puente)"
 GRABACIONES = "/var/lib/ndiicam/grabaciones"
 NOMBRE_GRABACION = re.compile(r"^[\w.-]{1,120}\.mp4$")
@@ -333,7 +334,8 @@ class Config:
              "fps": d["fps"], "audio": d["audio"],
              "gpu_salida": "no", "gpu_extra": [], "gpu_kbps": 8000, "srt_puerto": 9000, "rtmp_url": "",
              "grabar_cuando": "siempre", "grabar_desde": "09:00", "grabar_hasta": "18:00",
-             "grabar_manual": False, "formato": "auto", "latencia": "normal", "srt_latencia": 200}
+             "grabar_manual": False, "formato": "auto", "latencia": "normal", "srt_latencia": 200,
+             "retraso_audio": 0}
         f.update({k: v for k, v in d["fuentes"].get(ident, {}).items() if k in CLAVES_FUENTE})
         return f
 

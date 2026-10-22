@@ -19,7 +19,7 @@ from urllib.parse import parse_qs, urlparse
 import nucleo
 from nucleo import (AP_CLAVE_DEFECTO, AP_IP, CLAVE_PUENTE, ESTADO, EVENTOS, FPS_VALIDOS, GRABACIONES,
     GRABAR_CUANDO, HORA, IDIOMAS, MODOS, MODOS_CONSOLA, NOMBRE_EQUIPO, NOMBRE_GRABACION,
-    NOMBRE_NDI, RESOLUCIONES, SALIDAS_EXTRA, SALIDAS_GPU, URL_RTMP, WEB, clave_correcta, cliente_ip,
+    NOMBRE_NDI, RESOLUCIONES, RETRASO_MAX_MS, SALIDAS_EXTRA, SALIDAS_GPU, URL_RTMP, WEB, clave_correcta, cliente_ip,
     configurar_ndi, evento, resumen_clave, sh, FORMATOS, LATENCIAS)
 from camaras import fijar_modo_consola
 from gpu import capacidad_gpu, simultaneo
@@ -373,6 +373,11 @@ class Panel(BaseHTTPRequestHandler):
             return self._grabar(d)
         if ruta == "/api/fuente/reiniciar":
             return self._json({"ok": nucleo.FUENTES.reiniciar(str(d.get("id", "")))})
+        if ruta == "/api/fuente/calibrar":
+            # unas palmadas delante de la cámara miden el desfase entre audio e imagen
+            if not nucleo.FUENTES.calibrar(str(d.get("id", ""))):
+                return self._error("sin_audio")
+            return self._json({"ok": True, "segundos": 8})
         if ruta == "/api/wifi/conectar":
             ssid, clave = str(d.get("ssid", "")), str(d.get("clave", ""))
             if not 1 <= len(ssid.encode()) <= 32:
@@ -507,6 +512,14 @@ class Panel(BaseHTTPRequestHandler):
             if d["latencia"] not in LATENCIAS:
                 return self._error("modo_invalido")
             cambios["latencia"] = d["latencia"]
+        if "retraso_audio" in d:
+            try:
+                v = int(d["retraso_audio"])
+            except (TypeError, ValueError):
+                v = -1
+            if not 0 <= v <= RETRASO_MAX_MS:
+                return self._error("retraso_invalido")
+            cambios["retraso_audio"] = v
         if "srt_latencia" in d:
             try:
                 v = int(d["srt_latencia"])
@@ -543,7 +556,8 @@ class Panel(BaseHTTPRequestHandler):
         cambios = {k: v for k, v in cambios.items() if antes.get(k) != v}
         if cambios:
             nucleo.CONF.actualizar_fuente(ident, cambios)
-            nucleo.FUENTES.reiniciar(ident)
+            if cambios.keys() != {"retraso_audio"}:     # el retraso se ajusta en marcha
+                nucleo.FUENTES.reiniciar(ident)
             evento("ajustes_fuente", fuente=fuente.cam["nombre"], campos=sorted(cambios))
         self._json({"ok": True})
 
