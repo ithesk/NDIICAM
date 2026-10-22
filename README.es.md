@@ -73,6 +73,11 @@ gestiona desde un panel web: tras la instalación no hace falta la terminal.
     NDI `EQUIPO (Puente)`, con su audio, aunque no haya monitor.
   - **Reemitir una fuente NDI**: cualquier fuente NDI de la red se graba y/o se emite por SRT o
     RTMP, codificada en la GPU, sin pasar por OBS.
+- **Audio de otra interfaz, en sincronía**: si el audio entra por una interfaz USB aparte, suele
+  llegar antes que la imagen de la cámara. Cada cámara tiene un **retraso del audio** que se ajusta
+  en marcha, sin cortar, y un botón **Calibrar con palmadas**: das tres palmadas delante de la
+  cámara y mide el desfase (golpe en el audio frente a movimiento en la imagen). Probado de punta a
+  punta: de 284 ms de adelanto a 17 ms.
 - **Uso de la GPU en el panel**: lo ocupada que está, su motor de vídeo, frecuencia y consumo.
 - **Medidor de audio**: pico y nivel medio en dBFS de cada cámara, y de lo que reproducen el
   receptor o el puente. Sabes antes de salir al aire si un micro está mudo, bajo o saturado.

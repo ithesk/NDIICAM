@@ -74,6 +74,11 @@ sound. Everything is managed from a web panel: no terminal needed after installa
     source `DEVICE (Puente)`, with its audio, even with no monitor attached.
   - **Re-stream an NDI source**: any NDI source on the network is recorded and/or streamed over
     SRT or RTMP, encoded on the GPU, without OBS.
+- **Audio from another interface, in sync**: when audio comes in through a separate USB
+  interface it usually arrives before the camera's picture. Each camera has an **audio delay**
+  that applies live, without a cut, and a **Calibrate with claps** button: clap three times in
+  front of the camera and it measures the offset (hit in the audio against movement in the
+  picture). Tested end to end: from 284 ms ahead down to 17 ms.
 - **GPU usage in the panel**: how busy it is, its video engine, frequency and power.
 - **Audio meter**: peak and average level in dBFS for every camera, and for what the receiver or
   the bridge plays. You know before going live whether a microphone is dead, low or clipping.
