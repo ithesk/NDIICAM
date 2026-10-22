@@ -15,6 +15,11 @@ TABLA = "ndiicam"
 # NDI: descubrimiento (5959), mensajes (5960) y un puerto por fuente desde 5961,
 # por TCP y por UDP (RUDP). 40 son de sobra para las fuentes de un equipo
 PUERTOS_NDI = (5959, 5999)
+# Un receptor NDI escucha desde 6960 (TCP y UDP): la fuente abre ahí la conexión de
+# vídeo, y si se cierra el receptor ve "conectado" sin imagen. Cada reconexión
+# coge el siguiente puerto, así que se deja margen. El multicast va desde 7960 (UDP)
+PUERTOS_NDI_RECEPTOR = (6960, 7059)
+PUERTOS_NDI_MULTICAST = (7960, 8059)
 PUERTO_EXTRA = re.compile(r"^(tcp|udp):(\d{1,5})(?:-(\d{1,5}))?$")
 
 
@@ -61,6 +66,9 @@ def reglas(modo, srt, extra, ssh):
     rangos = []
     if modo in ("emisor", "receptor"):
         rangos += [("tcp", *PUERTOS_NDI), ("udp", *PUERTOS_NDI)]
+    if modo == "receptor":
+        rangos += [("tcp", *PUERTOS_NDI_RECEPTOR), ("udp", *PUERTOS_NDI_RECEPTOR),
+                   ("udp", *PUERTOS_NDI_MULTICAST)]
     if modo == "emisor":
         udp |= set(srt)
     if modo == "puente":
