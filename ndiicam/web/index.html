@@ -3406,8 +3406,15 @@ function rtCrearNodo(n) {
   const cuerpo = rel("div", { class: "cuerpo" });
   if (n.clase === "ent") {
     if (n.e.tipo === "usb_cam") {
-      const img = rel("img", { class: "rt-vista", alt: "", src: `/api/fuente/preview?id=${encodeURIComponent(n.e.id)}&t=${Date.now()}` });
-      img.addEventListener("error", () => img.replaceWith(rel("div", { class: "rt-vista", text: rt("vista_previa") })));
+      // la imagen de antes se reutiliza: el navegador sigue enseñándola mientras
+      // carga la nueva. Una <img> recién creada sale en blanco hasta que carga, y
+      // como el bloque se rehace cada 2 s, la vista previa parpadeaba
+      const src = `/api/fuente/preview?id=${encodeURIComponent(n.e.id)}&t=${Date.now()}`;
+      let img = lienzo.querySelector(`[data-id="${CSS.escape(n.id)}"] img.rt-vista`);
+      if (img) { img.src = src; } else {
+        img = rel("img", { class: "rt-vista", alt: "", src });
+        img.addEventListener("error", () => img.replaceWith(rel("div", { class: "rt-vista", text: rt("vista_previa") })));
+      }
       cuerpo.append(img);
     }
     const sub = n.e.tipo === "ingesta" ? rt("llega")(n.e.llega) : n.e.tipo === "ndi" ? (n.e.fuente || rt("sin_fuente_ndi"))

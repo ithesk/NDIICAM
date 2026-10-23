@@ -23,6 +23,7 @@ import os
 import re
 import struct
 import threading
+import time
 
 from nucleo import evento, leer
 
@@ -103,6 +104,7 @@ class Lessees(C.Structure):
 FIRMAS = {
     "drmModeGetResources": (C.POINTER(Res), [C.c_int]), "drmModeFreeResources": (None, [C.c_void_p]),
     "drmModeGetConnector": (C.POINTER(Connector), [C.c_int, C.c_uint32]), "drmModeFreeConnector": (None, [C.c_void_p]),
+    "drmModeGetConnectorCurrent": (C.POINTER(Connector), [C.c_int, C.c_uint32]),
     "drmModeGetEncoder": (C.POINTER(Encoder), [C.c_int, C.c_uint32]), "drmModeFreeEncoder": (None, [C.c_void_p]),
     "drmModeGetCrtc": (C.POINTER(Crtc), [C.c_int, C.c_uint32]), "drmModeFreeCrtc": (None, [C.c_void_p]),
     "drmModeSetCrtc": (C.c_int, [C.c_int, C.c_uint32, C.c_uint32, C.c_uint32, C.c_uint32, U32P, C.c_int, C.POINTER(ModeInfo)]),
@@ -168,6 +170,7 @@ class Tarjeta:
         self.fallo = None           # por qué no se alquilan pantallas (None: sí)
         self.fbs = {}               # crtc -> framebuffer negro puesto aquí
         self.alquilados = {}        # conector -> (lessee, crtc)
+        self._resoluciones = {}     # conector -> (cuándo, [ancho, alto])
 
     # ------------------------------------------------------------- apertura
     def _abrir(self):
@@ -203,9 +206,15 @@ class Tarjeta:
                 self.fd = None
 
     # ------------------------------------------------------------ inventario
-    def _leer(self):
-        """Conectores, controladores y planos primarios, tal como están ahora."""
+    def _leer(self, sondear=False):
+        """Conectores, controladores y planos primarios, tal como están ahora.
+
+        Sin sondear: lo que el kernel ya sabe (se entera solo de lo que se enchufa).
+        Sondear (drmModeGetConnector) lee el EDID del monitor por el cable: desde el
+        maestro tarda 300 ms y, mientras, nadie puede pintar en ninguna pantalla:
+        hacerlo cada 2 s congelaba la imagen. Solo para una pantalla sin modos."""
         drm, fd = self.drm, self.fd
+        leer_conector = drm.drmModeGetConnector if sondear else drm.drmModeGetConnectorCurrent
         r = drm.drmModeGetResources(fd)
         if not r:
             return [], [], {}
@@ -213,7 +222,7 @@ class Tarjeta:
         crtcs = [res.crtcs[i] for i in range(res.count_crtcs)]
         conectores = []
         for i in range(res.count_connectors):
-            c = drm.drmModeGetConnector(fd, res.connectors[i])
+            c = leer_conector(fd, res.connectors[i])
             if not c:
                 continue
             con = c.contents
@@ -285,17 +294,21 @@ class Tarjeta:
 
     # -------------------------------------------------------------- consultas
     def resolucion(self, conector_id):
-        """[ancho, alto] a los que está esa pantalla, o None si no se sabe."""
+        """[ancho, alto] a los que está esa pantalla, o None si no se sabe. Se
+        guarda unos segundos: el supervisor lo pide en cada vuelta."""
         with self.lock:
+            t, res = self._resoluciones.get(conector_id, (0.0, None))
+            if time.monotonic() - t < 5:
+                return res
             if not self._abrir():
                 return None
             conectores, _, _ = self._leer()
             try:
                 c = next((c for c in conectores if c["id"] == conector_id), None)
-                if not c or not c["crtc"]:
-                    return None
-                t = self._modo_crtc(c["crtc"])
-                return list(t) if t else None
+                m = self._modo_crtc(c["crtc"]) if c and c["crtc"] else None
+                res = list(m) if m else None
+                self._resoluciones[conector_id] = (time.monotonic(), res)
+                return res
             finally:
                 self._liberar(conectores)
 
@@ -338,8 +351,13 @@ class Tarjeta:
             if not self._abrir():
                 return None
             conectores, crtcs, primarios = self._leer()
-            try:
+            con = next((c for c in conectores if c["id"] == conector_id), None)
+            if con is not None and con["conectado"] and not con["modos"]:
+                # recién enchufada y sin modos todavía: esta vez sí se sondea
+                self._liberar(conectores)
+                conectores, crtcs, primarios = self._leer(sondear=True)
                 con = next((c for c in conectores if c["id"] == conector_id), None)
+            try:
                 if con is None or not con["conectado"]:
                     return None
                 vivos = self._lessees()
@@ -364,6 +382,7 @@ class Tarjeta:
                     evento("pantalla_sin_alquiler", pantalla=con["nombre"], detalle=f"errno {-fd}")
                     return None
                 self.alquilados[conector_id] = (lessee.value, crtc)
+                self._resoluciones.pop(conector_id, None)
                 return fd
             finally:
                 self._liberar(conectores)
