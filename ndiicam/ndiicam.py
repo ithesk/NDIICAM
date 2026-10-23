@@ -62,9 +62,15 @@ LATIDO = 20
 BUCLE_MAX = 150
 
 
+# el socket de systemd es solo del proceso principal: se saca del entorno para que
+# no lo hereden los hijos (gst, nmcli, ss...), que si no lo usan por su cuenta y
+# systemd los rechaza con un aviso en el diario cada pocos segundos
+NOTIFY_SOCKET = os.environ.pop("NOTIFY_SOCKET", None)
+
+
 def sd_notify(mensaje):
     """Mensaje a systemd por su socket, sin dependencias. Sin systemd, nada."""
-    ruta = os.environ.get("NOTIFY_SOCKET")
+    ruta = NOTIFY_SOCKET
     if not ruta:
         return
     if ruta.startswith("@"):
