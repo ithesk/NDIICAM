@@ -177,6 +177,7 @@
   .rt-obra > div { min-width: 0; }
   .rt-barra { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 8px; }
   .rt-barra .esp { margin-left: auto; }
+  .rt-dos { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 12px; }
   .rt-guardado.pendiente { color: var(--texto); font-weight: 600; display: inline-flex; align-items: center; gap: 8px; }
   .rt-guardado { font-size: 12.5px; color: var(--suave); display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; }
   .rt-guardado.mal { color: var(--mal); font-weight: 600; }
@@ -3076,6 +3077,9 @@ const RT = {
     usb_solas: "Las cámaras y el audio USB aparecen solos al conectarlos.",
     elige_ruta: "Elige primero una ruta (o crea una) para añadirle salidas.",
     fuente_red: "Fuente de la red", buscando: "Buscando fuentes NDI…", elige_fuente: "— elige una fuente —",
+    cam_res: "Resolución", cam_fps: "Imágenes por segundo", cam_fmt: "Formato", cam_lat: "Latencia",
+    fmt_auto: "Automático", fmt_mjpeg: "MJPEG (comprimido)", fmt_crudo: "Sin comprimir", lat_normal: "Normal", lat_baja: "Baja", lat_minima: "Mínima (sin audio)",
+    cam_nota: "Se aplican al momento: la cámara se reinicia un instante.", cam_aplicado: "Ajuste de la cámara aplicado.",
     pendientes: (n) => n === 1 ? "1 cambio sin aplicar" : `${n} cambios sin aplicar`, aplicar_cambios: "Aplicar", al_dia: "Al día",
     aplicando: "Aplicando…", vivo_nota: "Ganancia, retraso y silencio se aplican al momento; lo demás, al pulsar Aplicar.",
     fuente_actual: (f) => `En uso: ${f}`,
@@ -3138,6 +3142,9 @@ const RT = {
     usb_solas: "USB cameras and audio appear on their own when plugged in.",
     elige_ruta: "Pick a route first (or create one) to add outputs to it.",
     fuente_red: "Network source", buscando: "Looking for NDI sources…", elige_fuente: "— pick a source —",
+    cam_res: "Resolution", cam_fps: "Frames per second", cam_fmt: "Format", cam_lat: "Latency",
+    fmt_auto: "Automatic", fmt_mjpeg: "MJPEG (compressed)", fmt_crudo: "Uncompressed", lat_normal: "Normal", lat_baja: "Low", lat_minima: "Minimal (no audio)",
+    cam_nota: "They apply at once: the camera restarts for a moment.", cam_aplicado: "Camera setting applied.",
     pendientes: (n) => n === 1 ? "1 change not applied" : `${n} changes not applied`, aplicar_cambios: "Apply", al_dia: "Up to date",
     aplicando: "Applying…", vivo_nota: "Gain, delay and mute apply at once; everything else when you press Apply.",
     fuente_actual: (f) => `In use: ${f}`,
@@ -3704,6 +3711,25 @@ function rtAjustesEntrada(e) {
       rel("option", { value: "", text: lista.length ? rt("elige_fuente") : rt("buscando"), disabled: true, selected: !red.fuente }),
       ...lista.map((x) => rel("option", { value: x, text: x, selected: x === red.fuente })))),
       rel("div", { class: "nota", text: enUso ? rt("fuente_actual")(enUso) : rt("sin_fuente_ndi") }));
+  }
+  if (e.tipo === "usb_cam" && e.ajustes) {
+    // resolución, fps, formato y latencia de la cámara: se aplican al momento
+    // (reinician solo esa cámara), no esperan a Aplicar
+    const aj = e.ajustes, ad = e.admite || {};
+    const cambiar = async (campo, valor) => {
+      try { await api("/api/fuente", { id: e.id, [campo]: valor }); rtAviso(rt("cam_aplicado")); setTimeout(rtCargar, 800); }
+      catch (err) { rtAviso(err.message, true); }
+    };
+    const sel = (id, etq, opciones, actual, campo) => rtCampo(id, etq, rel("select", { id, onchange: (ev) => cambiar(campo, ev.target.value) },
+      ...opciones.map(([v, txt]) => rel("option", { value: v, text: txt, selected: String(v) === String(actual) }))));
+    const res = [["720p", "1280×720"], ["1080p", "1920×1080"]].filter(([v]) => ad[v] !== false);
+    const fps = (ad.fps && ad.fps.length ? ad.fps : [15, 24, 25, 30, 50, 60]).map((f) => [f, `${f} fps`]);
+    const fmt = [["auto", rt("fmt_auto")], ad.mjpeg !== false ? ["mjpeg", rt("fmt_mjpeg")] : null, ad.crudo !== false ? ["crudo", rt("fmt_crudo")] : null].filter(Boolean);
+    const lat = [["normal", rt("lat_normal")], ["baja", rt("lat_baja")], ["minima", rt("lat_minima")]];
+    t.push(rel("div", { class: "rt-dos" },
+      sel("rtCamRes", rt("cam_res"), res, aj.resolucion, "resolucion"), sel("rtCamFps", rt("cam_fps"), fps, aj.fps, "fps"),
+      sel("rtCamFmt", rt("cam_fmt"), fmt, aj.formato, "formato"), sel("rtCamLat", rt("cam_lat"), lat, aj.latencia, "latencia")),
+      rel("div", { class: "nota", text: rt("cam_nota") }));
   }
   const usos = RB.rutas.filter((r) => r.video === e.id || r.audio === e.id).map((r) => r.nombre);
   t.push(rel("div", { class: "nota", text: rt("se_usa")(usos) }));

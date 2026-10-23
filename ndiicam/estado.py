@@ -84,7 +84,8 @@ def estado_rutas():
     cfg = nucleo.CONF.get()
     mot = nucleo.FUENTES.motor
     # siempre desde la configuración (lo recién guardado); lo que corre, del motor
-    entradas = mot.entradas_actuales({c["id"]: c for c in camaras_conectadas()}, cfg)
+    cams = {c["id"]: c for c in camaras_conectadas()}
+    entradas = mot.entradas_actuales(cams, cfg)
     limpias, errores = rutas_mod.validar(cfg.get("rutas") or [], entradas)
     est, activas, pausadas = {}, [], []
     if cfg.get("motor") == "rutas" and getattr(mot, "limpias", None) is not None:
@@ -96,6 +97,16 @@ def estado_rutas():
         e = dict(e)
         if e["tipo"] == "ingesta":
             e["llega"] = PUENTE.ruta_info(f"live/{e['clave']}")
+        if e["tipo"] == "usb_cam" and e["id"] in cams:
+            # sus ajustes (resolución, fps, formato, latencia) y lo que admite la
+            # cámara: con rutas no hay otra pestaña donde cambiarlos
+            aj = nucleo.CONF.fuente(e["id"])
+            modos = cams[e["id"]].get("modos") or []
+            e["ajustes"] = {k: aj[k] for k in ("resolucion", "fps", "formato", "latencia")}
+            e["admite"] = {"720p": any((m[0], m[1]) == (1280, 720) for m in modos),
+                           "1080p": any((m[0], m[1]) == (1920, 1080) for m in modos),
+                           "fps": sorted({m[2] for m in modos if m[2] in FPS_VALIDOS}),
+                           "mjpeg": any(m[3] == "MJPG" for m in modos), "crudo": any(m[3] == "YUYV" for m in modos)}
         ents.append(e)
     # la clave de YouTube no sale del equipo: el panel la ve tapada (y al
     # devolverla tapada, se conserva la guardada)

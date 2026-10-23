@@ -630,7 +630,8 @@ class Panel(BaseHTTPRequestHandler):
     def _fuente(self, d):
         ident = str(d.get("id", ""))
         fuente = next((f for f in nucleo.FUENTES.lista() if f.cam["id"] == ident), None)
-        if fuente is None:
+        # con rutas la cámara no está en lista(): vale con que esté conectada
+        if fuente is None and ident not in {c["id"] for c in camaras_conectadas()}:
             return self._error("camara_invalida")
         antes = nucleo.CONF.fuente(ident)
         # las reglas de cada campo están en validar.py (las mismas que al restaurar
