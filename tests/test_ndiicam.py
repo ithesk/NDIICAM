@@ -1037,8 +1037,11 @@ class Rutas(unittest.TestCase):
                       salidas=[{"tipo": "hdmi"}, {"tipo": "ndi", "nombre": "x"}])
         limpias, err, p = self.plan([a, b])
         self.assertEqual(err["b"], ["hdmi_ocupado", "ndi_repetido"])
-        self.assertEqual([s["tipo"] for s in limpias[1]["salidas"]], ["ndi"])   # el monitor es de «A»
+        # la salida se conserva (si «A» se apaga, el monitor pasa a «B»), pero el
+        # proceso de «B» no lo lleva: el monitor es de «A»
+        self.assertEqual([s["tipo"] for s in limpias[1]["salidas"]], ["hdmi", "ndi"])
         self.assertTrue(next(x for x in p["procesos"] if x["ruta"] == "a")["hdmi"])
+        self.assertFalse(next(x for x in p["procesos"] if x["ruta"] == "b")["hdmi"])
 
     def test_rutas_paradas_y_lite(self):
         a = self.ruta(id="a", nombre="A", video="pocket", salidas=[{"tipo": "ndi"}])

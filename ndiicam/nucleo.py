@@ -20,6 +20,7 @@ RED = None             # Red
 FUENTES = None         # Fuentes
 ACTUALIZADOR = None    # Actualizador
 BUSCADOR = None        # BuscadorNDI
+PANTALLAS = None       # pantallas.Tarjeta: la GPU como maestro DRM, que alquila cada pantalla
 CORTAFUEGOS = None     # Cortafuegos
 SESIONES = None        # Sesiones del panel
 INTENTOS = None        # LimiteIntentos de la contraseña

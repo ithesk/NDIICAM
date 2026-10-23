@@ -30,6 +30,13 @@ import gi
 gi.require_version("Gst", "1.0")
 from gi.repository import GLib, Gst  # noqa: E402
 
+
+def alquiler(cfg):
+    """kmssink sobre la pantalla que alquila el servicio (ver pantallas.py), con
+    skip-vsync: el cambio de página no se deja en un alquiler, y el plano ya
+    espera al refresco por su cuenta. Sin alquiler, kmssink abre la tarjeta."""
+    return f" fd={cfg['drm_fd']} skip-vsync=true" if cfg.get("drm_fd") else ""
+
 CONTADORES = {"rx": 0, "aud": 0}
 FORMATO = {}
 NIVEL = {"db_peak": None, "db_rms": None}     # audio, dBFS, lo último que dijo 'level'
@@ -131,7 +138,7 @@ def main():
             dec = "vah264dec name=dec ! vapostproc name=vpp ! video/x-raw,format=UYVY"
         # sin monitor (puede ser que solo se quiera la fuente NDI) la imagen se tira
         pantalla = (" ! kmssink name=hdmi sync=false async=false skip-vsync=true"
-                    f" connector-id={cfg['hdmi']}" if cfg.get("hdmi")
+                    f" connector-id={cfg['hdmi']}{alquiler(cfg)}" if cfg.get("hdmi")
                     else " ! fakesink name=hdmi sync=false async=false")
         ndi = cfg.get("ndi_nombre")
         con_audio = ndi and cfg.get("ndi_audio")
@@ -162,7 +169,7 @@ def main():
         desc = ("ndisrc name=src ! ndisrcdemux name=d "
                 "d.video ! queue name=qv max-size-buffers=2 leaky=downstream" + escala +
                 " ! kmssink name=hdmi sync=false async=false skip-vsync=true"
-                f" connector-id={cfg['hdmi']}")
+                f" connector-id={cfg['hdmi']}{alquiler(cfg)}")
         # el audio se enlaza siempre: si la fuente lo trae y su salida no está
         # enlazada, el demultiplexor tumba el pipeline
         desc += " d.audio ! queue name=qa max-size-time=300000000 leaky=downstream"

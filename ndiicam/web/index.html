@@ -3034,7 +3034,8 @@ const RT = {
       audio_no_valido: "Esa entrada no da audio.", sin_salidas: "Sin salidas: conéctale alguna.",
       ndi_a_ndi: "Ya es una fuente NDI: no se vuelve a sacar por NDI.",
       fuente_sin_imagen: "La fuente está en la red pero no manda imagen. En OBS, comprueba que esa fuente esté activa y dando imagen.", ndi_repetido: "Otra ruta usa ese nombre NDI.",
-      hdmi_ocupado: "El monitor lo tiene otra ruta.", url_rtmp_invalida: "La URL RTMP no es válida.",
+      hdmi_ocupado: "Ese monitor lo tiene otra ruta.", pantalla_no_esta: "Ese monitor no está conectado.",
+      sin_monitor: "No hay ningún monitor conectado.", url_rtmp_invalida: "La URL RTMP no es válida.",
       sin_gpu: "Este equipo no puede codificar H.264 para esta salida (sin GPU útil).",
       camara_ocupada: "Esa cámara ya la usa otra ruta: una cámara solo puede ir en una.",
       audio_ocupado: "Ese audio ya lo usa otra ruta.", audio_red_no_soportado: "El audio de otra fuente de red aún no se admite: usa el de la misma entrada o un audio USB.",
@@ -3061,7 +3062,8 @@ const RT = {
     se_usa: (r) => "Se usa en: " + (r.length ? r.join(", ") : "ninguna ruta"),
     nombre_ndi: "Nombre NDI", ndi_ve: (h, n) => `Aparece en la red como ${h} (${n}).`, url_rtmp: "URL de emisión (con la clave)",
     formato: "Formato", grabar_nota: "Trozos de 10 minutos, copia exacta del programa; si el disco se llena, se borran los más antiguos.",
-    hdmi_nota: "Solo imagen. Hay un monitor: si otra ruta lo coge, deja de mostrar esta.",
+    hdmi_nota: "Solo imagen. Una ruta por monitor: en automático coge el primero libre; si pides uno que ya tiene otra ruta, se lo queda la primera.",
+    pantalla: "Monitor", pantalla_auto: "Automático (el primero libre)", pantalla_auto_corta: "automático",
     obs_urls: "Direcciones", desconectar: "Desconectar", conexion: "Conexión", resolucion: "Resolución", fps: "Fotogramas",
     vista_previa: "Sin vista previa", calibrando: "Midiendo…", copia_corta: "copia",
     monitor_t: "Rutas", ver_rutas: "Ver rutas",
@@ -3090,7 +3092,8 @@ const RT = {
       audio_no_valido: "That input gives no audio.", sin_salidas: "No outputs: connect one.",
       ndi_a_ndi: "It is already an NDI source: it does not go out as NDI again.",
       fuente_sin_imagen: "The source is on the network but sends no picture. In OBS, check that the source is active and showing something.", ndi_repetido: "Another route uses that NDI name.",
-      hdmi_ocupado: "Another route has the monitor.", url_rtmp_invalida: "The RTMP URL is not valid.",
+      hdmi_ocupado: "Another route has that monitor.", pantalla_no_esta: "That monitor is not connected.",
+      sin_monitor: "No monitor is connected.", url_rtmp_invalida: "The RTMP URL is not valid.",
       sin_gpu: "This device cannot encode H.264 for this output (no usable GPU).",
       camara_ocupada: "Another route already uses that camera: a camera can only be in one.",
       audio_ocupado: "Another route already uses that audio.", audio_red_no_soportado: "Audio from another network source is not supported yet: use the same input's audio or a USB audio.",
@@ -3117,7 +3120,8 @@ const RT = {
     se_usa: (r) => "Used in: " + (r.length ? r.join(", ") : "no route"),
     nombre_ndi: "NDI name", ndi_ve: (h, n) => `Shows on the network as ${h} (${n}).`, url_rtmp: "Stream URL (with the key)",
     formato: "Format", grabar_nota: "10-minute pieces, an exact copy of the program; when the disk fills up, the oldest go.",
-    hdmi_nota: "Picture only. There is one monitor: if another route takes it, this one stops showing.",
+    hdmi_nota: "Picture only. One route per monitor: on automatic it takes the first free one; if you ask for one another route already has, the first route keeps it.",
+    pantalla: "Monitor", pantalla_auto: "Automatic (first free one)", pantalla_auto_corta: "automatic",
     obs_urls: "Addresses", desconectar: "Disconnect", conexion: "Connection", resolucion: "Resolution", fps: "Frame rate",
     vista_previa: "No preview", calibrando: "Measuring…", copia_corta: "copy",
     monitor_t: "Routes", ver_rutas: "Open routes",
@@ -3351,6 +3355,12 @@ function rtTextoSalida(r, s) {
   if (s.tipo === "srt") return `srt://${h}:${P.srt || 8890}`;
   if (s.tipo === "rtmp") return s.url ? s.url.replace(/\/[^/]*$/, "/••••") : rt("errores").url_rtmp_invalida;
   if (s.tipo === "grabar") return (s.formato || "mp4").toUpperCase();
+  if (s.tipo === "hdmi") {
+    // el monitor que tiene (lo dice el equipo) o el pedido; en automático, cuál le tocó
+    const mio = ((RD || {}).pantallas || []).find((p) => p.ruta === r.id);
+    const nombre = mio ? mio.conector : s.pantalla && s.pantalla !== "auto" ? s.pantalla : "";
+    return nombre ? nombre + (mio && mio.modo ? " · " + mio.modo : "") : rt("pantalla_auto_corta");
+  }
   return "";
 }
 function rtCrearNodo(n) {
@@ -3608,7 +3618,7 @@ function rtAjustesEntrada(e) {
 }
 function rtAjustesSalida(r, s) {
   const t = [rel("div", { class: "sub", text: "«" + r.nombre + "»" })];
-  const errs = rtErrores(r.id).filter((c) => ({ ndi: ["ndi_repetido", "ndi_a_ndi"], hdmi: ["hdmi_ocupado"], rtmp: ["url_rtmp_invalida"] }[s.tipo] || []).includes(c));
+  const errs = rtErrores(r.id).filter((c) => ({ ndi: ["ndi_repetido", "ndi_a_ndi"], hdmi: ["hdmi_ocupado", "pantalla_no_esta", "sin_monitor"], rtmp: ["url_rtmp_invalida"] }[s.tipo] || []).includes(c));
   for (const c of errs) t.push(rel("div", { class: "rt-err", text: rt("errores")[c] }));
   const h = rtHost(), P = RD.puertos || {}, eq = ((ultimo || {}).equipo || {}).nombre?.toUpperCase() || "NDIICAM";
   if (s.tipo === "ndi") t.push(rtCampo("rtNdiN", rt("nombre_ndi"), rel("input", { type: "text", id: "rtNdiN", value: s.nombre || "", maxlength: "48",
@@ -3628,7 +3638,17 @@ function rtAjustesSalida(r, s) {
   }
   if (s.tipo === "grabar") t.push(rtCampo("rtFmt", rt("formato"), rel("select", { id: "rtFmt", onchange: (ev) => { s.formato = ev.target.value; rtCambio(true); } },
     ...["mp4", "mkv"].map((f) => rel("option", { value: f, text: f.toUpperCase(), selected: (s.formato || "mp4") === f })))), rel("div", { class: "nota", text: rt("grabar_nota") }));
-  if (s.tipo === "hdmi") t.push(rel("div", { class: "nota", text: rt("hdmi_nota") }));
+  if (s.tipo === "hdmi") {
+    const pants = (RD || {}).pantallas || [];
+    const actual = s.pantalla && s.pantalla !== "auto" ? s.pantalla : "auto";
+    const lista = pants.map((p) => p.conector);
+    if (actual !== "auto" && !lista.includes(actual)) lista.unshift(actual);   // pedido pero desconectado
+    t.push(rtCampo("rtPant", rt("pantalla"), rel("select", { id: "rtPant", onchange: (ev) => { s.pantalla = ev.target.value; rtCambio(true); } },
+      rel("option", { value: "auto", text: rt("pantalla_auto"), selected: actual === "auto" }),
+      ...lista.map((c) => { const p = pants.find((x) => x.conector === c);
+        return rel("option", { value: c, text: c + (p && p.modo ? " · " + p.modo : "") + (p && p.ruta && p.ruta !== r.id ? " — " + p.ruta_nombre : ""), selected: c === actual }); }))));
+    t.push(rel("div", { class: "nota", text: rt("hdmi_nota") }));
+  }
   t.push(rel("div", { class: "botones" }, rel("button", { class: "boton peligro", type: "button", text: rt("quitar"), onclick: () => rtQuitarSalida(r, s) })));
   return t;
 }
@@ -3710,8 +3730,9 @@ function rtAnadirEntrada(tipo) {
   RB.entradas_red.push(e); rtSel = "e:" + e.id; rtHoja = true; rtCambio(true); rtPintar();
 }
 function rtAnadirSalida(r, tipo) {
-  if (tipo === "hdmi") {
-    // hay un monitor: se lo quita a la ruta que lo tuviera, avisando
+  if (tipo === "hdmi" && ((RD || {}).pantallas || []).length <= 1) {
+    // un solo monitor: se lo quita a la ruta que lo tuviera, avisando. Con varios,
+    // cada ruta coge el suyo (o se elige en los ajustes de la salida)
     const otra = RB.rutas.find((o) => o !== r && o.salidas.some((x) => x.tipo === "hdmi"));
     if (otra) { rtApuntar(); rtAviso(rt("hdmi_cambiado")(otra.nombre)); }
     for (const o of RB.rutas) o.salidas = o.salidas.filter((x) => x.tipo !== "hdmi");

@@ -74,7 +74,6 @@ def validar(rutas, entradas):
     se queda parada y el panel dice por qué."""
     por_id = {e["id"]: e for e in entradas}
     vistas, caminos, nombres_ndi, salida_ids = set(), set(), set(), set()
-    hdmi_de = None
     ocupados = {}       # recurso exclusivo -> id de la primera ruta activa que lo usa
     limpias, errores = [], {}
     for r in rutas:
@@ -140,11 +139,11 @@ def validar(rutas, entradas):
                     nombres_ndi.add(ns["nombre"].lower())
                 if v and v["tipo"] == "ndi":
                     err.append("ndi_a_ndi")       # ya es una fuente NDI: no se reemite como NDI
-            elif tipo == "hdmi" and nr["activa"]:
-                if hdmi_de is not None:
-                    err.append("hdmi_ocupado")    # un solo monitor: lo tiene la primera ruta encendida
-                    continue
-                hdmi_de = rid
+            elif tipo == "hdmi":
+                # en qué pantalla: un conector (DP-2, HDMI-A-1...) o "auto". Quién se
+                # queda cada una se decide en plan(), con las pantallas conectadas
+                pant = str(s.get("pantalla") or "auto").strip()[:32]
+                ns["pantalla"] = pant if re.fullmatch(r"[\w-]+", pant) else "auto"
             elif tipo == "grabar":
                 ns["formato"] = "mkv" if str(s.get("formato") or "").lower() == "mkv" else "mp4"
             elif tipo == "rtmp":
@@ -162,17 +161,49 @@ def validar(rutas, entradas):
     return limpias, errores
 
 
-def plan(rutas, entradas, potente, errores=None):
+def asignar_pantalla(pedida, conectadas, usadas, err):
+    """Qué pantalla le toca a una salida HDMI: la pedida, si está conectada y nadie
+    la tiene, o en "auto" la primera libre; las rutas van en orden, y la primera se
+    la queda. conectadas None: un solo monitor sin nombre (los modos de siempre).
+    Devuelve el conector, True (monitor sin nombre) o False, y apunta el motivo."""
+    if conectadas is None:
+        if "*" in usadas:
+            err.append("hdmi_ocupado")
+            return False
+        usadas.add("*")
+        return True
+    if pedida and pedida != "auto":
+        if pedida not in conectadas:
+            err.append("pantalla_no_esta")
+            return False
+        if pedida in usadas:
+            err.append("hdmi_ocupado")
+            return False
+        usadas.add(pedida)
+        return pedida
+    for p in conectadas:
+        if p not in usadas:
+            usadas.add(p)
+            return p
+    err.append("hdmi_ocupado" if conectadas else "sin_monitor")
+    return False
+
+
+def plan(rutas, entradas, potente, errores=None, pantallas=None):
     """Qué procesos tienen que correr para estas rutas y qué sirve MediaMTX.
 
     entradas: las detectadas (USB) y las de la red, con id, tipo y lo suyo (dev,
     audio_dev, fuente NDI, clave de la ingesta). potente: edición Pro (si no, solo
-    LIMITE_LITE rutas a la vez). Devuelve {"procesos": [...], "mediamtx": {...},
-    "activas": [...], "pausadas": [...]}; cada proceso lleva una "clave" estable para
-    saber si ya corre y la "ruta" a la que pertenece."""
-    errores = errores or {}
+    LIMITE_LITE rutas a la vez). pantallas: los conectores con monitor, en orden
+    (None: un solo monitor, sin nombre). Devuelve {"procesos": [...], "mediamtx":
+    {...}, "activas": [...], "pausadas": [...]}; cada proceso lleva una "clave"
+    estable para saber si ya corre, la "ruta" a la que pertenece y, si va a un
+    monitor, en "hdmi" su conector. Los monitores que no se pueden dar (ocupado,
+    desconectado) se apuntan en errores."""
+    errores = errores if errores is not None else {}
     por_id = {e["id"]: e for e in entradas}
     procesos, ingestas, publicaciones, activas, pausadas = [], [], [], [], []
+    pantallas_usadas = set()
     for e in entradas:
         if e["tipo"] == "ingesta" and e.get("clave"):
             ingestas.append(f"live/{e['clave']}")
@@ -190,10 +221,17 @@ def plan(rutas, entradas, potente, errores=None):
         ndi = next((s["nombre"] for s in r["salidas"] if s["tipo"] == "ndi"), None)
         if "ndi_a_ndi" in errores.get(r["id"], ()):
             ndi = None
-        hdmi = "hdmi" in tipos       # validar() ya dejó el monitor a una sola ruta
+        hdmi = False
+        salida_hdmi = next((s for s in r["salidas"] if s["tipo"] == "hdmi"), None)
+        if salida_hdmi is not None:
+            motivo = []
+            hdmi = asignar_pantalla(salida_hdmi.get("pantalla", "auto"), pantallas, pantallas_usadas, motivo)
+            if motivo:
+                errores[r["id"]] = sorted(set(errores.get(r["id"], [])) | set(motivo))
         publicar = f"live/{r['camino']}" if tipos & set(DE_RED) else None
-        if v["tipo"] == "ndi" and not (hdmi or publicar):
-            # una fuente NDI que solo saldría como NDI: no hay nada que hacer con ella
+        if not (ndi or hdmi or publicar):
+            # nada que hacer: una fuente NDI que solo saldría como NDI, o una ruta
+            # cuyo único monitor se lo quedó otra
             pausadas.append(r["id"])
             continue
         if not potente and len(activas) >= LIMITE_LITE:
@@ -229,7 +267,7 @@ def plan(rutas, entradas, potente, errores=None):
         else:   # fuente NDI de la red
             if hdmi:
                 procesos.append({**base, "clave": f"rx:{r['id']}", "clase": "receptor",
-                                 "origen": "ndi", "fuente": v["fuente"], "ndi": None, "hdmi": True,
+                                 "origen": "ndi", "fuente": v["fuente"], "ndi": None, "hdmi": hdmi,
                                  "audio": audio})
             if publicar:
                 procesos.append({**base, "clave": f"reem:{r['id']}", "clase": "reemision",

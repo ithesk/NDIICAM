@@ -41,6 +41,13 @@ def informar(datos):
     sys.stdout.flush()
 
 
+def alquiler(cfg):
+    """kmssink sobre la pantalla que alquila el servicio (ver pantallas.py), con
+    skip-vsync: el cambio de página no se deja en un alquiler, y el plano ya
+    espera al refresco por su cuenta. Sin alquiler, kmssink abre la tarjeta."""
+    return f" fd={cfg['drm_fd']} skip-vsync=true" if cfg.get("drm_fd") else ""
+
+
 RESERVA_MINIMA = 2 * 1024 ** 3      # lo que tiene que quedar libre, como poco
 RESERVA_SIN_TASA = 4 * 1024 ** 3    # si no se sabe a cuánto se graba (una copia del ATEM)
 SEGMENTO_S = 10 * 60                # duración de cada fichero de grabación
@@ -295,7 +302,7 @@ def tramo_salida(cfg):
              f" ! video/x-raw,format=UYVY ! queue name=q3 {Q}")
     if not ndi:
         # solo al HDMI (el multiview del ATEM para el operador) o a ninguna parte
-        video += (f" ! kmssink name=sink sync=false connector-id={cfg['hdmi']}" if cfg.get("hdmi")
+        video += (f" ! kmssink name=sink sync=false connector-id={cfg['hdmi']}{alquiler(cfg)}" if cfg.get("hdmi")
                   else " ! fakesink name=sink sync=false async=false")
     elif cfg.get("hdmi"):
         # copia al HDMI como monitor de encuadre: sin sincronizar y con una cola
@@ -304,7 +311,7 @@ def tramo_salida(cfg):
         # Trail no), así que para verla a pantalla completa la pantalla tiene que
         # arrancar a la resolución de la cámara (ajuste "hdmi_consola")
         video += (" ! tee name=t t. ! queue name=qh max-size-buffers=1 leaky=downstream"
-                  f" ! kmssink name=hdmi sync=false connector-id={cfg['hdmi']}"
+                  f" ! kmssink name=hdmi sync=false connector-id={cfg['hdmi']}{alquiler(cfg)}"
                   " t. ! queue name=q4 max-size-buffers=2 leaky=downstream")
     if not cfg.get("audio"):
         return video if not ndi else f"{video} ! ndisink name=sink"

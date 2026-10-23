@@ -24,6 +24,13 @@ import gi
 gi.require_version("Gst", "1.0")
 from gi.repository import GLib, Gst  # noqa: E402
 
+
+def alquiler(cfg):
+    """kmssink sobre la pantalla que alquila el servicio (ver pantallas.py), con
+    skip-vsync: el cambio de página no se deja en un alquiler, y el plano ya
+    espera al refresco por su cuenta. Sin alquiler, kmssink abre la tarjeta."""
+    return f" fd={cfg['drm_fd']} skip-vsync=true" if cfg.get("drm_fd") else ""
+
 RUTA_PNG = "/run/ndiicam/reposo.png"
 FUENTES = "/usr/share/fonts/truetype/dejavu"
 FONDO, TEXTO, SUAVE, ACENTO = (16, 20, 24), (240, 242, 245), (150, 158, 168), (64, 140, 255)
@@ -125,6 +132,8 @@ def dibujar(cfg):
 
     # --- pie
     pie = f"NDIICAM {cfg.get('version', '')}  ·  {t['consola']}"
+    if cfg.get("salida"):
+        pie += f"  ·  {cfg['salida']}"      # qué conector es: para saber cuál cable es cuál
     d.text((mx, alto - int(70 * e)), pie, font=fuente(22), fill=SUAVE)
     os.makedirs(os.path.dirname(RUTA_PNG), exist_ok=True)
     img.save(RUTA_PNG + ".tmp", "PNG")
@@ -142,7 +151,7 @@ def main():
     p = Gst.parse_launch(
         f"filesrc location={RUTA_PNG} ! pngdec ! imagefreeze ! videoconvert"
         " ! video/x-raw,format=BGRx ! kmssink name=hdmi sync=false"
-        f" connector-id={cfg['hdmi']}")
+        f" connector-id={cfg['hdmi']}{alquiler(cfg)}")
     bucle = GLib.MainLoop()
 
     def mensaje(bus, msg):

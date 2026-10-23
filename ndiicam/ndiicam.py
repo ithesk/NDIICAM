@@ -52,6 +52,7 @@ from panel import Panel, Servidor, ServidorTLS
 from red import Red
 from seguridad import CERT, LimiteIntentos, Sesiones, contexto_tls
 from supervisor import BuscadorNDI, Fuentes
+from pantallas import Tarjeta
 
 # el watchdog de systemd (WatchdogSec en el unit): este hilo le dice "sigo vivo"
 # cada LATIDO s, pero solo si todos los bucles del servicio han dado una vuelta
@@ -120,6 +121,7 @@ def main():
     configurar_ndi(nucleo.CONF.get()["transporte"])
     nucleo.FUENTES = Fuentes(nucleo.CONF)
     nucleo.BUSCADOR = BuscadorNDI()
+    nucleo.PANTALLAS = Tarjeta()
     nucleo.RED = Red(nucleo.CONF)
     nucleo.ACTUALIZADOR = Actualizador()
     nucleo.CORTAFUEGOS = Cortafuegos()

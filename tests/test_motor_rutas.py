@@ -261,8 +261,8 @@ CAMS = {"pocket": {"id": "pocket", "nombre": "Pocket", "dev": "/dev/video0", "us
 MONITOR = {"id": 95, "conector": "HDMI-A-1", "conectado": True, "modo": "1920x1080"}
 
 
-class Motor(unittest.TestCase):
-    """La reconciliación de MotorRutas con procesos y MediaMTX de mentira."""
+class BaseMotor(unittest.TestCase):
+    """Un MotorRutas con procesos y MediaMTX de mentira, para las clases de abajo."""
 
     def setUp(self):
         self.orig = (supervisor.lanzar, supervisor.PUENTE, supervisor.evento, supervisor.simultaneo,
@@ -295,10 +295,14 @@ class Motor(unittest.TestCase):
          supervisor.ruta_preview, supervisor.audio_hdmi, supervisor.resolucion_pantalla,
          supervisor.decodificador_h264, supervisor.capacidad_vpp, supervisor.capacidad_gpu) = self.orig
 
-    def paso(self, rutas_cfg, monitor=MONITOR):
+    def paso(self, rutas_cfg, monitor=MONITOR, monitores=None):
         self.cfg["rutas"] = rutas_cfg
-        self.motor.paso(self.cfg, CAMS, monitor)
+        self.motor.paso(self.cfg, CAMS, monitores if monitores is not None else [monitor] if monitor else [])
         return self.motor.procs
+
+
+class Motor(BaseMotor):
+    """La reconciliación de MotorRutas con procesos y MediaMTX de mentira."""
 
     def test_relevo_espera_a_que_haya_programa_y_luego_no_se_mata(self):
         r = ruta(audio="", salidas=[{"tipo": "obs"}, {"tipo": "grabar", "formato": "mkv"}])
@@ -398,13 +402,13 @@ class Motor(unittest.TestCase):
 
     def test_la_pantalla_de_ayuda_suelta_el_monitor_antes(self):
         soltado = []
-        self.motor.soltar_hdmi = lambda: soltado.append(True)
+        self.motor.soltar_hdmi = lambda nombre: soltado.append(nombre)
         r = ruta(video="mview", audio="", salidas=[{"tipo": "hdmi"}])
         self.paso([r])
-        self.assertEqual(soltado, [True])
-        self.assertTrue(self.motor.hdmi)
+        self.assertEqual(soltado, ["HDMI-A-1"])
+        self.assertEqual(self.motor.pantallas_usadas, {"HDMI-A-1"})
         self.paso([])
-        self.assertFalse(self.motor.hdmi)
+        self.assertEqual(self.motor.pantallas_usadas, set())
 
     def test_quitar_una_ruta_para_sus_procesos(self):
         r = ruta(video="pocket", audio="", salidas=[{"tipo": "ndi"}])
@@ -561,7 +565,7 @@ class FuenteSinImagen(unittest.TestCase):
         self.assertNotIn("fuente_sin_imagen", m.estado()["r1"]["errores"])
 
 
-class CambioDeFuenteNDI(Motor):
+class CambioDeFuenteNDI(BaseMotor):
     """Cambiar la fuente de una entrada NDI reinicia el receptor con la nueva."""
 
     def test_cambiar_fuente_reinicia_el_receptor(self):
@@ -624,3 +628,34 @@ class RutaApagada(unittest.TestCase):
         limpias, err = rutas.validar([apagada, otra], self.ENT)
         self.assertNotIn("ndi_repetido", err.get("b", []))
         self.assertEqual(limpias[1]["salidas"][0]["nombre"], "Culto")
+
+
+class VariasPantallas(BaseMotor):
+    """Dos monitores: cada ruta en el suyo, y la ayuda solo en los libres."""
+
+    DP1 = {"id": 95, "conector": "DP-1", "conectado": True, "modo": "1920x1080"}
+    DP2 = {"id": 112, "conector": "DP-2", "conectado": True, "modo": "2560x1440"}
+
+    def test_cada_ruta_en_su_monitor(self):
+        a = ruta(id="a", nombre="A", video="pocket", audio="", salidas=[{"tipo": "hdmi"}])
+        b = ruta(id="b", nombre="B", video="mview", audio="", salidas=[{"tipo": "hdmi", "pantalla": "DP-1"}])
+        procs = self.paso([a, b], monitores=[self.DP2, self.DP1])
+        self.assertEqual(procs["cam:a"].proc.obj["hdmi"], 112)
+        self.assertEqual(procs["cam:b"].proc.obj["hdmi"], 95)
+        self.assertEqual(self.motor.pantallas_usadas, {"DP-1", "DP-2"})
+
+    def test_la_ayuda_suelta_solo_la_pantalla_que_se_coge(self):
+        soltadas = []
+        self.motor.soltar_hdmi = lambda n: soltadas.append(n)
+        b = ruta(id="b", nombre="B", video="mview", audio="", salidas=[{"tipo": "hdmi", "pantalla": "DP-1"}])
+        self.paso([b], monitores=[self.DP2, self.DP1])
+        self.assertEqual(soltadas, ["DP-1"])
+        self.assertEqual(self.motor.pantallas_usadas, {"DP-1"})
+
+    def test_monitor_que_se_desconecta(self):
+        b = ruta(id="b", nombre="B", video="mview", audio="", salidas=[{"tipo": "hdmi", "pantalla": "DP-1"}, {"tipo": "ndi"}])
+        procs = self.paso([b], monitores=[self.DP2, self.DP1])
+        self.assertEqual(procs["cam:b"].proc.obj["hdmi"], 95)
+        procs = self.paso([b], monitores=[self.DP2])
+        self.assertIn("pantalla_no_esta", self.motor.errores["b"])
+        self.assertIsNone(procs["cam:b"].obj["hdmi"])      # sigue, sin monitor

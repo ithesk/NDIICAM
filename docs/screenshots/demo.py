@@ -283,7 +283,9 @@ def rutas_demo(paso, lang="es"):
     return {"motor": "rutas", "entradas": entradas, "rutas": rutas, "errores": {}, "estado": estado,
             "activas": ["culto", "cam2", "operador"], "pausadas": [],
             "red_ndi": [{"nombre": "STUDIO-PC (OBS Program)"}, {"nombre": "VMIX-CONTROL (Output 1)"}],
-            "puertos": {"rtmp": 1935, "srt": 8890, "hls": 8888}, "limite_lite": 1, "pro": True}
+            "puertos": {"rtmp": 1935, "srt": 8890, "hls": 8888}, "limite_lite": 1, "pro": True,
+            "pantallas": [{"conector": "HDMI-A-1", "id": 95, "modo": "1920x1080", "ruta": "operador", "ruta_nombre": n["operador"]},
+                          {"conector": "DP-1", "id": 112, "modo": "2560x1440", "ruta": None, "ruta_nombre": None}]}
 
 
 def estado_rutas(paso, lang="es"):

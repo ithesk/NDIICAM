@@ -24,14 +24,31 @@ def lanzar(script, obj, env=None):
     """Arranca un proceso hijo y le pasa su configuración por la entrada estándar
     (una línea JSON): así las claves de emisión y de ingesta no quedan a la vista
     en la lista de procesos. Las órdenes posteriores van por el mismo canal."""
+    fd = None
+    if obj.get("hdmi") and nucleo.PANTALLAS is not None:
+        # la pantalla, alquilada por el servicio (pantallas.py): el hijo hereda el
+        # descriptor y pinta solo en ella; si no se puede alquilar, abre la tarjeta él
+        fd = nucleo.PANTALLAS.alquilar(obj["hdmi"])
+        if fd is not None:
+            obj = {**obj, "drm_fd": fd}
     proc = subprocess.Popen([sys.executable, script], stdin=subprocess.PIPE,
-                            stdout=subprocess.PIPE, text=True, env=env)
+                            stdout=subprocess.PIPE, text=True, env=env,
+                            pass_fds=(fd,) if fd is not None else ())
+    if fd is not None:
+        os.close(fd)        # el alquiler vive en el hijo; esta copia sobra
     try:
         proc.stdin.write(json.dumps(obj) + "\n")
         proc.stdin.flush()
     except OSError:
         pass
     return proc
+
+
+def tamano_pantalla(monitor):
+    """[ancho, alto] reales de esa pantalla (lo sabe la tarjeta) o, si no, lo que
+    se pidió al arrancar."""
+    t = nucleo.PANTALLAS.resolucion(monitor["id"]) if nucleo.PANTALLAS and monitor else None
+    return t or resolucion_pantalla(monitor)
 
 
 def terminar(proc, espera=8):
@@ -571,8 +588,9 @@ class MotorRutas:
         self._err = {}          # los del paso en curso (validar + lo que no se pudo arrancar)
         self.limpias = []
         self.entradas = []
-        self.hdmi = False       # algún proceso de las rutas usa (o va a usar) el monitor
-        self.soltar_hdmi = None  # lo pone Fuentes: para la pantalla de ayuda antes de arrancar
+        self.pantallas_usadas = set()   # conectores que usan (o van a usar) las rutas
+        self._usadas = set()
+        self.soltar_hdmi = None  # lo pone Fuentes: para la ayuda de esa pantalla antes de arrancar
 
     def entradas_actuales(self, cams, cfg):
         """Las cámaras e interfaces de audio conectadas, y las entradas de red guardadas."""
@@ -591,21 +609,23 @@ class MotorRutas:
             ents.append(dict(e))
         return ents
 
-    def paso(self, cfg, cams, monitor):
-        self.planificar(cfg, cams)
-        self.aplicar(cfg, cams, monitor)
+    def paso(self, cfg, cams, monitores):
+        """monitores: las pantallas con monitor, en orden ([{id, conector, modo}])."""
+        self.planificar(cfg, cams, [m["conector"] for m in monitores])
+        self.aplicar(cfg, cams, {m["conector"]: m for m in monitores})
 
-    def planificar(self, cfg, cams):
+    def planificar(self, cfg, cams, pantallas=None):
         """Entradas y rutas → plan, sin tocar ningún proceso."""
         self.entradas = self.entradas_actuales(cams, cfg)
         limpias, err = rutas_mod.validar(cfg.get("rutas") or [], self.entradas)
-        pl = rutas_mod.plan(limpias, self.entradas, simultaneo(cfg), err)
+        pl = rutas_mod.plan(limpias, self.entradas, simultaneo(cfg), err, pantallas)
         self.ultimo, self.limpias, self._err = pl, limpias, err
         return pl
 
-    def aplicar(self, cfg, cams, monitor):
+    def aplicar(self, cfg, cams, monitores):
         """Arranca lo que falta, para lo que sobra y ajusta en marcha lo que se puede."""
         pl = self.ultimo
+        self._usadas = set()
         m = pl["mediamtx"]
         if m["necesario"] and PUENTE.disponible():
             # la conf no cambia con las rutas (ver conf_mediamtx_rutas) y los permisos
@@ -615,10 +635,10 @@ class MotorRutas:
             PUENTE.detener()
         deseados = {}
         for pr in pl["procesos"]:
-            obj = self.objeto(pr, cfg, cams, monitor)
+            obj = self.objeto(pr, cfg, cams, monitores)
             if obj is not None:
                 deseados[pr["clave"]] = (pr, obj)
-        self.hdmi = any(pr.get("hdmi") for pr, _ in deseados.values())
+        self.pantallas_usadas = set(self._usadas)
         moribundos = []
         for clave in list(self.procs):
             if clave not in deseados:
@@ -650,8 +670,10 @@ class MotorRutas:
         if arrancables:
             # lo que se paró puede tener la cámara, el ALSA o el HDMI que otro va a
             # coger: que lo suelte antes (acotado). Y la pantalla de ayuda igual
-            if self.soltar_hdmi and any(pr.get("hdmi") for pr, _ in arrancables):
-                moribundos.append(self.soltar_hdmi())
+            if self.soltar_hdmi:
+                for nombre in {m["conector"] for m in monitores.values()
+                               for _, obj in arrancables if obj.get("hdmi") == m["id"]}:
+                    moribundos.append(self.soltar_hdmi(nombre))
             esperar_fin(moribundos)
             for pr, obj in arrancables:
                 self.procs[pr["clave"]].arrancar(obj)
@@ -667,7 +689,7 @@ class MotorRutas:
         return Auxiliar({"programa": PROGRAMA_PY, "reemision": REEMISION_PY,
                          "relevo": RELEVO_PY}[pr["clase"]], pr["clase"])
 
-    def objeto(self, pr, cfg, cams, monitor):
+    def objeto(self, pr, cfg, cams, monitores):
         """Lo que se le pasa al proceso: el mismo formato que en los modos. None si
         aún no toca arrancarlo (lo que lee de MediaMTX espera a que alguien publique;
         pero solo para arrancar: el que ya corre sigue aunque la fuente parpadee, y
@@ -677,7 +699,15 @@ class MotorRutas:
         con_audio = a.get("de") is not None
         vivos = {"retraso_audio": a.get("retraso", 0) if con_audio else 0,
                  "ganancia": a.get("ganancia", 0), "mudo": bool(a.get("mudo")) or not con_audio}
-        hdmi = monitor["id"] if pr.get("hdmi") and monitor else None
+        # el monitor de esta ruta: el conector que le dio plan() (o el primero, si
+        # el plan no distingue pantallas)
+        monitor = None
+        if pr.get("hdmi"):
+            monitor = (monitores.get(pr["hdmi"]) if isinstance(pr["hdmi"], str)
+                       else next(iter(monitores.values()), None))
+        hdmi = monitor["id"] if monitor else None
+        if monitor:
+            self._usadas.add(monitor["conector"])
         p = self.procs.get(pr["clave"])
         corriendo = p is not None and p.proc is not None
         if pr["clase"] == "camara":
@@ -696,6 +726,7 @@ class MotorRutas:
                 dev = None
             if hdmi and f.hdmi_fallido:
                 self._err.setdefault(pr["ruta"], []).append("hdmi_fallido")
+                self._usadas.discard(monitor["conector"])
                 hdmi = None
             obj.update(nombre=pr["ndi"] or cams[pr["cam"]]["nombre"], ndi=bool(pr["ndi"]),
                        audio=dev, hdmi=hdmi, solo_monitor=False, preview=ruta_preview(pr["cam"]), **vivos)
@@ -717,13 +748,13 @@ class MotorRutas:
                     return None         # todavía no publica el programa
                 return {"origen": "puente", "nombre": pr["nombre_ruta"], "url": f"{local}/{pr['fuente']}",
                         "decodificador": decodificador_h264(), "hdmi": hdmi,
-                        "pantalla": resolucion_pantalla(monitor) if hdmi else None,
+                        "pantalla": tamano_pantalla(monitor) if hdmi else None,
                         "gpu_h264": capacidad_vpp()["h264"], "ndi_nombre": pr["ndi"],
                         "ndi_audio": True, "audio": audio_hdmi() if hdmi else None}
             if not hdmi:
                 return None
             return {"nombre": pr["fuente"], "hdmi": hdmi, "equipo": f"NDIICAM {socket.gethostname()}",
-                    "pantalla": resolucion_pantalla(monitor), "plano": True, "audio": audio_hdmi()}
+                    "pantalla": tamano_pantalla(monitor), "plano": True, "audio": audio_hdmi()}
         if pr["clase"] == "reemision":
             cap = capacidad_gpu()
             if not cap["disponible"]:
@@ -867,8 +898,8 @@ class Fuentes:
         self.programa = Auxiliar(PROGRAMA_PY, "programa")  # el programa final del puente (Pro)
         self.edicion = None     # lite | pro, según el equipo
         self.motor = MotorRutas(self)   # con motor "rutas", en vez de los modos
-        self.reposo = Reposo()      # y si no, la pantalla de ayuda
-        self.motor.soltar_hdmi = self.reposo.detener
+        self.reposos = {}           # conector -> Reposo: la pantalla de ayuda en cada monitor libre
+        self.motor.soltar_hdmi = self.soltar_pantalla
 
     def objetivo(self, f, aj=None):
         aj = aj or self.config.fuente(f.cam["id"])
@@ -1035,7 +1066,7 @@ class Fuentes:
             rx_obj = {"origen": "puente", "nombre": "ATEM", "url": url_rx,
                       "decodificador": decodificador_h264(),
                       "hdmi": monitor_rx["id"] if monitor_rx else None,
-                      "pantalla": resolucion_pantalla(monitor_rx) if monitor_rx else None,
+                      "pantalla": tamano_pantalla(monitor_rx) if monitor_rx else None,
                       "gpu_h264": capacidad_vpp()["h264"] and not self.receptor.gpu_fallida}
             if puente_ndi:
                 rx_obj["ndi_nombre"] = NOMBRE_NDI_PUENTE
@@ -1050,7 +1081,7 @@ class Fuentes:
         elif receptor and not puente and monitor and cfg["rx_fuente"]:
             rx_obj = {"nombre": cfg["rx_fuente"], "hdmi": monitor["id"],
                       "equipo": f"NDIICAM {socket.gethostname()}",
-                      "pantalla": resolucion_pantalla(monitor),
+                      "pantalla": tamano_pantalla(monitor),
                       "plano": not self.receptor.plano_fallido}
             audio = audio_hdmi()
             if rx_obj["nombre"] != self.receptor.destino:
@@ -1069,10 +1100,9 @@ class Fuentes:
         hdmi_ocupado = rx_obj is not None or (
             self.hdmi_para is not None and not self.fuentes[self.hdmi_para].hdmi_fallido
             if self.hdmi_para in self.fuentes else self.hdmi_para is not None)
-        reposo_obj = None if hdmi_ocupado or not monitor else self.pantalla_reposo(cfg, cams, monitor)
         with self.lock:
-            if self.reposo.proc is not None and self.reposo.obj != reposo_obj:
-                self.reposo.detener()
+            # la ayuda solo en el monitor de los modos, y solo si nadie lo usa
+            self._reposos_en(cfg, cams, [] if hdmi_ocupado or not monitor else [monitor])
             # el HDMI es de uno solo: el receptor lo suelta antes de que una cámara lo coja
             if rx.proc is not None and rx.obj != rx_obj:
                 rx.detener()
@@ -1129,14 +1159,16 @@ class Fuentes:
             if rx_obj and rx.proc is None and time.time() >= rx.reintento:
                 rx.arrancar(rx_obj)
             self._reemision(cfg, puertos)
-            if reposo_obj and self.reposo.proc is None and time.time() >= self.reposo.reintento:
-                self.reposo.arrancar(reposo_obj)
             self._grabacion_condicional()
 
     def _paso_rutas(self, cfg, cams):
-        """Con el motor de rutas: los modos se paran y manda lo que digan las rutas."""
-        monitor = next((p for p in pantallas() if p["conectado"] and p["id"]), None)
-        self.hdmi_conector = monitor["id"] if monitor else None
+        """Con el motor de rutas: los modos se paran y manda lo que digan las rutas.
+        Cada monitor conectado es una pantalla más: una ruta por pantalla, y en
+        las que queden libres, la ayuda. Si la tarjeta no alquila pantallas, una."""
+        monitores = [p for p in pantallas() if p["conectado"] and p["id"]]
+        if len(monitores) > 1 and not (nucleo.PANTALLAS and nucleo.PANTALLAS.disponible()):
+            monitores = monitores[:1]
+        self.hdmi_conector = monitores[0]["id"] if monitores else None
         with self.lock:
             moribundos = []
             for f in self.fuentes.values():
@@ -1148,15 +1180,10 @@ class Fuentes:
                     moribundos.append(p.detener())
             if moribundos:
                 esperar_fin(moribundos)     # las cámaras y el HDMI, libres para las rutas
-            self.motor.paso(cfg, cams, monitor)
-            # el monitor: si ninguna ruta lo usa (o lo va a usar), la pantalla de ayuda.
-            # Cuando una ruta lo coge, el motor para la ayuda antes de arrancar
-            reposo_obj = (None if self.motor.hdmi or not monitor
-                          else self.pantalla_reposo(cfg, cams, monitor))
-            if self.reposo.proc is not None and self.reposo.obj != reposo_obj:
-                self.reposo.detener()
-            if reposo_obj and self.reposo.proc is None and time.time() >= self.reposo.reintento:
-                self.reposo.arrancar(reposo_obj)
+            self.motor.paso(cfg, cams, monitores)
+            # en los monitores que ninguna ruta usa (o va a usar), la pantalla de
+            # ayuda. Cuando una ruta coge uno, el motor para su ayuda antes de arrancar
+            self._reposos_en(cfg, cams, [m for m in monitores if m["conector"] not in self.motor.pantallas_usadas])
 
     def _programa(self, cfg, activo, info_puente):
         """El programa final del puente (Pro): arranca o para programa.py y dice de
@@ -1256,6 +1283,26 @@ class Fuentes:
                 f.orden({"gpu_activa": quiere, "modo": g["modo"]})
                 f.gpu_pedida = quiere
 
+    def _reposo(self, nombre):
+        return self.reposos.setdefault(nombre, Reposo())
+
+    def soltar_pantalla(self, nombre):
+        """La ayuda deja esa pantalla (una ruta la va a coger). Devuelve el proceso
+        que muere, para esperarlo."""
+        r = self.reposos.get(nombre)
+        return r.detener() if r and r.proc is not None else None
+
+    def _reposos_en(self, cfg, cams, monitores):
+        """La pantalla de ayuda en cada monitor de la lista, y en ninguno más."""
+        quiero = {m["conector"]: self.pantalla_reposo(cfg, cams, m) for m in monitores}
+        for nombre, r in self.reposos.items():
+            if r.proc is not None and r.obj != quiero.get(nombre):
+                r.detener()
+        for nombre, obj in quiero.items():
+            r = self._reposo(nombre)
+            if r.proc is None and time.time() >= r.reintento:
+                r.arrancar(obj)
+
     def pantalla_reposo(self, cfg, cams, monitor):
         """Qué cuenta la pantalla de ayuda. Solo lo que cambia despacio: cada
         cambio relanza el proceso y parpadea el HDMI un instante."""
@@ -1295,7 +1342,7 @@ class Fuentes:
             red = None
         ap = {"ssid": cfg["ap_ssid"], "clave": cfg["ap_clave"]} if nucleo.RED.ap_activo else None
         url = f"http://{ip}/" if ip else (f"http://{AP_IP}/" if ap else "")
-        return {"hdmi": monitor["id"], "pantalla": resolucion_pantalla(monitor),
+        return {"hdmi": monitor["id"], "pantalla": tamano_pantalla(monitor), "salida": monitor["conector"],
                 "idioma": cfg["idioma"], "equipo": socket.gethostname(),
                 "version": f"{VERSION} {'Pro' if self.edicion == 'pro' else 'Lite'}",
                 "estado": estado, "modo": modo, "detalle": detalle, "ip": ip, "red": red,
@@ -1343,7 +1390,8 @@ class Fuentes:
             self.reemision.detener()
             self.programa.detener()
             self.motor.detener()
-            self.reposo.detener()
+            for r in self.reposos.values():
+                r.detener()
 
     def lista(self):
         with self.lock:

@@ -43,8 +43,8 @@ sound. Everything is managed from a web panel: no terminal needed after installa
 - **Routes: inputs → routes → outputs** (see [docs/routes.md](docs/routes.md)). You draw in the
   panel what comes in (USB cameras and audio, NDI sources, an ATEM or OBS streaming to the
   device), how it is combined (a picture with another input's audio, with gain and delay) and
-  where it goes out: NDI, HDMI monitor, OBS/TV/phone, SRT, YouTube over RTMP or recording, **all
-  at once**. A canvas with wires on a computer and a list on a phone; every change saves and
+  where it goes out: NDI, monitor (**several monitors**, one route on each), OBS/TV/phone, SRT,
+  YouTube over RTMP or recording, **all at once**. A canvas with wires on a computer and a list on a phone; every change saves and
   applies itself without cutting anything else.
 - **Streams every UVC camera plugged in as its own NDI source** (MJPEG or YUYV) at 720p or 1080p,
   up to 60 fps, **with the camera's microphone** as NDI audio when it has one.

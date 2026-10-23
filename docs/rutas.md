@@ -79,7 +79,7 @@ etiqueta *copia* lo indica. No gasta GPU y no pierde calidad.
 | Salida | Qué hace |
 |---|---|
 | **NDI** | El programa como fuente NDI `EQUIPO (nombre)`. |
-| **Monitor HDMI** | Lo muestra en la pantalla conectada al equipo. Solo una ruta puede tenerlo. |
+| **Monitor** | Lo muestra en una pantalla conectada al equipo. **Una ruta por pantalla**: con varios monitores (DisplayPort, HDMI, USB-C), cada ruta va al suyo (ver abajo). |
 | **OBS · TV · móvil** | Lo deja disponible en la red, para que lo lea quien quiera (ver abajo). |
 | **SRT** | Lo mismo, por SRT, para enlaces menos fiables. |
 | **RTMP (YouTube…)** | Lo emite a YouTube, Twitch, Facebook… con la URL y la clave del servicio. |
@@ -97,6 +97,21 @@ espacios (lo muestra el engranaje de la salida):
 
 Cada salida de red (YouTube, grabar) corre en **su propio proceso**: si YouTube corta o el disco
 falla, las demás salidas de esa ruta siguen.
+
+### Varios monitores
+
+Si el equipo tiene varias salidas de vídeo, cada monitor conectado es una pantalla más:
+- en los ajustes de la salida **Monitor** eliges cuál (`DP-2`, `HDMI-A-1`…) o lo dejas en
+  **automático**, que coge el primero libre;
+- si dos rutas piden la misma pantalla, se la queda la primera de la lista y la otra lo dice;
+- en las pantallas que ninguna ruta usa sale la **pantalla de ayuda** con el QR, que ahora
+  indica en el pie qué conector es: así sabes qué cable es cuál;
+- una pantalla que enchufes en marcha aparece sola y queda lista para usar.
+
+Por dentro, el servicio es el dueño de la tarjeta gráfica y **alquila** cada pantalla al
+proceso que la pinta (DRM lease): el alquiler es exclusivo y caduca solo cuando el proceso
+termina. Si la tarjeta no se deja (un driver raro, sin permisos), todo sigue como antes, con
+un solo monitor.
 
 ## El panel
 

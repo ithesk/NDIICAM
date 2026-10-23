@@ -43,7 +43,8 @@ gestiona desde un panel web: tras la instalación no hace falta la terminal.
 - **Rutas: entradas → rutas → salidas** (ver [docs/rutas.md](docs/rutas.md)). Se dibuja en el
   panel qué entra (cámaras y audio USB, fuentes NDI, un ATEM u OBS que emite al equipo), cómo se
   junta (una imagen con el audio de otra entrada, con ganancia y retraso) y por dónde sale: NDI,
-  monitor HDMI, OBS/TV/móvil, SRT, YouTube por RTMP o grabación, **todo a la vez**. Lienzo con
+  monitor (**varios monitores**, una ruta en cada uno), OBS/TV/móvil, SRT, YouTube por RTMP o
+  grabación, **todo a la vez**. Lienzo con
   cables en el ordenador y lista en el móvil; cada cambio se guarda y se aplica solo, sin cortar
   lo demás.
 - **Emite cada cámara UVC conectada como fuente NDI propia** (MJPEG o YUYV) a 720p o 1080p,

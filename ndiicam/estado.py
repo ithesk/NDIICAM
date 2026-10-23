@@ -103,7 +103,15 @@ def estado_rutas():
         for sal in r.get("salidas") or []:
             if sal.get("tipo") == "rtmp" and sal.get("url"):
                 sal["url"] = ocultar_clave_rtmp(sal["url"])
-    return {"motor": cfg.get("motor", "modos"), "entradas": ents, "rutas": limpias,
+    # las pantallas con monitor y qué ruta tiene cada una
+    de_ruta = {pr["hdmi"]: pr["nombre_ruta"] for pr in (mot.ultimo.get("procesos") or [])
+               if isinstance(pr.get("hdmi"), str)}
+    de_ruta_id = {pr["hdmi"]: pr["ruta"] for pr in (mot.ultimo.get("procesos") or [])
+                  if isinstance(pr.get("hdmi"), str)}
+    pants = [{"conector": p["conector"], "id": p["id"], "modo": p["modo"],
+              "ruta": de_ruta_id.get(p["conector"]), "ruta_nombre": de_ruta.get(p["conector"])}
+             for p in pantallas() if p["conectado"] and p["id"]]
+    return {"motor": cfg.get("motor", "modos"), "entradas": ents, "rutas": limpias, "pantallas": pants,
             "errores": errores, "estado": est, "activas": activas, "pausadas": pausadas,
             "red_ndi": nucleo.BUSCADOR.lista() if nucleo.BUSCADOR else [],
             "puertos": {"rtmp": PUERTO_RTMP, "srt": PUERTO_SRT, "hls": PUERTO_HLS},

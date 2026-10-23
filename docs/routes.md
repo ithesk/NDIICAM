@@ -78,7 +78,7 @@ When the video comes from an ATEM or OBS, it is **copied as is, without re-encod
 | Output | What it does |
 |---|---|
 | **NDI** | The program as the NDI source `DEVICE (name)`. |
-| **HDMI monitor** | Shows it on the screen plugged into the device. Only one route can have it. |
+| **Monitor** | Shows it on a screen plugged into the device. **One route per screen**: with several monitors (DisplayPort, HDMI, USB-C), each route goes to its own (see below). |
 | **OBS · TV · phone** | Makes it available on the network for anyone to read (see below). |
 | **SRT** | The same, over SRT, for less reliable links. |
 | **RTMP (YouTube…)** | Streams it to YouTube, Twitch, Facebook… with the service's URL and key. |
@@ -96,6 +96,21 @@ output's gear shows it):
 
 Each network output (YouTube, record) runs in **its own process**: if YouTube drops or the disk
 fails, the route's other outputs carry on.
+
+### Several monitors
+
+If the device has several video outputs, every connected monitor is one more screen:
+- in the **Monitor** output's settings you pick which one (`DP-2`, `HDMI-A-1`…) or leave it on
+  **automatic**, which takes the first free one;
+- if two routes ask for the same screen, the first one in the list keeps it and the other says so;
+- on the screens no route uses, the **help screen** with the QR appears, and its footer now
+  names the connector, so you know which cable is which;
+- a screen you plug in while running shows up by itself, ready to use.
+
+Under the hood, the service owns the graphics card and **leases** each screen to the process
+that draws on it (a DRM lease): the lease is exclusive and ends only when that process exits.
+If the card does not allow it (an odd driver, missing permissions), everything works as before,
+with a single monitor.
 
 ## The panel
 
