@@ -523,6 +523,25 @@ class Panel(BaseHTTPRequestHandler):
             return self._guardar_rutas(d)
         if ruta == "/api/rutas/motor":
             return self._motor(d)
+        if ruta == "/api/rutas/vivo":
+            # ganancia, retraso y silencio de una ruta: se aplican en marcha, sin
+            # esperar a que el panel aplique el resto de cambios (que reinician cosas)
+            cfg = nucleo.CONF.get()
+            rutas = [dict(r) for r in cfg.get("rutas") or []]
+            r = next((x for x in rutas if x.get("id") == str(d.get("ruta", ""))), None)
+            if r is None:
+                return self._error("ruta_invalida")
+            try:
+                if "ganancia" in d:
+                    r["ganancia"] = max(rutas_mod.GANANCIA[0], min(rutas_mod.GANANCIA[1], int(d["ganancia"])))
+                if "retraso" in d:
+                    r["retraso"] = max(0, min(rutas_mod.RETRASO_MAX, int(d["retraso"])))
+            except (TypeError, ValueError):
+                return self._error("valor_invalido")
+            if "mudo" in d:
+                r["mudo"] = bool(d["mudo"])
+            nucleo.CONF.actualizar({"rutas": rutas})
+            return self._json({"ok": True})
         if ruta == "/api/rutas/calibrar":
             if not nucleo.FUENTES.motor.calibrar(str(d.get("ruta", ""))):
                 return self._error("sin_audio")

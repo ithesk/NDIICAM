@@ -177,6 +177,7 @@
   .rt-obra > div { min-width: 0; }
   .rt-barra { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 8px; }
   .rt-barra .esp { margin-left: auto; }
+  .rt-guardado.pendiente { color: var(--texto); font-weight: 600; display: inline-flex; align-items: center; gap: 8px; }
   .rt-guardado { font-size: 12.5px; color: var(--suave); display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; }
   .rt-guardado.mal { color: var(--mal); font-weight: 600; }
   .rt-guardado .boton { padding: 2px 8px; font-size: 12px; }
@@ -3054,6 +3055,7 @@ const RT = {
       fuente_sin_imagen: "La fuente está en la red pero no manda imagen. En OBS, comprueba que esa fuente esté activa y dando imagen.", ndi_repetido: "Otra ruta usa ese nombre NDI.",
       hdmi_ocupado: "Ese monitor lo tiene otra ruta.", pantalla_no_esta: "Ese monitor no está conectado.",
       sin_monitor: "No hay ningún monitor conectado.", url_rtmp_invalida: "La URL RTMP no es válida.",
+      ruta_invalida: "Esa ruta ya no existe.",
       sin_gpu: "Este equipo no puede codificar H.264 para esta salida (sin GPU útil).",
       camara_ocupada: "Esa cámara ya la usa otra ruta: una cámara solo puede ir en una.",
       audio_ocupado: "Ese audio ya lo usa otra ruta.", audio_red_no_soportado: "El audio de otra fuente de red aún no se admite: usa el de la misma entrada o un audio USB.",
@@ -3073,7 +3075,9 @@ const RT = {
     anadir_ndi: "Fuente NDI", anadir_ingesta: "Emisión entrante (ATEM, OBS…)", anadir_red: "+ Añadir entrada de la red…",
     usb_solas: "Las cámaras y el audio USB aparecen solos al conectarlos.",
     elige_ruta: "Elige primero una ruta (o crea una) para añadirle salidas.",
-    fuente_red: "Fuente de la red", buscando: "Buscando fuentes NDI…", elige_fuente: "— elige una fuente —", aplicar_fuente: "Aplicar",
+    fuente_red: "Fuente de la red", buscando: "Buscando fuentes NDI…", elige_fuente: "— elige una fuente —",
+    pendientes: (n) => n === 1 ? "1 cambio sin aplicar" : `${n} cambios sin aplicar`, aplicar_cambios: "Aplicar", al_dia: "Al día",
+    aplicando: "Aplicando…", vivo_nota: "Ganancia, retraso y silencio se aplican al momento; lo demás, al pulsar Aplicar.",
     fuente_actual: (f) => `En uso: ${f}`,
     sin_fuente_ndi: "Sin fuente: elígela en el engranaje",
     atem_emite: "Que el ATEM, OBS o el móvil emitan a:", xml: "Descargar ajustes para ATEM",
@@ -3113,6 +3117,7 @@ const RT = {
       fuente_sin_imagen: "The source is on the network but sends no picture. In OBS, check that the source is active and showing something.", ndi_repetido: "Another route uses that NDI name.",
       hdmi_ocupado: "Another route has that monitor.", pantalla_no_esta: "That monitor is not connected.",
       sin_monitor: "No monitor is connected.", url_rtmp_invalida: "The RTMP URL is not valid.",
+      ruta_invalida: "That route no longer exists.",
       sin_gpu: "This device cannot encode H.264 for this output (no usable GPU).",
       camara_ocupada: "Another route already uses that camera: a camera can only be in one.",
       audio_ocupado: "Another route already uses that audio.", audio_red_no_soportado: "Audio from another network source is not supported yet: use the same input's audio or a USB audio.",
@@ -3132,7 +3137,9 @@ const RT = {
     anadir_ndi: "NDI source", anadir_ingesta: "Incoming stream (ATEM, OBS…)", anadir_red: "+ Add a network input…",
     usb_solas: "USB cameras and audio appear on their own when plugged in.",
     elige_ruta: "Pick a route first (or create one) to add outputs to it.",
-    fuente_red: "Network source", buscando: "Looking for NDI sources…", elige_fuente: "— pick a source —", aplicar_fuente: "Apply",
+    fuente_red: "Network source", buscando: "Looking for NDI sources…", elige_fuente: "— pick a source —",
+    pendientes: (n) => n === 1 ? "1 change not applied" : `${n} changes not applied`, aplicar_cambios: "Apply", al_dia: "Up to date",
+    aplicando: "Applying…", vivo_nota: "Gain, delay and mute apply at once; everything else when you press Apply.",
     fuente_actual: (f) => `In use: ${f}`,
     sin_fuente_ndi: "No source: pick it with the gear",
     atem_emite: "Have the ATEM, OBS or the phone stream to:", xml: "Download settings for ATEM",
@@ -3188,7 +3195,8 @@ let RD = null;               // lo último que dijo /api/rutas
 let RB = null;               // borrador: {entradas_red, rutas}
 let rtSel = null, rtCableSel = null, rtHoja = false, rtTocado = null, rtArrastre = null;
 let rtSucio = false, rtGuardarT = 0, rtVista = "";
-const rtNdiElegida = {};      // entrada NDI -> fuente elegida y aún sin aplicar
+let rtBase = null;            // lo que tiene el equipo: el borrador se compara con esto
+let rtVivoT = 0;
 const rtSinVista = {};        // cámara -> cuándo falló su vista previa (se reintenta a los 8 s)
 // firma de un trozo de panel sin lo que cambia a cada momento (vúmetros, la hora de
 // la vista previa, la selección, el sitio): si no cambia, el DOM se deja como está
@@ -3245,10 +3253,12 @@ async function rtCargar() {
     // el borrador solo se sustituye si el equipo trae algo distinto: los ajustes
     // abiertos guardan referencias a sus objetos, y cambiarlos cada 2 s por copias
     // iguales hacía que lo elegido se escribiera en una copia que ya no se guarda
+    rtBase = rtBorradorDe(d);
     if (!rtSucio && !rtEnviando) {
       const nuevo = rtBorradorDe(d);
       if (JSON.stringify(nuevo) !== JSON.stringify(RB)) RB = nuevo;
     }
+    rtPintarGuardado();
     // oculto no se pinta: colocaría los bloques con un lienzo de ancho 0
     if (pestana === "rutas") rtPintar();
   } catch (err) {
@@ -3263,47 +3273,72 @@ function rtEstadoGuardado(texto, clase) {
   g.className = "rt-guardado" + (clase ? " " + clase : "");
   g.replaceChildren(texto || "");
 }
-function rtCambio(inmediato) {
-  rtSucio = true; rtVersion++; rtEstadoGuardado(rt("guardando"));
-  clearTimeout(rtGuardarT);
-  rtGuardarT = setTimeout(rtGuardar, inmediato ? 0 : 500);
+// cuántas rutas y entradas difieren de lo que tiene el equipo
+function rtPendientes() {
+  if (!RB || !rtBase) return 0;
+  let n = 0;
+  for (const k of ["rutas", "entradas_red"]) {
+    const a = new Map(RB[k].map((x) => [x.id, JSON.stringify(x)])), b = new Map(rtBase[k].map((x) => [x.id, JSON.stringify(x)]));
+    for (const [id, v] of a) if (b.get(id) !== v) n++;
+    for (const id of b.keys()) if (!a.has(id)) n++;
+  }
+  return n;
+}
+// como el "Deploy" de Node-RED: lo que reinicia procesos (entradas, salidas, fuentes,
+// monitor, encender o apagar) espera a Aplicar; ganancia, retraso y silencio van al
+// momento por rtVivo, que no toca nada más
+function rtCambio() {
+  rtVersion++;
+  rtPintarGuardado();
+}
+function rtVivo(r) {
+  clearTimeout(rtVivoT);
+  rtVivoT = setTimeout(async () => {
+    try {
+      await api("/api/rutas/vivo", { ruta: r.id, ganancia: r.ganancia, retraso: r.retraso, mudo: !!r.mudo });
+      const base = rtBase && rtBase.rutas.find((x) => x.id === r.id);
+      if (base) Object.assign(base, { ganancia: r.ganancia, retraso: r.retraso, mudo: !!r.mudo });
+      rtPintarGuardado();
+    } catch (err) { rtAviso(err.message, true); }
+  }, 250);
+}
+function rtPintarGuardado() {
+  rtSucio = rtPendientes() > 0;
+  if (Date.now() < rtDeshacerHasta || rtError) return;    // deshacer o el error mandan
+  const g = $("rtGuardado");
+  if (rtEnviando) { g.className = "rt-guardado"; g.replaceChildren(rt("aplicando")); return; }
+  if (!rtSucio) { g.className = "rt-guardado"; g.replaceChildren(rt("al_dia")); return; }
+  g.className = "rt-guardado pendiente";
+  g.replaceChildren(rt("pendientes")(rtPendientes()) + " ",
+    rel("button", { class: "boton principal", type: "button", id: "rtAplicar", text: rt("aplicar_cambios"), onclick: rtGuardar }),
+    rel("button", { class: "boton", type: "button", text: rt("descartar"), onclick: rtDescartar }));
+}
+function rtDescartar() {
+  RB = rtBorradorDe(RD); rtSel = null; rtCableSel = null; rtPintarGuardado(); rtPintar();
 }
 async function rtGuardar() {
-  if (rtEnviando) { clearTimeout(rtGuardarT); rtGuardarT = setTimeout(rtGuardar, 200); return; }
+  if (rtEnviando) return;
   const v = rtVersion;
-  rtEnviando = true;
+  rtEnviando = true; rtPintarGuardado();
   try {
     const d = await api("/api/rutas", { entradas_red: RB.entradas_red, rutas: RB.rutas });
-    rtEnviando = false; rtError = null; RD = d;
-    if (v === rtVersion) {
-      // nada cambió mientras viajaba: el borrador sigue a lo guardado (ids y caminos los fija el servicio)
-      rtSucio = false; RB = rtBorradorDe(d); rtEstadoGuardado(rt("guardado"));
-    } else {
-      // el usuario siguió editando: lo suyo manda y se reenvía
-      clearTimeout(rtGuardarT); rtGuardarT = setTimeout(rtGuardar, 0);
-    }
-    rtPintar();
+    rtEnviando = false; rtError = null; RD = d; rtBase = rtBorradorDe(d);
+    // nada cambió mientras viajaba: el borrador sigue a lo guardado (ids y caminos
+    // los fija el servicio). Si el usuario siguió editando, lo suyo queda pendiente
+    if (v === rtVersion) RB = rtBorradorDe(d);
+    rtPintarGuardado(); rtPintar();
   } catch (err) {
     rtEnviando = false; rtError = err;
     const g = $("rtGuardado"), max = err.datos && err.datos.maximo;
     g.className = "rt-guardado mal";
     g.replaceChildren(rt("sin_guardar") + err.message + (max ? " " + rt(err.datos.error === "entradas_invalidas" ? "tope_entradas" : "tope_rutas")(max) : "") + " ",
-      rel("button", { class: "boton", type: "button", text: rt("reintentar"), onclick: () => rtCambio(true) }),
-      rel("button", { class: "boton", type: "button", text: rt("descartar"), onclick: () => { rtSucio = false; rtError = null; rtEstadoGuardado(""); rtCargar(); } }));
+      rel("button", { class: "boton", type: "button", text: rt("reintentar"), onclick: () => { rtError = null; rtGuardar(); } }),
+      rel("button", { class: "boton", type: "button", text: rt("descartar"), onclick: () => { rtError = null; rtDescartar(); } }));
   }
 }
 // si se cierra la pestaña o el móvil pasa a segundo plano con cambios pendientes, se mandan igual
-function rtVaciar() {
-  if (!rtSucio || !RB) return;
-  clearTimeout(rtGuardarT);
-  try {
-    fetch("/api/rutas", { method: "POST", headers: { "Content-Type": "application/json" }, keepalive: true,
-      body: JSON.stringify({ entradas_red: RB.entradas_red, rutas: RB.rutas }) });
-    rtSucio = false;
-  } catch (_) { /* sin red: lo reintenta el temporizador */ }
-}
-window.addEventListener("pagehide", rtVaciar);
-document.addEventListener("visibilitychange", () => { if (document.visibilityState === "hidden") rtVaciar(); });
+// cambios sin aplicar al cerrar la pestaña: el navegador pregunta
+window.addEventListener("beforeunload", (ev) => { if (rtSucio) { ev.preventDefault(); ev.returnValue = ""; } });
 // deshacer: se apunta el borrador antes de algo destructivo y se ofrece 6 segundos
 function rtApuntar() { rtPila.push(JSON.stringify(RB)); if (rtPila.length > 10) rtPila.shift(); }
 function rtOfrecerDeshacer(texto) {
@@ -3313,28 +3348,28 @@ function rtOfrecerDeshacer(texto) {
   g.replaceChildren(texto + " · ", rel("button", { class: "boton", type: "button", text: rt("deshacer"), onclick: () => {
     const prev = rtPila.pop(); if (!prev) return;
     rtDeshacerHasta = 0;
-    RB = JSON.parse(prev); rtSel = null; rtCableSel = null; rtCambio(true); rtPintar(); } }));
+    RB = JSON.parse(prev); rtSel = null; rtCableSel = null; rtCambio(); rtPintar(); } }));
   clearTimeout(rtDeshacerT);
-  rtDeshacerT = setTimeout(() => { rtDeshacerHasta = 0; if (!rtSucio && !rtError) rtEstadoGuardado(rt("guardado")); }, 6000);
+  rtDeshacerT = setTimeout(() => { rtDeshacerHasta = 0; rtPintarGuardado(); }, 6000);
 }
 const rtEnMarcha = (r) => rtEstado(r.id).estado === "en_marcha";
 function rtBorrarRuta(r) {
   if (rtEnMarcha(r) && !confirm(rt("confirmar_borrar")(r.nombre))) return;
   rtApuntar();
   RB.rutas = RB.rutas.filter((x) => x !== r); if (rtSel === "r:" + r.id) rtSel = null;
-  rtCambio(true); rtPintar(); rtOfrecerDeshacer(rt("borrada")(r.nombre));
+  rtCambio(); rtPintar(); rtOfrecerDeshacer(rt("borrada")(r.nombre));
 }
 function rtQuitarSalida(r, s) {
   if (rtEnMarcha(r) && !confirm(rt("confirmar_quitar")(r.nombre))) return;
   rtApuntar();
   r.salidas = r.salidas.filter((x) => x !== s); if (rtSel === "s:" + s.id) rtSel = null;
-  rtCambio(true); rtPintar(); rtOfrecerDeshacer(rt("quitada")(rt("salidas")[s.tipo]));
+  rtCambio(); rtPintar(); rtOfrecerDeshacer(rt("quitada")(rt("salidas")[s.tipo]));
 }
 function rtDesconectar(c) {
   rtApuntar();
   if (c.p === "p") { const [r, s] = rtSalida(c.a.slice(2)); if (r) r.salidas = r.salidas.filter((x) => x !== s); }
   else { const r = rtRuta(c.a.slice(2)); if (r) { if (c.p === "v") r.video = ""; else r.audio = ""; } }
-  rtCableSel = null; rtCambio(true); rtPintar(); rtOfrecerDeshacer(rt("desconectada"));
+  rtCableSel = null; rtCambio(); rtPintar(); rtOfrecerDeshacer(rt("desconectada"));
 }
 
 // ---------------------------------------------------------------- lienzo
@@ -3549,7 +3584,7 @@ let rtAvisoT = 0;
 function rtAviso(txt, mal) { const a = $("rtAyuda"); a.textContent = txt; a.style.color = mal ? "var(--mal)" : "var(--acento)";
   if (rtVista !== "lienzo") rtEstadoGuardado(txt, mal ? "mal" : "");
   clearTimeout(rtAvisoT); rtAvisoT = setTimeout(() => { a.style.color = ""; a.textContent = rt("ayuda");
-    if (rtVista !== "lienzo" && !rtSucio && !rtError) rtEstadoGuardado(rt("guardado")); }, 3500); }
+    if (rtVista !== "lienzo") rtPintarGuardado(); }, 3500); }
 function rtConectar(a, b) {
   const [s, d] = a.lado === "sal" ? [a, b] : [b, a];
   if (s.p === "v" || s.p === "a") {
@@ -3562,7 +3597,7 @@ function rtConectar(a, b) {
   }
   rtAviso(rt("conectado")($("rtLienzo").querySelector(`[data-id="${CSS.escape(s.n)}"] .cab b`)?.textContent || "",
     $("rtLienzo").querySelector(`[data-id="${CSS.escape(d.n)}"] .cab b`)?.textContent || ""));
-  rtCambio(true); rtPintar();
+  rtCambio(); rtPintar();
 }
 function rtIniciarLienzo() {
   const l = $("rtLienzo"), svg = $("rtCables");
@@ -3617,14 +3652,15 @@ function rtAjustesRuta(r) {
   if (e.estado === "pausada" && !errs.length && RD && !RD.pro) t.push(rel("div", { class: "rt-err", text: rt("pausa_lite")(RD.limite_lite) }));
   for (const c of errs) t.push(rel("div", { class: "rt-err", text: rt("errores")[c] || c }));
   t.push(rel("label", { class: "conmutador" }, rel("input", { type: "checkbox", id: "rtActiva", checked: r.activa !== false,
-    onchange: (ev) => { r.activa = ev.target.checked; rtCambio(true); } }), rel("span", { text: rt("activa") })));
+    onchange: (ev) => { r.activa = ev.target.checked; rtCambio(); } }), rel("span", { text: rt("activa") })));
   if (r.audio) {
     const vu = rel("div", { class: "rt-vu", id: "rtVuInsp" }, rel("i")); rtVu(vu.firstChild, e);
     t.push(vu,
-      rtDeslizador("rtGan", rt("ganancia"), -24, 12, 1, r.ganancia, (x) => `${x > 0 ? "+" : ""}${x} dB`, (x) => { r.ganancia = x; rtCambio(); }),
-      rtDeslizador("rtRet", rt("retraso"), 0, 1000, 10, r.retraso, (x) => `${x} ms`, (x) => { r.retraso = x; rtCambio(); }),
+      rtDeslizador("rtGan", rt("ganancia"), -24, 12, 1, r.ganancia, (x) => `${x > 0 ? "+" : ""}${x} dB`, (x) => { r.ganancia = x; rtVivo(r); }),
+      rtDeslizador("rtRet", rt("retraso"), 0, 1000, 10, r.retraso, (x) => `${x} ms`, (x) => { r.retraso = x; rtVivo(r); }),
       rel("label", { class: "conmutador" }, rel("input", { type: "checkbox", id: "rtMudo", checked: !!r.mudo,
-        onchange: (ev) => { r.mudo = ev.target.checked; rtCambio(true); } }), rel("span", { text: rt("silenciar") })));
+        onchange: (ev) => { r.mudo = ev.target.checked; rtVivo(r); } }), rel("span", { text: rt("silenciar") })),
+      rel("div", { class: "nota", text: rt("vivo_nota") }));
     if (v && a && a.id !== v.id) {
       t.push(rel("div", { class: "nota", text: rt("audio_otro") }));
       if (v.tipo === "usb_cam") {
@@ -3633,7 +3669,7 @@ function rtAjustesRuta(r) {
         if (cal.estado === "midiendo") res.textContent = rt("calibrando");
         else if (cal.estado === "hecha" && cal.ms != null) res.append(rt("medido")(cal.ms), " ",
           rel("button", { class: "boton", type: "button", text: rt("aplicar")(Math.round(cal.ms / 10) * 10),
-            onclick: () => { r.retraso = Math.max(0, Math.min(1000, Math.round(cal.ms / 10) * 10)); rtCambio(true); rtPintar(); } }));
+            onclick: () => { r.retraso = Math.max(0, Math.min(1000, Math.round(cal.ms / 10) * 10)); rtVivo(r); rtPintar(); } }));
         t.push(rel("div", { class: "botones" }, rel("button", { class: "boton", type: "button", text: rt("calibrar"),
           onclick: async () => { try { await api("/api/rutas/calibrar", { ruta: r.id }); rtAviso(rt("palmadas")); } catch (err) { rtAviso(err.message, true); } } })), res);
       }
@@ -3659,25 +3695,15 @@ function rtAjustesEntrada(e) {
     if (red.fuente && !lista.includes(red.fuente)) lista.unshift(red.fuente);
     // la primera opción es "elige": sin ella, el navegador enseña la primera fuente
     // como elegida aunque no lo esté, y elegir esa misma no avisa de ningún cambio
-    // se elige en el desplegable y se guarda con Aplicar: lo elegido se recuerda
-    // aparte (rtNdiElegida) para que un repintado no lo devuelva a lo guardado
-    const elegida = rtNdiElegida[e.id] ?? red.fuente;
-    const aplicar = rel("button", { class: "boton principal", type: "button", text: rt("aplicar_fuente"),
-      disabled: !elegida || elegida === red.fuente, onclick: () => {
-        // el objeto vigente del borrador, por id (no el que había al pintar)
-        const x = RB.entradas_red.find((y) => y.id === e.id);
-        const f = rtNdiElegida[e.id];
-        if (!x || !f) return;
-        x.fuente = f; x.nombre = f; delete rtNdiElegida[e.id];
-        rtCambio(true); rtPintar(); } });
+    // se elige y queda pendiente hasta Aplicar, como todo lo demás
+    const enUso = ((RD.entradas.find((x) => x.id === e.id) || {}).fuente) || "";
     t.push(rtCampo("rtNdiF", rt("fuente_red"), rel("select", { id: "rtNdiF", onchange: (ev) => {
       if (!ev.target.value) return;
-      rtNdiElegida[e.id] = ev.target.value;
-      aplicar.disabled = ev.target.value === red.fuente; } },
-      rel("option", { value: "", text: lista.length ? rt("elige_fuente") : rt("buscando"), disabled: true, selected: !elegida }),
-      ...lista.map((x) => rel("option", { value: x, text: x, selected: x === elegida })))),
-      rel("div", { class: "botones" }, aplicar),
-      rel("div", { class: "nota", text: red.fuente ? rt("fuente_actual")(red.fuente) : rt("sin_fuente_ndi") }));
+      const x = RB.entradas_red.find((y) => y.id === e.id);
+      if (x) { x.fuente = ev.target.value; x.nombre = ev.target.value; rtCambio(); } } },
+      rel("option", { value: "", text: lista.length ? rt("elige_fuente") : rt("buscando"), disabled: true, selected: !red.fuente }),
+      ...lista.map((x) => rel("option", { value: x, text: x, selected: x === red.fuente })))),
+      rel("div", { class: "nota", text: enUso ? rt("fuente_actual")(enUso) : rt("sin_fuente_ndi") }));
   }
   const usos = RB.rutas.filter((r) => r.video === e.id || r.audio === e.id).map((r) => r.nombre);
   t.push(rel("div", { class: "nota", text: rt("se_usa")(usos) }));
@@ -3686,7 +3712,7 @@ function rtAjustesEntrada(e) {
     rtApuntar();
     RB.entradas_red = RB.entradas_red.filter((x) => x !== red);
     for (const r of RB.rutas) { if (r.video === e.id) r.video = ""; if (r.audio === e.id) r.audio = ""; }
-    rtSel = null; rtCambio(true); rtPintar(); rtOfrecerDeshacer(rt("borrada")(e.nombre)); } })));
+    rtSel = null; rtCambio(); rtPintar(); rtOfrecerDeshacer(rt("borrada")(e.nombre)); } })));
   return t;
 }
 function rtAjustesSalida(r, s) {
@@ -3709,14 +3735,14 @@ function rtAjustesSalida(r, s) {
       const oculto = url.type === "password"; url.type = oculto ? "text" : "password"; ver.textContent = rt(oculto ? "ocultar" : "mostrar"); ver.setAttribute("aria-pressed", String(oculto)); } });
     t.push(rtCampo("rtUrl", rt("url_rtmp"), rel("div", { class: "rt-desliza" }, url, ver)));
   }
-  if (s.tipo === "grabar") t.push(rtCampo("rtFmt", rt("formato"), rel("select", { id: "rtFmt", onchange: (ev) => { s.formato = ev.target.value; rtCambio(true); } },
+  if (s.tipo === "grabar") t.push(rtCampo("rtFmt", rt("formato"), rel("select", { id: "rtFmt", onchange: (ev) => { s.formato = ev.target.value; rtCambio(); } },
     ...["mp4", "mkv"].map((f) => rel("option", { value: f, text: f.toUpperCase(), selected: (s.formato || "mp4") === f })))), rel("div", { class: "nota", text: rt("grabar_nota") }));
   if (s.tipo === "hdmi") {
     const pants = (RD || {}).pantallas || [];
     const actual = s.pantalla && s.pantalla !== "auto" ? s.pantalla : "auto";
     const lista = pants.map((p) => p.conector);
     if (actual !== "auto" && !lista.includes(actual)) lista.unshift(actual);   // pedido pero desconectado
-    t.push(rtCampo("rtPant", rt("pantalla"), rel("select", { id: "rtPant", onchange: (ev) => { s.pantalla = ev.target.value; rtCambio(true); } },
+    t.push(rtCampo("rtPant", rt("pantalla"), rel("select", { id: "rtPant", onchange: (ev) => { s.pantalla = ev.target.value; rtCambio(); } },
       rel("option", { value: "auto", text: rt("pantalla_auto"), selected: actual === "auto" }),
       ...lista.map((c) => { const p = pants.find((x) => x.conector === c);
         return rel("option", { value: c, text: c + (p && p.modo ? " · " + p.modo : "") + (p && p.ruta && p.ruta !== r.id ? " — " + p.ruta_nombre : ""), selected: c === actual }); }))));
@@ -3794,7 +3820,7 @@ function rtNuevaRuta() {
   if (RB.rutas.length >= tope) { rtAviso(rt("tope_rutas")(tope), true); return; }
   const n = RB.rutas.length + 1;
   const r = { id: rtNuevoId("r"), nombre: `${rt("nueva_ruta")} ${n}`, video: "", audio: "", ganancia: 0, retraso: 0, mudo: false, activa: true, salidas: [] };
-  RB.rutas.push(r); rtSel = "r:" + r.id; rtHoja = !matchMedia("(max-width: 980px)").matches; rtCambio(true); rtPintar();
+  RB.rutas.push(r); rtSel = "r:" + r.id; rtHoja = !matchMedia("(max-width: 980px)").matches; rtCambio(); rtPintar();
 }
 function rtAnadirEntrada(tipo) {
   const tope = (RD && RD.limite_entradas) || 32;
@@ -3802,7 +3828,7 @@ function rtAnadirEntrada(tipo) {
   const e = tipo === "ndi"
     ? { id: rtNuevoId("ndi"), tipo, nombre: ((RD.red_ndi || [])[0] || {}).nombre || "NDI", fuente: ((RD.red_ndi || [])[0] || {}).nombre || "" }
     : { id: rtNuevoId("ing"), tipo, nombre: "ATEM" };
-  RB.entradas_red.push(e); rtSel = "e:" + e.id; rtHoja = true; rtCambio(true); rtPintar();
+  RB.entradas_red.push(e); rtSel = "e:" + e.id; rtHoja = true; rtCambio(); rtPintar();
 }
 function rtAnadirSalida(r, tipo) {
   if (tipo === "hdmi" && ((RD || {}).pantallas || []).length <= 1) {
@@ -3816,7 +3842,7 @@ function rtAnadirSalida(r, tipo) {
   if (tipo === "ndi") s.nombre = r.nombre;
   if (tipo === "grabar") s.formato = "mp4";
   if (tipo === "rtmp") s.url = "";
-  r.salidas.push(s); rtSel = "s:" + s.id; rtHoja = !matchMedia("(max-width: 980px)").matches; rtCambio(true); rtPintar();
+  r.salidas.push(s); rtSel = "s:" + s.id; rtHoja = !matchMedia("(max-width: 980px)").matches; rtCambio(); rtPintar();
 }
 
 // ---------------------------------------------------------------- vista lista (el móvil)
@@ -3824,14 +3850,14 @@ function rtPintarLista() {
   const cont = $("rtVistaLista"), ents = rtEntradas();
   const tarjetas = RB.rutas.map((r) => {
     const e = rtEstado(r.id), v = rtEnt(r.video), a = rtEnt(r.audio);
-    const selV = rel("select", { id: "lv-" + r.id, onchange: (ev) => { r.video = ev.target.value; rtCambio(true); rtPintar(); } },
+    const selV = rel("select", { id: "lv-" + r.id, onchange: (ev) => { r.video = ev.target.value; rtCambio(); rtPintar(); } },
       rel("option", { value: "", text: rt("elige_imagen") }), ...ents.filter(daImagen).map((x) => rel("option", { value: x.id, text: x.nombre, selected: x.id === r.video })));
-    const selA = rel("select", { id: "la-" + r.id, onchange: (ev) => { r.audio = ev.target.value; rtCambio(true); rtPintar(); } },
+    const selA = rel("select", { id: "la-" + r.id, onchange: (ev) => { r.audio = ev.target.value; rtCambio(); rtPintar(); } },
       rel("option", { value: "", text: rt("sin_audio") }), ...ents.filter(daAudio).map((x) => rel("option", { value: x.id, text: x.nombre, selected: x.id === r.audio })));
     const audio = r.audio ? rel("div", { class: "rt-bloque" }, (() => { const vu = rel("div", { class: "rt-vu" }, rel("i")); rtVu(vu.firstChild, e); return vu; })(),
-      rtDeslizador("lg-" + r.id, rt("ganancia"), -24, 12, 1, r.ganancia, (x) => `${x > 0 ? "+" : ""}${x} dB`, (x) => { r.ganancia = x; rtCambio(); }),
-      rtDeslizador("lr-" + r.id, rt("retraso"), 0, 1000, 10, r.retraso, (x) => `${x} ms`, (x) => { r.retraso = x; rtCambio(); }),
-      rel("label", { class: "conmutador" }, rel("input", { type: "checkbox", checked: !!r.mudo, onchange: (ev) => { r.mudo = ev.target.checked; rtCambio(true); } }),
+      rtDeslizador("lg-" + r.id, rt("ganancia"), -24, 12, 1, r.ganancia, (x) => `${x > 0 ? "+" : ""}${x} dB`, (x) => { r.ganancia = x; rtVivo(r); }),
+      rtDeslizador("lr-" + r.id, rt("retraso"), 0, 1000, 10, r.retraso, (x) => `${x} ms`, (x) => { r.retraso = x; rtVivo(r); }),
+      rel("label", { class: "conmutador" }, rel("input", { type: "checkbox", checked: !!r.mudo, onchange: (ev) => { r.mudo = ev.target.checked; rtVivo(r); } }),
         rel("span", { text: rt("silenciar") }))) : null;
     const chips = r.salidas.map((s) => rel("div", { class: "rt-chip" }, rtIcono(s.tipo),
       rel("span", { class: "tx" }, rel("b", { text: rt("salidas")[s.tipo] }), rel("small", { text: rtTextoSalida(r, s) })),
@@ -3914,6 +3940,7 @@ function rtIniciar() {
   $("rtVelo").addEventListener("click", rtCerrarHoja);
   document.addEventListener("keydown", (ev) => {
     if (pestana !== "rutas") return;
+    if ((ev.metaKey || ev.ctrlKey) && ev.key.toLowerCase() === "s") { ev.preventDefault(); if (rtSucio && !rtEnviando) rtGuardar(); return; }
     if (ev.key === "Escape") { if (rtTocado) { rtTocado = null; rtMarcarTocado(); } else rtCerrarHoja(); }
     // solo Suprimir: Retroceso es demasiado fácil de pulsar sin querer
     if (ev.key === "Delete" && rtCableSel && !["INPUT", "SELECT", "TEXTAREA"].includes(document.activeElement.tagName)) rtDesconectar(rtCableSel);
