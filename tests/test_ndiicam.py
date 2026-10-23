@@ -1032,7 +1032,9 @@ class Rutas(unittest.TestCase):
 
     def test_un_solo_monitor_y_ndi_sin_repetir(self):
         a = self.ruta(id="a", nombre="A", video="pocket", salidas=[{"tipo": "hdmi"}, {"tipo": "ndi", "nombre": "X"}])
-        b = self.ruta(id="b", nombre="B", video="mview", salidas=[{"tipo": "hdmi"}, {"tipo": "ndi", "nombre": "x"}])
+        # sin audio: la consola ya la usa «A» y un dispositivo ALSA no se comparte
+        b = self.ruta(id="b", nombre="B", video="mview", audio="",
+                      salidas=[{"tipo": "hdmi"}, {"tipo": "ndi", "nombre": "x"}])
         limpias, err, p = self.plan([a, b])
         self.assertEqual(err["b"], ["hdmi_ocupado", "ndi_repetido"])
         self.assertEqual([s["tipo"] for s in limpias[1]["salidas"]], ["ndi"])   # el monitor es de «A»

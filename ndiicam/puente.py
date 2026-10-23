@@ -122,7 +122,7 @@ class ServidorPuente:
             f.write(conf)
         self.conf, self.usuarios, self.clave = conf, usuarios, None
         self.proc = subprocess.Popen([MEDIAMTX, ruta], cwd="/run/ndiicam",
-                                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                                     stdout=None, stderr=None)    # con logLevel warn: solo avisos, al diario
         self.reintento = time.time() + 5
         evento("puente_servidor", puerto=PUERTO_RTMP)
 
@@ -166,7 +166,7 @@ class ServidorPuente:
             f.write(conf_mediamtx(clave, reparto))
         self.clave, self.reparto, self.conf = clave, reparto, None
         self.proc = subprocess.Popen([MEDIAMTX, conf], cwd="/run/ndiicam",
-                                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                                     stdout=None, stderr=None)    # con logLevel warn: solo avisos, al diario
         self.reintento = time.time() + 5     # si muere enseguida, no en bucle
         evento("puente_servidor", puerto=PUERTO_RTMP)
 

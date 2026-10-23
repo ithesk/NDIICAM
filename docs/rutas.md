@@ -29,7 +29,9 @@ lo que se quiere: **qué entra, cómo se junta y a dónde sale**.
   ganancia y el retraso. El resultado es un *programa*.
 - Cada ruta sale por las **salidas** que quieras, todas a la vez.
 
-Una misma entrada puede usarse en varias rutas, por ejemplo la consola en dos programas distintos.
+Una fuente NDI o una emisión entrante pueden usarse en varias rutas. Una cámara o una interfaz
+de audio USB no: el sistema solo deja abrirlas a un proceso, así que la segunda ruta que las pida
+se queda parada (cámara) o sin ese audio (interfaz), con el motivo a la vista.
 
 ## Activarlas
 

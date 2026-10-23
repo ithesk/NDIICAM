@@ -29,7 +29,9 @@ draw what you want: **what comes in, how it is combined, and where it goes out**
   and delay. The result is a *program*.
 - Each route goes out through the **outputs** you choose, all at once.
 
-The same input can be used in several routes, for example the console in two different programs.
+An NDI source or an incoming stream can be used in several routes. A USB camera or audio
+interface cannot: the system only lets one process open them, so the second route that asks for
+one stays stopped (camera) or goes without that audio (interface), with the reason shown.
 
 ## Turning them on
 

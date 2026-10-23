@@ -962,6 +962,7 @@ class Fuentes:
                 self._paso()
             except Exception as ex:  # el supervisor no debe morir nunca
                 evento("fallo_interno", detalle=str(ex))
+            nucleo.latido("fuentes")     # para el watchdog de systemd
             time.sleep(2)
 
     def _paso(self):
