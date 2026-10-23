@@ -46,6 +46,28 @@ def da_audio(e):
     return e["tipo"] in ("usb_audio", "ndi", "ingesta")
 
 
+def entero(valor, defecto=0):
+    """Un número que viene del panel (o de un config.json editado a mano): si no
+    lo es, el valor por defecto, en vez de dejar todas las rutas sin arrancar."""
+    try:
+        return int(float(valor))
+    except (TypeError, ValueError):
+        return defecto
+
+
+def recursos(v, a):
+    """Lo que una ruta ocupa en exclusiva: la cámara (un solo proceso puede abrirla)
+    y el dispositivo ALSA del audio (el micro de una cámara o una interfaz)."""
+    res = []
+    if v is not None and v["tipo"] == "usb_cam":
+        res.append(("cam", v["id"]))
+    if a is not None:
+        dev = a.get("audio_dev") if a["tipo"] == "usb_cam" else a.get("dev") if a["tipo"] == "usb_audio" else None
+        if dev:
+            res.append(("alsa", dev))
+    return res
+
+
 def validar(rutas, entradas):
     """Comprueba una lista de rutas tal como llega del panel. Devuelve (rutas
     normalizadas, {ruta_id: [errores]}). Los errores no impiden guardar: la ruta
@@ -53,8 +75,11 @@ def validar(rutas, entradas):
     por_id = {e["id"]: e for e in entradas}
     vistas, caminos, nombres_ndi, salida_ids = set(), set(), set(), set()
     hdmi_de = None
+    ocupados = {}       # recurso exclusivo -> id de la primera ruta activa que lo usa
     limpias, errores = [], {}
     for r in rutas:
+        if not isinstance(r, dict):
+            continue
         rid = str(r.get("id") or "")[:40]
         if not rid or rid in vistas:
             continue
@@ -62,8 +87,8 @@ def validar(rutas, entradas):
         err = []
         nr = {"id": rid, "nombre": str(r.get("nombre") or "Ruta")[:60],
               "video": str(r.get("video") or ""), "audio": str(r.get("audio") or ""),
-              "ganancia": max(GANANCIA[0], min(GANANCIA[1], int(r.get("ganancia") or 0))),
-              "retraso": max(0, min(RETRASO_MAX, int(r.get("retraso") or 0))),
+              "ganancia": max(GANANCIA[0], min(GANANCIA[1], entero(r.get("ganancia")))),
+              "retraso": max(0, min(RETRASO_MAX, entero(r.get("retraso")))),
               "mudo": bool(r.get("mudo")), "activa": r.get("activa", True) is not False,
               "salidas": []}
         nr["camino"] = camino(r.get("camino") or nr["nombre"], caminos)
@@ -73,13 +98,25 @@ def validar(rutas, entradas):
             err.append("sin_imagen" if not nr["video"] else "imagen_no_esta")
         elif not da_imagen(v):
             err.append("imagen_no_valida")
+            v = None
         a = por_id.get(nr["audio"]) if nr["audio"] else None
         if nr["audio"] and not a:
             err.append("audio_no_esta")
         elif a and not da_audio(a):
             err.append("audio_no_valido")
-        for s in r.get("salidas") or []:
-            tipo = s.get("tipo")
+            a = None
+        if nr["activa"]:
+            # la misma cámara en dos rutas: la segunda se queda parada y lo dice, en
+            # vez de fallar al abrir el dispositivo en bucle. El mismo ALSA (una
+            # interfaz, el micro de una cámara) en dos rutas: la segunda sigue, sin él
+            for rec in recursos(v, a):
+                if rec in ocupados and ocupados[rec] != rid:
+                    err.append("camara_ocupada" if rec[0] == "cam" else "audio_ocupado")
+                else:
+                    ocupados[rec] = rid
+        salidas = r.get("salidas") if isinstance(r.get("salidas"), list) else []
+        for s in salidas:
+            tipo = s.get("tipo") if isinstance(s, dict) else None
             if tipo not in TIPOS_SALIDA:
                 continue
             sid = str(s.get("id") or f"{rid}-{tipo}")[:40]
@@ -90,7 +127,13 @@ def validar(rutas, entradas):
             if tipo == "ndi":
                 ns["nombre"] = str(s.get("nombre") or nr["nombre"])[:48].strip() or "Programa"
                 if ns["nombre"].lower() in nombres_ndi:
+                    # dos fuentes NDI del mismo equipo no pueden llamarse igual: la
+                    # segunda sale con un número detrás, y se avisa
                     err.append("ndi_repetido")
+                    base, n = ns["nombre"][:45], 2
+                    while f"{base} {n}".lower() in nombres_ndi:
+                        n += 1
+                    ns["nombre"] = f"{base} {n}"
                 nombres_ndi.add(ns["nombre"].lower())
                 if v and v["tipo"] == "ndi":
                     err.append("ndi_a_ndi")       # ya es una fuente NDI: no se reemite como NDI
@@ -133,21 +176,27 @@ def plan(rutas, entradas, potente, errores=None):
     for r in rutas:
         if not r["activa"] or errores.get(r["id"]) and any(
                 x in errores[r["id"]] for x in ("sin_imagen", "imagen_no_esta", "imagen_no_valida",
-                                                 "sin_salidas")):
+                                                 "sin_salidas", "camara_ocupada")):
             pausadas.append(r["id"])
             continue
-        if not potente and len(activas) >= LIMITE_LITE:
-            pausadas.append(r["id"])
-            continue
-        activas.append(r["id"])
         v = por_id[r["video"]]
         a = por_id.get(r["audio"]) if r["audio"] else None
+        if a is not None and "audio_ocupado" in errores.get(r["id"], ()):
+            a = None            # otra ruta tiene ese dispositivo: esta va sin audio
         tipos = {s["tipo"] for s in r["salidas"]}
         ndi = next((s["nombre"] for s in r["salidas"] if s["tipo"] == "ndi"), None)
         if "ndi_a_ndi" in errores.get(r["id"], ()):
             ndi = None
         hdmi = "hdmi" in tipos       # validar() ya dejó el monitor a una sola ruta
         publicar = f"live/{r['camino']}" if tipos & set(DE_RED) else None
+        if v["tipo"] == "ndi" and not (hdmi or publicar):
+            # una fuente NDI que solo saldría como NDI: no hay nada que hacer con ella
+            pausadas.append(r["id"])
+            continue
+        if not potente and len(activas) >= LIMITE_LITE:
+            pausadas.append(r["id"])
+            continue
+        activas.append(r["id"])
         # el audio: el de la propia entrada (micrófono de la cámara, el del NDI o el
         # que trae el ATEM) o el de otra (la consola), con sus ajustes
         propio = a is not None and a["id"] == v["id"]
@@ -226,6 +275,7 @@ def desde_modos(cfg, camaras, fuente_cfg, audios):
                       "salidas": [{"tipo": "hdmi"}]})
     # las cámaras: en emisor siempre; en receptor y puente, las que seguían emitiendo
     # (edición Pro) o la que iba al monitor
+    ids = {r["id"] for r in lista}
     for cid, cam in camaras.items():
         aj = fuente_cfg(cid)
         if not aj.get("activa", True):
@@ -237,14 +287,21 @@ def desde_modos(cfg, camaras, fuente_cfg, audios):
                                and not any(s["tipo"] == "hdmi" for r in lista for s in r["salidas"])):
             salidas.append({"tipo": "hdmi"})
             hdmi_cam = cid
-        if aj.get("gpu_salida") == "grabar":
-            salidas.append({"tipo": "grabar", "formato": "mp4"})
-        if aj.get("gpu_salida") == "rtmp" and aj.get("rtmp_url"):
-            salidas.append({"tipo": "rtmp", "url": aj["rtmp_url"]})
+        # la salida por GPU principal y las adicionales (equipo potente)
+        for modo in [aj.get("gpu_salida", "no"), *(aj.get("gpu_extra") or [])]:
+            if modo == "grabar" and not any(s["tipo"] == "grabar" for s in salidas):
+                salidas.append({"tipo": "grabar", "formato": "mp4"})
+            elif modo == "srt" and not any(s["tipo"] == "srt" for s in salidas):
+                salidas.append({"tipo": "srt"})
+            elif modo == "rtmp" and aj.get("rtmp_url") and not any(s["tipo"] == "rtmp" for s in salidas):
+                salidas.append({"tipo": "rtmp", "url": aj["rtmp_url"]})
         if not salidas:
             continue
         audio = aj.get("audio", "auto")
-        lista.append({"id": "cam-" + camino(cam["nombre"]), "nombre": cam["nombre"], "video": cid,
+        # dos cámaras con el mismo nombre no pueden compartir id
+        rid = "cam-" + camino(cam["nombre"], {i[4:] for i in ids if i.startswith("cam-")})
+        ids.add(rid)
+        lista.append({"id": rid, "nombre": cam["nombre"], "video": cid,
                       "audio": cid if audio == "auto" else (f"audio:{audio}" if audio in audios else ""),
                       "retraso": aj.get("retraso_audio", 0), "salidas": salidas})
     return red, lista

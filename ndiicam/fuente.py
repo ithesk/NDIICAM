@@ -41,10 +41,31 @@ def informar(datos):
     sys.stdout.flush()
 
 
-def liberar_disco(d, reserva):
-    """Como un grabador continuo: si el disco se llena, fuera lo más viejo."""
+RESERVA_MINIMA = 2 * 1024 ** 3      # lo que tiene que quedar libre, como poco
+RESERVA_SIN_TASA = 4 * 1024 ** 3    # si no se sabe a cuánto se graba (una copia del ATEM)
+SEGMENTO_S = 10 * 60                # duración de cada fichero de grabación
+
+
+def leer_cfg():
+    """La configuración del proceso: una línea JSON por la entrada estándar (así las
+    claves de emisión no quedan a la vista en la lista de procesos) o, a mano desde
+    una consola, como primer argumento."""
+    if len(sys.argv) > 1:
+        return json.loads(sys.argv[1])
+    return json.loads(sys.stdin.readline())
+
+
+def liberar_disco(d, reserva=None, kbps=None):
+    """Como un grabador continuo: si el disco se llena, fuera lo más viejo (MP4 y
+    MKV, lo que haya grabado cualquier proceso). La reserva: dos ficheros a la tasa
+    que se graba, y nunca menos de 2 GB; sin tasa conocida, 4 GB. Se comprueba al
+    abrir cada fichero, así que tiene que caber el siguiente entero."""
+    if reserva is None:
+        reserva = (max(RESERVA_MINIMA, 2 * SEGMENTO_S * int(kbps) * 1000 // 8)
+                   if kbps else RESERVA_SIN_TASA)
     os.makedirs(d, exist_ok=True)
-    viejos = sorted(glob.glob(os.path.join(d, "*.mp4")), key=os.path.getmtime)
+    viejos = sorted(glob.glob(os.path.join(d, "*.mp4")) + glob.glob(os.path.join(d, "*.mkv")),
+                    key=os.path.getmtime)
     while viejos and shutil.disk_usage(d).free < reserva:
         try:
             os.remove(viejos.pop(0))
@@ -265,8 +286,12 @@ def tramo_salida(cfg):
     y retardo funcionen igual."""
     ndi = con_ndi(cfg)
     # colas entre etapas: conversión y envío en hilos distintos (en un solo
-    # hilo un Atom no pasa de ~22 fps a 1080p)
-    video = (f"queue name=q2 {Q} ! videoconvert n-threads={os.cpu_count() or 2}"
+    # hilo un Atom no pasa de ~22 fps a 1080p). La conversión en varios hilos solo
+    # compensa al pasar del I420 de jpegdec a UYVY; reordenar YUY2 a UYVY (o no
+    # tocar el UYVY que ya da la GPU) va limitado por la memoria, y los hilos solo
+    # añaden sincronización: medido, 3,2 ms por fotograma con 4 frente a 1,0 con 1
+    hilos = 1 if cfg.get("fmt") != "MJPG" or cfg.get("decodificadores") == "gpu" else (os.cpu_count() or 2)
+    video = (f"queue name=q2 {Q} ! videoconvert n-threads={hilos}"
              f" ! video/x-raw,format=UYVY ! queue name=q3 {Q}")
     if not ndi:
         # solo al HDMI (el multiview del ATEM para el operador) o a ninguna parte
@@ -597,8 +622,7 @@ class SalidaGPU:
     red o el disco fallan, el NDI no se entera; se informa y se reintenta."""
 
     REINTENTO = 10              # segundos entre intentos tras un fallo
-    RESERVA = 2 * 1024 ** 3     # al grabar, borrar lo más viejo si queda menos libre
-    SEGMENTO = 10 * 60          # duración de cada fichero de grabación, en segundos
+    SEGMENTO = SEGMENTO_S       # duración de cada fichero de grabación, en segundos
 
     def __init__(self, cfg, origen, audio, g=None):
         # g: una salida adicional (equipo potente); sin él, la principal, cfg["gpu"]
@@ -680,12 +704,18 @@ class SalidaGPU:
                    f" mode=listener latency={int(g.get('latencia', 200))} wait-for-connection=false sync=false")
         else:
             mux = f"flvmux name=mux streamable=true ! rtmp2sink name=red sync=false async-connect=true"
-        a = ""
         if self.audio and self.caps_audio:
             a = (f" appsrc name=ga format=time is-live=true caps=\"{self.caps_audio}\""
                  " ! queue max-size-time=1000000000 leaky=downstream ! audioconvert ! audioresample"
                  " ! audio/x-raw,rate=48000,channels=2 ! voaacenc bitrate=128000 ! aacparse"
                  f" ! queue ! {pad_a}")
+        else:
+            # sin micrófono, silencio: lo que se publica lleva siempre pista de audio.
+            # Quien lo lea (un relevo que graba o reenvía, OBS, la TV) no tiene que
+            # adivinar si vendrá, y un multiplexor que la espera no se queda colgado
+            a = (" audiotestsrc name=ga_sil wave=silence is-live=true"
+                 " ! audio/x-raw,format=S16LE,rate=48000,channels=2"
+                 f" ! voaacenc bitrate=64000 ! aacparse ! queue ! {pad_a}")
         return f"{mux} {v}{a}"
 
     def _crear(self):
@@ -749,7 +779,7 @@ class SalidaGPU:
         return os.path.join(self.g["dir"], f"{nombre}_{time.strftime('%Y-%m-%d_%H-%M-%S')}.mp4")
 
     def _liberar_disco(self):
-        liberar_disco(self.g["dir"], self.RESERVA)
+        liberar_disco(self.g["dir"], kbps=self.g.get("kbps"))
 
     def _mensaje(self, bus, msg):
         if msg.type == Gst.MessageType.ERROR:
@@ -789,13 +819,16 @@ class SalidaGPU:
             e = p.get_by_name(nombre)
             if e is not None:
                 e.emit("end-of-stream")
+        sil = p.get_by_name("ga_sil")
+        if sil is not None:
+            sil.send_event(Gst.Event.new_eos())
         p.get_bus().timed_pop_filtered(3 * Gst.SECOND,
                                        Gst.MessageType.EOS | Gst.MessageType.ERROR)
         p.set_state(Gst.State.NULL)
 
 
 def main():
-    cfg = json.loads(sys.argv[1])
+    cfg = leer_cfg()
     Gst.init(None)
     deco = cfg.get("decodificadores") or 1
     if cfg["fmt"] == "MJPG" and deco == "gpu":
@@ -844,18 +877,36 @@ def main():
             Gst.PadProbeType.BUFFER, guardar_preview(cfg["preview"]))
 
     salidas = []
+    sondas = {}         # salida -> [(pad, id de sonda)], para poder desmontarla
+    # el pipeline que tiene la cámara marca el reloj y la hora base
+    origen = flujo.captura if isinstance(flujo, Reparto) else flujo.p
+
+    def montar_salida(g=None, principal=True):
+        """Una salida H.264 (la principal, cfg["gpu"], o una adicional g) colgada
+        de la cámara con sondas: se puede añadir y quitar con la cámara en marcha,
+        sin cortar el NDI (una ruta que añade OBS o la grabación)."""
+        s = SalidaGPU(cfg, origen, bool(cfg.get("audio")), None if principal else g)
+        s.retraso_ns = retraso
+        pad = flujo.elemento("src").get_static_pad("src")
+        ids = [(pad, pad.add_probe(Gst.PadProbeType.BUFFER, s.jpeg))]
+        if cfg.get("audio"):
+            pad = flujo.elemento("af").get_static_pad("src")
+            ids.append((pad, pad.add_probe(Gst.PadProbeType.BUFFER, s.sonido)))
+        sondas[s] = ids
+        salidas.append(s)
+        return s
+
+    def desmontar_salida(s):
+        for pad, i in sondas.pop(s, []):
+            pad.remove_probe(i)
+        salidas.remove(s)
+        s.parar()
+
     if cfg.get("gpu") and cfg["fmt"] == "MJPG":
-        # el pipeline que tiene la cámara marca el reloj y la hora base
-        origen = flujo.captura if isinstance(flujo, Reparto) else flujo.p
-        salidas.append(SalidaGPU(cfg, origen, bool(cfg.get("audio"))))
+        montar_salida()
         # en un equipo potente, más salidas a la vez, cada una por su lado
-        salidas += [SalidaGPU(cfg, origen, bool(cfg.get("audio")), g)
-                    for g in cfg.get("gpu_extra") or []]
-        for s in salidas:
-            s.retraso_ns = retraso
-            flujo.elemento("src").get_static_pad("src").add_probe(Gst.PadProbeType.BUFFER, s.jpeg)
-            if cfg.get("audio"):
-                flujo.elemento("af").get_static_pad("src").add_probe(Gst.PadProbeType.BUFFER, s.sonido)
+        for g in cfg.get("gpu_extra") or []:
+            montar_salida(g, principal=False)
 
     bucle = GLib.MainLoop()
     salida = [0]
@@ -915,9 +966,10 @@ def main():
             return True
         if "retraso_audio" in d:
             # se ajusta en marcha, sin cortar: el oído decide
-            ns = fijar_retraso(flujo, d["retraso_audio"])
+            nonlocal retraso
+            retraso = fijar_retraso(flujo, d["retraso_audio"])
             for s in salidas:
-                s.retraso_ns = ns
+                s.retraso_ns = retraso
         if "ganancia" in d or "mudo" in d:
             fijar_ganancia(flujo, d.get("ganancia", 0), d.get("mudo", False))
         if "calibrar" in d:
@@ -927,6 +979,19 @@ def main():
             for s in salidas:
                 if d.get("modo") in (None, s.g["modo"]):
                     s.habilitar(bool(d["gpu_activa"]))
+        if "gpu" in d and cfg["fmt"] == "MJPG":
+            # otra salida principal (o ninguna), en marcha: la de antes se cierra
+            # limpia y la nueva se cuelga de la cámara, sin tocar el NDI
+            actual = next((s for s in salidas if s.principal), None)
+            if actual is not None and actual.g != d["gpu"]:
+                desmontar_salida(actual)
+                actual = None
+            if d["gpu"] and actual is None:
+                cfg["gpu"] = d["gpu"]
+                montar_salida()
+            elif not d["gpu"]:
+                cfg["gpu"] = None
+                informar({"gpu_estado": None})
         return True
     GLib.io_add_watch(sys.stdin, GLib.IO_IN | GLib.IO_HUP, orden)
     GLib.unix_signal_add(GLib.PRIORITY_HIGH, signal.SIGTERM, parar)

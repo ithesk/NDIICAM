@@ -3,10 +3,13 @@
 # Copyright (C) 2026 Pablo Holguín. GPL-3.0-or-later: ver LICENSE.
 """Lee el programa que una ruta publica en MediaMTX y, sin recodificar nada:
 
-    relevo.py '<json>'   {"desde": "rtmp://127.0.0.1:1935/live/culto",
+    relevo.py  (una línea JSON por la entrada estándar; ver leer_cfg en fuente.py)
+                         {"desde": "rtmp://127.0.0.1:1935/live/culto",
                           "modo": "rtmp", "url": "rtmp://a.rtmp.youtube.com/live2/<clave>"}
                          {"desde": ..., "modo": "grabar", "dir": "/var/lib/ndiicam/grabaciones",
                           "prefijo": "culto", "formato": "mp4" | "mkv"}
+                         y con_audio: si el programa trae pista de audio (lo que
+                         publica NDIICAM la trae siempre; se mira por si acaso)
 
 Un proceso por salida: si YouTube corta o el disco falla, las demás salidas de la
 ruta no se enteran. Como los demás procesos: cada 2 s una línea JSON con los
@@ -22,34 +25,41 @@ import gi
 gi.require_version("Gst", "1.0")
 from gi.repository import GLib, Gst  # noqa: E402
 
-from fuente import informar, liberar_disco  # noqa: E402
+from fuente import informar, leer_cfg, liberar_disco  # noqa: E402
 
 CONTADORES = {"out": 0, "bytes": 0, "aud": 0}
-RESERVA = 2 * 1024 ** 3     # al grabar, borrar lo más viejo si queda menos libre
 SEGMENTO = 10 * 60          # duración de cada fichero, en segundos
 
 
 def descripcion(cfg):
+    """El pipeline. La rama de audio solo si el programa la trae: un multiplexor
+    con una entrada de audio por la que nunca llega nada no escribe ni un byte y
+    no da error (se quedaría "esperando" para siempre). La dirección de origen no
+    va en el texto: se pone con set_property, como la de destino."""
+    cola = "queue max-size-time=3000000000"
     if cfg["modo"] == "rtmp":
         # FLV tal cual: de un RTMP a otro
-        return (f"rtmp2src name=src location={cfg['desde']} ! flvdemux name=d "
-                "d.video ! queue max-size-time=3000000000 ! h264parse name=hv ! m.video "
-                "d.audio ! queue max-size-time=3000000000 ! aacparse name=ha ! m.audio "
+        desc = (f"rtmp2src name=src ! flvdemux name=d d.video ! {cola} ! h264parse name=hv ! m.video "
                 "flvmux name=m streamable=true ! rtmp2sink name=out sync=false async-connect=true")
+        if cfg.get("con_audio", True):
+            desc += f" d.audio ! {cola} ! aacparse name=ha ! m.audio"
+        return desc
     mux = "matroskamux" if cfg.get("formato") == "mkv" else "mp4mux"
     props = "" if mux == "matroskamux" else ' muxer-properties="properties,fragment-duration=(uint)1000"'
-    return (f"rtmp2src name=src location={cfg['desde']} ! flvdemux name=d "
-            "d.video ! queue max-size-time=3000000000 ! h264parse name=hv ! rec.video "
-            "d.audio ! queue max-size-time=3000000000 ! aacparse name=ha ! rec.audio_0 "
+    desc = (f"rtmp2src name=src ! flvdemux name=d d.video ! {cola} ! h264parse name=hv ! rec.video "
             f"splitmuxsink name=rec muxer-factory={mux} max-size-time={SEGMENTO * Gst.SECOND}"
             f" async-finalize=true{props}")
+    if cfg.get("con_audio", True):
+        desc += f" d.audio ! {cola} ! aacparse name=ha ! rec.audio_0"
+    return desc
 
 
 def main():
-    cfg = json.loads(sys.argv[1])
+    cfg = leer_cfg()
     os.nice(5)
     Gst.init(None)
     p = Gst.parse_launch(descripcion(cfg))
+    p.get_by_name("src").set_property("location", cfg["desde"])
     if cfg["modo"] == "rtmp":
         p.get_by_name("out").set_property("location", cfg["url"])
     else:
@@ -57,7 +67,7 @@ def main():
         os.makedirs(d, exist_ok=True)
 
         def nombre(_mux, _frag):
-            liberar_disco(d, RESERVA)
+            liberar_disco(d)        # sin tasa conocida: es una copia de lo que llega
             return os.path.join(d, f"{cfg.get('prefijo') or 'ruta'}_{time.strftime('%Y-%m-%d_%H-%M-%S')}.{ext}")
         p.get_by_name("rec").connect("format-location", nombre)
 
@@ -69,7 +79,9 @@ def main():
             return Gst.PadProbeReturn.OK
         return probe
     p.get_by_name("hv").get_static_pad("src").add_probe(Gst.PadProbeType.BUFFER, contar("out", True))
-    p.get_by_name("ha").get_static_pad("src").add_probe(Gst.PadProbeType.BUFFER, contar("aud"))
+    ha = p.get_by_name("ha")
+    if ha is not None:
+        ha.get_static_pad("src").add_probe(Gst.PadProbeType.BUFFER, contar("aud"))
 
     bucle = GLib.MainLoop()
     salida = [0]

@@ -17,7 +17,57 @@ from nucleo import (AP_IF, AP_IP, FUENTE_PY, GRABACIONES, MAX_DECODIFICADORES, P
 from camaras import audio_dispositivos, audio_hdmi, camaras, pantallas, resolucion_pantalla
 from gpu import capacidad_gpu, capacidad_vpp, decodificador_h264, edicion, entorno_va, simultaneo
 import rutas as rutas_mod
-from puente import PUENTE, clave_puente, conf_mediamtx_rutas
+from puente import PUENTE, clave_puente, conf_mediamtx_rutas, usuarios_rutas
+
+
+def lanzar(script, obj, env=None):
+    """Arranca un proceso hijo y le pasa su configuración por la entrada estándar
+    (una línea JSON): así las claves de emisión y de ingesta no quedan a la vista
+    en la lista de procesos. Las órdenes posteriores van por el mismo canal."""
+    proc = subprocess.Popen([sys.executable, script], stdin=subprocess.PIPE,
+                            stdout=subprocess.PIPE, text=True, env=env)
+    try:
+        proc.stdin.write(json.dumps(obj) + "\n")
+        proc.stdin.flush()
+    except OSError:
+        pass
+    return proc
+
+
+def terminar(proc, espera=8):
+    """Pide al proceso que acabe (con SIGTERM los hijos cierran limpio, con EOS, el
+    fichero en curso) y lo remata pasada la espera si no lo hace, sin bloquear a
+    quien llama: parar un relevo no puede tener al supervisor 8 s quieto. Devuelve
+    el proceso, por si hay que esperarlo (ver esperar_fin)."""
+    if proc is None or proc.poll() is not None:
+        return proc
+    try:
+        if proc.stdin:
+            proc.stdin.close()      # el hijo ve el fin de las órdenes
+    except OSError:
+        pass
+    proc.terminate()
+
+    def rematar():
+        try:
+            proc.wait(espera)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+    threading.Thread(target=rematar, daemon=True).start()
+    return proc
+
+
+def esperar_fin(procs, segundos=5):
+    """Espera, como mucho 'segundos' en total, a que mueran: antes de arrancar otro
+    proceso sobre la misma cámara, el mismo ALSA o el HDMI, que son de uno solo."""
+    limite = time.monotonic() + segundos
+    for p in procs:
+        if p is None:
+            continue
+        try:
+            p.wait(max(0.0, limite - time.monotonic()))
+        except subprocess.TimeoutExpired:
+            pass
 
 
 class Fuente:
@@ -58,9 +108,7 @@ class Fuente:
         self.gpu_extra = {g["modo"]: {"estado": "iniciando", "error": ""}
                           for g in obj.get("gpu_extra") or []}
         self.gpu_pedida = None      # última orden de grabar (True/False) enviada al proceso
-        self.proc = subprocess.Popen([sys.executable, FUENTE_PY, json.dumps(obj)],
-                                     stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True,
-                                     env=entorno_va())
+        self.proc = lanzar(FUENTE_PY, obj, env=entorno_va())
         threading.Thread(target=self._leer, args=(self.proc,), daemon=True).start()
 
     def orden(self, d):
@@ -80,6 +128,8 @@ class Fuente:
                 d = json.loads(linea)
             except ValueError:
                 continue
+            if proc is not self.proc:
+                break               # un informe tardío del proceso anterior no es de este
             if "gpu_error" in d:
                 # la salida GPU va aparte: el NDI sigue y fuente.py la reintenta
                 if self.gpu["error"] != d["gpu_error"]:
@@ -149,13 +199,8 @@ class Fuente:
 
     def detener(self):
         proc, self.proc = self.proc, None
-        if proc and proc.poll() is None:
-            proc.terminate()
-            try:
-                proc.wait(5)
-            except subprocess.TimeoutExpired:
-                proc.kill()
         self.obj = self.desde = None
+        return terminar(proc, 5)
 
     def medir(self, t):
         """Tasas desde la última medición; detecta la pérdida de imagen."""
@@ -264,8 +309,7 @@ class Reposo:
 
     def arrancar(self, obj):
         self.obj = obj
-        self.proc = subprocess.Popen([sys.executable, REPOSO_PY, json.dumps(obj)],
-                                     stdout=subprocess.PIPE, text=True)
+        self.proc = lanzar(REPOSO_PY, obj)
         threading.Thread(target=self._leer, args=(self.proc,), daemon=True).start()
 
     def _leer(self, proc):
@@ -284,13 +328,8 @@ class Reposo:
 
     def detener(self):
         proc, self.proc = self.proc, None
-        if proc and proc.poll() is None:
-            proc.terminate()
-            try:
-                proc.wait(5)
-            except subprocess.TimeoutExpired:
-                proc.kill()
         self.obj = None
+        return terminar(proc, 5)
 
 class Receptor:
     """Una fuente NDI de la red mostrada en el HDMI desde un proceso receptor.py."""
@@ -316,8 +355,7 @@ class Receptor:
         self.estado, self.error = "conectando", ""
         self.c, self.prev = {}, None
         self.stats = {"fps": 0, "audio_activo": False, "audio_db": None, "latencia_ms": None}
-        self.proc = subprocess.Popen([sys.executable, RECEPTOR_PY, json.dumps(obj)],
-                                     stdout=subprocess.PIPE, text=True, env=entorno_va())
+        self.proc = lanzar(RECEPTOR_PY, obj, env=entorno_va())
         threading.Thread(target=self._leer, args=(self.proc,), daemon=True).start()
 
     def _leer(self, proc):
@@ -339,26 +377,28 @@ class Receptor:
     def _fallo(self, error, elemento):
         if self.proc is None:
             return
-        nombre = self.obj["nombre"]
-        puente = self.obj.get("origen") == "puente"
+        # el objeto puede haberse soltado ya (detener desde otro hilo): copia segura
+        obj = self.obj or {}
+        nombre = obj.get("nombre", "")
+        puente = obj.get("origen") == "puente"
         if error == "eos" or "demultiplex" in error.lower() or (
-                puente and self.obj and (error in ("proceso", "arranque") or "rtmp" in error.lower()
-                                         or "connect" in error.lower() or "stream" in error.lower())):
+                puente and (error in ("proceso", "arranque") or "rtmp" in error.lower()
+                            or "connect" in error.lower() or "stream" in error.lower())):
             error = "sin_senal"     # así avisa ndisrc de que la fuente dejó de emitir
         if error == "plano_sin_escala":
             # se vuelve a arrancar enseguida escalando por CPU (dura lo que dure el servicio)
             self.plano_fallido = True
             evento("rx_plano_sin_escala", fuente=nombre)
             espera = 1
-        elif (self.obj.get("gpu_h264") and elemento in ("dec", "vpp")
-              or self.obj.get("gpu_h264") and self.estado == "conectando"
+        elif (obj.get("gpu_h264") and elemento in ("dec", "vpp")
+              or obj.get("gpu_h264") and self.estado == "conectando"
               and "va" in error.lower()):
             self.gpu_fallida = True
             evento("rx_gpu_fallida", fuente=nombre, detalle=error)
             espera = 1
-        elif self.obj.get("audio") and (elemento in ("asink", "qa") or "alsa" in error.lower()):
+        elif obj.get("audio") and (elemento in ("asink", "qa") or "alsa" in error.lower()):
             # el audio HDMI hizo caer el pipeline: seguir sin él
-            self.audio_fallido = self.obj["audio"]
+            self.audio_fallido = obj["audio"]
             evento("rx_audio_fallo", fuente=nombre, detalle=error)
             espera = 1
         else:
@@ -376,13 +416,8 @@ class Receptor:
 
     def detener(self):
         proc, self.proc = self.proc, None
-        if proc and proc.poll() is None:
-            proc.terminate()
-            try:
-                proc.wait(5)
-            except subprocess.TimeoutExpired:
-                proc.kill()
         self.obj = self.desde = None
+        return terminar(proc, 5)
 
     def medir(self, t):
         """Tasas desde el último informe. A diferencia de una cámara, que no
@@ -433,9 +468,7 @@ class Auxiliar:
         self.estado, self.error = "conectando", ""
         self.c, self.prev = {}, None
         self.stats = {"fps": 0, "mbps": 0, "audio_activo": False}
-        self.proc = subprocess.Popen([sys.executable, self.script, json.dumps(obj)],
-                                     stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True,
-                                     env=entorno_va())
+        self.proc = lanzar(self.script, obj, env=entorno_va())
         threading.Thread(target=self._leer, args=(self.proc,), daemon=True).start()
 
     def orden(self, d):
@@ -478,13 +511,8 @@ class Auxiliar:
 
     def detener(self):
         proc, self.proc = self.proc, None
-        if proc and proc.poll() is None:
-            proc.terminate()
-            try:
-                proc.wait(8)        # cierra el MP4 en curso
-            except subprocess.TimeoutExpired:
-                proc.kill()
         self.obj = self.desde = None
+        return terminar(proc, 8)    # 8 s: que cierre el fichero en curso
 
     def medir(self, t):
         c = dict(self.c)
@@ -515,15 +543,20 @@ class MotorRutas:
     que se puede (retraso, ganancia, silencio) sin cortar. Los procesos son los de
     siempre: Fuente (cámaras), Auxiliar (programa, reemisión, relevo) y Receptor."""
 
-    VIVOS = ("retraso_audio", "ganancia", "mudo")    # se cambian sin reiniciar
+    # se cambian sin reiniciar: el audio en marcha, y la salida H.264 de una cámara
+    # (fuente.py la monta y desmonta sin cortar el NDI)
+    VIVOS = ("retraso_audio", "ganancia", "mudo", "gpu")
 
     def __init__(self, sup):
         self.sup = sup          # Fuentes: config, audio, objetivo() de las cámaras
         self.procs = {}         # clave -> objeto de proceso
         self.ultimo = {"procesos": [], "activas": [], "pausadas": [], "mediamtx": {}}
-        self.errores = {}
+        self.errores = {}       # ruta -> errores; se sustituye entero al final de cada paso
+        self._err = {}          # los del paso en curso (validar + lo que no se pudo arrancar)
+        self.limpias = []
         self.entradas = []
-        self.hdmi = False       # alguna ruta tiene el monitor
+        self.hdmi = False       # algún proceso de las rutas usa (o va a usar) el monitor
+        self.soltar_hdmi = None  # lo pone Fuentes: para la pantalla de ayuda antes de arrancar
 
     def entradas_actuales(self, cams, cfg):
         """Las cámaras e interfaces de audio conectadas, y las entradas de red guardadas."""
@@ -543,13 +576,25 @@ class MotorRutas:
         return ents
 
     def paso(self, cfg, cams, monitor):
+        self.planificar(cfg, cams)
+        self.aplicar(cfg, cams, monitor)
+
+    def planificar(self, cfg, cams):
+        """Entradas y rutas → plan, sin tocar ningún proceso."""
         self.entradas = self.entradas_actuales(cams, cfg)
-        limpias, self.errores = rutas_mod.validar(cfg.get("rutas") or [], self.entradas)
-        pl = rutas_mod.plan(limpias, self.entradas, simultaneo(cfg), self.errores)
-        self.ultimo, self.limpias = pl, limpias
+        limpias, err = rutas_mod.validar(cfg.get("rutas") or [], self.entradas)
+        pl = rutas_mod.plan(limpias, self.entradas, simultaneo(cfg), err)
+        self.ultimo, self.limpias, self._err = pl, limpias, err
+        return pl
+
+    def aplicar(self, cfg, cams, monitor):
+        """Arranca lo que falta, para lo que sobra y ajusta en marcha lo que se puede."""
+        pl = self.ultimo
         m = pl["mediamtx"]
         if m["necesario"] and PUENTE.disponible():
-            PUENTE.arrancar_conf(conf_mediamtx_rutas(m["ingestas"], [x["camino"] for x in m["publicaciones"]]))
+            # la conf no cambia con las rutas (ver conf_mediamtx_rutas) y los permisos
+            # de las ingestas se aplican por la API: MediaMTX no se reinicia nunca aquí
+            PUENTE.arrancar_conf(conf_mediamtx_rutas(m["ingestas"]), usuarios_rutas(m["ingestas"]))
         elif not m["necesario"]:
             PUENTE.detener()
         deseados = {}
@@ -558,24 +603,40 @@ class MotorRutas:
             if obj is not None:
                 deseados[pr["clave"]] = (pr, obj)
         self.hdmi = any(pr.get("hdmi") for pr, _ in deseados.values())
+        moribundos = []
         for clave in list(self.procs):
             if clave not in deseados:
-                self.procs.pop(clave).detener()
+                moribundos.append(self.procs.pop(clave).detener())
         for clave, (pr, obj) in deseados.items():
             p = self.procs.get(clave)
             if p is None:
                 p = self.procs[clave] = self.nuevo(pr, cams)
-            if p.proc is not None and p.obj and p.obj != obj:
+            if p.proc is not None and p.obj and (p.obj != obj or getattr(p, "forzar_reinicio", False)):
                 fijo = {k: v for k, v in obj.items() if k not in self.VIVOS}
                 antes = {k: v for k, v in p.obj.items() if k not in self.VIVOS}
-                if fijo == antes:
-                    p.orden({k: obj[k] for k in self.VIVOS if k in obj})   # en marcha
+                if fijo == antes and not getattr(p, "forzar_reinicio", False):
+                    # solo lo que se cambia, en marcha
+                    cambios = {k: obj[k] for k in self.VIVOS if k in obj and obj[k] != p.obj.get(k)}
+                    p.orden(cambios)
+                    if "gpu" in cambios and isinstance(p, Fuente):
+                        p.gpu = {"estado": "iniciando" if obj["gpu"] else None, "error": ""}
                     p.obj = obj
                 else:
-                    p.detener()
+                    moribundos.append(p.detener())
                     evento("aplicando", fuente=pr["nombre_ruta"])
-            if p.proc is None and time.time() >= p.reintento:
-                p.arrancar(obj)
+            p.forzar_reinicio = False
+        arrancables = [(pr, obj) for clave, (pr, obj) in deseados.items()
+                       if self.procs[clave].proc is None and time.time() >= self.procs[clave].reintento]
+        if arrancables:
+            # lo que se paró puede tener la cámara, el ALSA o el HDMI que otro va a
+            # coger: que lo suelte antes (acotado). Y la pantalla de ayuda igual
+            if self.soltar_hdmi and any(pr.get("hdmi") for pr, _ in arrancables):
+                moribundos.append(self.soltar_hdmi())
+            esperar_fin(moribundos)
+            for pr, obj in arrancables:
+                self.procs[pr["clave"]].arrancar(obj)
+        # los errores, de una vez: el panel los lee desde otro hilo
+        self.errores = {k: sorted(set(v)) for k, v in self._err.items() if v}
 
     def nuevo(self, pr, cams):
         if pr["clase"] == "camara":
@@ -586,35 +647,52 @@ class MotorRutas:
                          "relevo": RELEVO_PY}[pr["clase"]], pr["clase"])
 
     def objeto(self, pr, cfg, cams, monitor):
-        """Lo que se le pasa al proceso: el mismo formato que en los modos."""
+        """Lo que se le pasa al proceso: el mismo formato que en los modos. None si
+        aún no toca arrancarlo (lo que lee de MediaMTX espera a que alguien publique;
+        pero solo para arrancar: el que ya corre sigue aunque la fuente parpadee, y
+        es él quien nota el corte y lo dice)."""
         local = PUERTO_RTMP_LOCAL
         a = pr.get("audio") or {}
         con_audio = a.get("de") is not None
         vivos = {"retraso_audio": a.get("retraso", 0) if con_audio else 0,
                  "ganancia": a.get("ganancia", 0), "mudo": bool(a.get("mudo")) or not con_audio}
         hdmi = monitor["id"] if pr.get("hdmi") and monitor else None
+        p = self.procs.get(pr["clave"])
+        corriendo = p is not None and p.proc is not None
         if pr["clase"] == "camara":
-            # el proceso que ya corre (lo que aprendió: hilos, GPU) o uno nuevo
-            f = self.procs.get(pr["clave"]) or Fuente(cams[pr["cam"]])
+            # el proceso que ya corre (lo que aprendió: hilos, GPU, qué le falló) o uno nuevo
+            f = p or Fuente(cams[pr["cam"]])
             aj = {**self.sup.config.fuente(pr["cam"]), "solo_monitor": False, "gpu_extra": [],
                   "gpu_salida": "rtmp" if pr["publicar"] else "no",
                   "rtmp_url": f"{local}/{pr['publicar']}" if pr["publicar"] else ""}
             obj = self.sup.objetivo(f, aj)
             if pr["publicar"] and not obj["gpu"]:
-                self.errores.setdefault(pr["ruta"], []).append("sin_gpu")   # no se puede codificar
+                self._err.setdefault(pr["ruta"], []).append("sin_gpu")   # no se puede codificar
+            dev = a.get("dev") if con_audio else None
+            if dev and dev == f.audio_fallido:
+                # el audio tumbó el pipeline: sigue sin él, y el panel lo dice
+                self._err.setdefault(pr["ruta"], []).append("audio_fallido")
+                dev = None
+            if hdmi and f.hdmi_fallido:
+                self._err.setdefault(pr["ruta"], []).append("hdmi_fallido")
+                hdmi = None
             obj.update(nombre=pr["ndi"] or cams[pr["cam"]]["nombre"], ndi=bool(pr["ndi"]),
-                       audio=a.get("dev") if con_audio else None, hdmi=hdmi,
-                       solo_monitor=False, preview=ruta_preview(pr["cam"]), **vivos)
+                       audio=dev, hdmi=hdmi, solo_monitor=False, preview=ruta_preview(pr["cam"]), **vivos)
             if not obj["audio"]:
                 obj.update(retraso_audio=0, baja_latencia=False)
             return obj
         if pr["clase"] == "programa":
+            info = PUENTE.ruta_info(pr["entrada"])
+            if not corriendo and not info.get("publicando"):
+                return None         # el ATEM aún no publica: arrancar ahora sería fallar
+            # si lo que llega trae audio se decide al arrancar (cambiarlo reinicia)
+            con = p.obj.get("con_audio", True) if corriendo else trae_audio(info)
             return {"nombre": pr["nombre_ruta"], "entrada": f"{local}/{pr['entrada']}",
-                    "salida": f"{local}/{pr['publicar']}",
+                    "salida": f"{local}/{pr['publicar']}", "con_audio": con,
                     "audio": a.get("dev") if a.get("de") == "aparte" else None, "grabar": None, **vivos}
         if pr["clase"] == "receptor":
             if pr["origen"] == "rtmp":
-                if not PUENTE.ruta_lista(pr["fuente"]):
+                if not corriendo and not PUENTE.ruta_lista(pr["fuente"]):
                     return None         # todavía no publica el programa
                 return {"origen": "puente", "nombre": pr["nombre_ruta"], "url": f"{local}/{pr['fuente']}",
                         "decodificador": decodificador_h264(), "hdmi": hdmi,
@@ -628,7 +706,7 @@ class MotorRutas:
         if pr["clase"] == "reemision":
             cap = capacidad_gpu()
             if not cap["disponible"]:
-                self.errores.setdefault(pr["ruta"], []).append("sin_gpu")
+                self._err.setdefault(pr["ruta"], []).append("sin_gpu")
                 return None
             return {"nombre": pr["fuente"], "equipo": f"NDIICAM {socket.gethostname()}",
                     "codificador": cap["codificador"], "vpp": capacidad_vpp()["vpp"], "kbps": 8000,
@@ -636,9 +714,11 @@ class MotorRutas:
                     "audio_dev": a.get("dev") if a.get("de") == "aparte" else None,
                     "sin_audio": not con_audio, **vivos}
         if pr["clase"] == "relevo":
-            if not PUENTE.ruta_lista(pr["desde"]):
+            info = PUENTE.ruta_info(pr["desde"])
+            if not corriendo and not info.get("publicando"):
                 return None             # aún no hay nada que reenviar o grabar
-            obj = {"nombre": pr["nombre_ruta"], "desde": f"{local}/{pr['desde']}", "modo": pr["modo"]}
+            obj = {"nombre": pr["nombre_ruta"], "desde": f"{local}/{pr['desde']}", "modo": pr["modo"],
+                   "con_audio": p.obj.get("con_audio", True) if corriendo else trae_audio(info)}
             if pr["modo"] == "rtmp":
                 obj["url"] = pr["url"]
             else:
@@ -651,9 +731,24 @@ class MotorRutas:
             p.medir(t)
 
     def detener(self):
-        for p in self.procs.values():
-            p.detener()
-        self.procs = {}
+        """Para todo y devuelve los procesos, por si hay que esperarlos."""
+        procs, self.procs = self.procs, {}
+        return [p.detener() for p in procs.values()]
+
+    def reiniciar(self, ident=None):
+        """Desde cero una cámara (por id) o todo, olvidando los fallos anteriores
+        (HDMI, audio, GPU): el botón Reiniciar del panel."""
+        for p in list(self.procs.values()):
+            if isinstance(p, Fuente):
+                if ident is not None and p.cam["id"] != ident:
+                    continue
+                p.forzar_reinicio, p.audio_fallido, p.hdmi_fallido = True, None, False
+                p.deco_gpu_fallida, p.reintento = False, 0.0
+            elif ident is None:
+                p.detener()
+                p.fallos, p.reintento = 0, 0.0
+                if hasattr(p, "audio_fallido"):
+                    p.audio_fallido = None
 
     def calibrar(self, ruta, segundos=8):
         p = self.procs.get(f"cam:{ruta}")
@@ -664,20 +759,26 @@ class MotorRutas:
         return True
 
     def estado(self):
-        """Por ruta: si va, qué le pasa y cómo está cada salida."""
+        """Por ruta: si va, qué le pasa y cómo está cada salida. Se lee desde el
+        panel y el medidor mientras paso() cambia los procesos: copias de todo."""
         res = {}
         por_ruta = {}
-        for clave, p in self.procs.items():
+        for clave, p in list(self.procs.items()):
             por_ruta.setdefault(clave.split(":")[1], []).append((clave, p))
-        for r in getattr(self, "limpias", []):
+        errores, pausadas = self.errores, list(self.ultimo.get("pausadas", []))
+        for r in list(self.limpias):
             rid = r["id"]
-            err = self.errores.get(rid, [])
-            if rid in self.ultimo["pausadas"]:
+            err = errores.get(rid, [])
+            if rid in pausadas:
                 est = "pausada"
             elif not por_ruta.get(rid):
                 est = "esperando"
             else:
-                ests = [estado_proceso(p) for _, p in por_ruta[rid]]
+                # el estado de la ruta es el de lo que la hace (cámara, programa,
+                # reemisión, receptor); un relevo caído (YouTube, el disco) se ve en
+                # su salida, no tumba el estado de la ruta
+                mios = [p for c, p in por_ruta[rid] if not c.startswith("relevo:")]
+                ests = [estado_proceso(p) for p in mios or [p for _, p in por_ruta[rid]]]
                 est = "error" if "error" in ests else "en_marcha" if all(e == "ok" for e in ests) else "esperando"
             procs = {c.split(":")[0]: p for c, p in por_ruta.get(rid, [])}
             principal = procs.get("cam") or procs.get("prog") or procs.get("reem") or procs.get("rx")
@@ -693,6 +794,8 @@ class MotorRutas:
                     salidas[s["id"]] = estado_proceso(p) if p else "esperando"
                 elif s["tipo"] in ("obs", "srt"):         # lo sirve MediaMTX
                     salidas[s["id"]] = "ok" if info.get("publicando") else "esperando"
+                elif s["tipo"] == "hdmi" and "hdmi_fallido" in err:
+                    salidas[s["id"]] = "error"            # el monitor tumbó el pipeline: va sin él
                 else:                                    # NDI y HDMI: los de la ruta
                     salidas[s["id"]] = "ok" if est == "en_marcha" else "esperando"
             res[rid] = {"estado": est, "errores": err, "salidas": salidas,
@@ -702,6 +805,13 @@ class MotorRutas:
                         "calibracion": getattr(procs.get("cam"), "calibracion", None),
                         "copia": any(c.startswith("prog:") for c, _ in por_ruta.get(rid, []))}
         return res
+
+
+def trae_audio(info):
+    """Si lo que alguien publica en MediaMTX lleva pista de audio (sus 'tracks':
+    "H264", "MPEG-4 Audio", "Opus"...)."""
+    return any(any(x in str(p).lower() for x in ("audio", "aac", "opus"))
+               for p in info.get("pistas") or [])
 
 
 def estado_proceso(p):
@@ -732,6 +842,7 @@ class Fuentes:
         self.edicion = None     # lite | pro, según el equipo
         self.motor = MotorRutas(self)   # con motor "rutas", en vez de los modos
         self.reposo = Reposo()      # y si no, la pantalla de ayuda
+        self.motor.soltar_hdmi = self.reposo.detener
 
     def objetivo(self, f, aj=None):
         aj = aj or self.config.fuente(f.cam["id"])
@@ -866,7 +977,8 @@ class Fuentes:
         if cfg.get("motor") == "rutas":
             return self._paso_rutas(cfg, cams)
         if self.motor.procs:
-            self.motor.detener()        # se vuelve a los modos
+            # se vuelve a los modos: que suelten las cámaras y el HDMI antes de seguir
+            esperar_fin(self.motor.detener())
         # una sola cámara al HDMI: la elegida o, en automático, la primera activa
         activas = [i for i in cams if self.config.fuente(i)["activa"]]
         monitor = next((p for p in pantallas() if p["conectado"] and p["id"]), None)
@@ -999,15 +1111,19 @@ class Fuentes:
         monitor = next((p for p in pantallas() if p["conectado"] and p["id"]), None)
         self.hdmi_conector = monitor["id"] if monitor else None
         with self.lock:
+            moribundos = []
             for f in self.fuentes.values():
                 if f.proc is not None:
-                    f.detener()
+                    moribundos.append(f.detener())
             self.fuentes = {}
             for p in (self.receptor, self.programa, self.reemision):
                 if p.proc is not None:
-                    p.detener()
+                    moribundos.append(p.detener())
+            if moribundos:
+                esperar_fin(moribundos)     # las cámaras y el HDMI, libres para las rutas
             self.motor.paso(cfg, cams, monitor)
-            # el monitor: si ninguna ruta lo usa, la pantalla de ayuda
+            # el monitor: si ninguna ruta lo usa (o lo va a usar), la pantalla de ayuda.
+            # Cuando una ruta lo coge, el motor para la ayuda antes de arrancar
             reposo_obj = (None if self.motor.hdmi or not monitor
                           else self.pantalla_reposo(cfg, cams, monitor))
             if self.reposo.proc is not None and self.reposo.obj != reposo_obj:
@@ -1174,7 +1290,10 @@ class Fuentes:
             if f:
                 f.forzar_reinicio, f.audio_fallido, f.reintento = True, None, 0.0
                 f.hdmi_fallido = False
-            return f is not None
+            # con rutas, la cámara vive en el motor
+            self.motor.reiniciar(ident)
+            return f is not None or any(isinstance(p, Fuente) and p.cam["id"] == ident
+                                        for p in self.motor.procs.values())
 
     def reiniciar_todo(self):
         """Botón del panel por si algo se queda atascado: reinicia desde cero
@@ -1187,6 +1306,7 @@ class Fuentes:
             rx.fallos, rx.audio_fallido, rx.reintento = 0, None, 0.0
             if rx.destino:
                 rx.estado = "conectando"
+            self.motor.reiniciar()
 
     def detener_todas(self):
         with self.lock:
