@@ -3238,7 +3238,10 @@ async function rtCargar() {
     }
     // oculto no se pinta: colocaría los bloques con un lienzo de ancho 0
     if (pestana === "rutas") rtPintar();
-  } catch (_) { /* sin sesión o caído: lo dice el panel */ }
+  } catch (err) {
+    // sin sesión o equipo caído lo dice el panel; un fallo del propio panel, a la consola
+    if (!(err && err.sinSesion) && !(err instanceof TypeError && /fetch/i.test(err.message))) console.error("rutas:", err);
+  }
 }
 function rtEstadoGuardado(texto, clase) {
   // mientras se ofrece Deshacer, "Guardando…"/"Guardado" no lo pisan
@@ -3410,7 +3413,7 @@ function rtCrearNodo(n) {
       // carga la nueva. Una <img> recién creada sale en blanco hasta que carga, y
       // como el bloque se rehace cada 2 s, la vista previa parpadeaba
       const src = `/api/fuente/preview?id=${encodeURIComponent(n.e.id)}&t=${Date.now()}`;
-      let img = lienzo.querySelector(`[data-id="${CSS.escape(n.id)}"] img.rt-vista`);
+      let img = $("rtLienzo").querySelector(`[data-id="${CSS.escape(n.id)}"] img.rt-vista`);
       if (img) { img.src = src; } else {
         img = rel("img", { class: "rt-vista", alt: "", src });
         img.addEventListener("error", () => img.replaceWith(rel("div", { class: "rt-vista", text: rt("vista_previa") })));
