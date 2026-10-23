@@ -7,7 +7,13 @@ Wants=NetworkManager.service avahi-daemon.service
 StartLimitIntervalSec=0
 
 [Service]
-Type=simple
+# notify: el servicio avisa cuando está listo y, cada 20 s, que sus bucles siguen
+# dando vueltas (ndiicam.py: latir). Si un bloqueo interno los para, systemd lo
+# reinicia a los 5 min. Holgado a propósito: cambiar la IP o migrar la red
+# esperan hasta 90 s dentro de una vuelta
+Type=notify
+NotifyAccess=main
+WatchdogSec=300
 # el NDI SDK no mira $HOME sino la carpeta de root en /etc/passwd: su
 # configuración (transporte) se le indica con NDI_CONFIG_DIR
 Environment=HOME=/var/lib/ndiicam NDI_CONFIG_DIR=/var/lib/ndiicam/.ndi PYTHONUNBUFFERED=1

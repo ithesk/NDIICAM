@@ -10,7 +10,7 @@ import subprocess
 import threading
 import time
 
-from nucleo import AP_IP, DATOS, escribir_privado
+from nucleo import AP_IP, DATOS, cache_funcion, escribir_privado, evento
 
 SESIONES = os.path.join(DATOS, "sesiones.json")
 CERT = os.path.join(DATOS, "tls", "panel.crt")
@@ -141,15 +141,38 @@ def nombres_certificado():
     return [f"DNS:{host}.local", f"DNS:{host}", f"IP:{AP_IP}"]
 
 
+def vigencia_certificado(ruta=None):
+    """(notBefore, notAfter) del certificado en segundos, o None si no se puede leer."""
+    try:
+        d = ssl._ssl._test_decode_cert(ruta or CERT)
+        return ssl.cert_time_to_seconds(d["notBefore"]), ssl.cert_time_to_seconds(d["notAfter"])
+    except (OSError, ValueError, KeyError, AttributeError, ssl.SSLError):
+        return None
+
+
+def certificado_vigente(ahora=None, margen=30 * 86400, ruta=None):
+    """False si el certificado caduca en menos de 'margen' o aún no vale: pasa
+    cuando se generó con el reloj de la placa mal (sin NTP) y luego se puso en
+    hora; el navegador lo rechazaría para siempre."""
+    v = vigencia_certificado(ruta)
+    if v is None:
+        return False
+    ahora = time.time() if ahora is None else ahora
+    return v[0] <= ahora and v[1] - ahora > margen
+
+
 def asegurar_certificado():
     """Certificado propio del panel (10 años). Se rehace si cambia el nombre del
-    equipo. Devuelve True si hay certificado utilizable."""
+    equipo, si va a caducar o si no es válido todavía. Devuelve True si hay
+    certificado utilizable."""
     marca = CERT + ".nombres"
     nombres = ",".join(nombres_certificado())
     try:
         with open(marca) as f:
             if f.read() == nombres and os.path.exists(LLAVE) and os.path.exists(CERT):
-                return True
+                if certificado_vigente():
+                    return True
+                evento("certificado_renovado")
     except OSError:
         pass
     os.makedirs(os.path.dirname(CERT), mode=0o700, exist_ok=True)
@@ -184,6 +207,7 @@ def contexto_tls():
     return ctx
 
 
+@cache_funcion(600)     # se pedía (y se hacía el hash) en cada /api/estado
 def huella_certificado():
     """SHA-256 del certificado, para comprobarlo a mano en el aviso del navegador."""
     try:

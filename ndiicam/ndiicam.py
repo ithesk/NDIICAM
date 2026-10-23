@@ -35,24 +35,80 @@ Módulos (todos en este directorio):
   cortafuegos   nftables: solo entra lo que el modo activo necesita
   sistema       watchdog, motivo del último reinicio, registro, zona horaria
 """
+import glob
 import os
 import signal
+import socket
 import threading
+import time
 
 import nucleo
 import sistema
 from actualizador import Actualizador
 from cortafuegos import Cortafuegos
 from estado import medidor
-from nucleo import DATOS, VERSION, Config, cargar_eventos, configurar_ndi, evento
+from nucleo import DATOS, VERSION, Config, bucles_vivos, cargar_eventos, configurar_ndi, evento
 from panel import Panel, Servidor, ServidorTLS
 from red import Red
-from seguridad import LimiteIntentos, Sesiones, contexto_tls
+from seguridad import CERT, LimiteIntentos, Sesiones, contexto_tls
 from supervisor import BuscadorNDI, Fuentes
+
+# el watchdog de systemd (WatchdogSec en el unit): este hilo le dice "sigo vivo"
+# cada LATIDO s, pero solo si todos los bucles del servicio han dado una vuelta
+# en los últimos BUCLE_MAX s. Un bloqueo de verdad (un lock que no se suelta) se
+# nota a los WatchdogSec; una vuelta lenta (cambiar la IP y esperar a que
+# vuelva la red tarda hasta 90 s) no
+LATIDO = 20
+BUCLE_MAX = 150
+
+
+def sd_notify(mensaje):
+    """Mensaje a systemd por su socket, sin dependencias. Sin systemd, nada."""
+    ruta = os.environ.get("NOTIFY_SOCKET")
+    if not ruta:
+        return
+    if ruta.startswith("@"):
+        ruta = "\0" + ruta[1:]
+    try:
+        with socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM) as so:
+            so.connect(ruta)
+            so.sendall(mensaje.encode())
+    except OSError:
+        pass
+
+
+def latir():
+    while True:
+        if bucles_vivos(BUCLE_MAX):
+            sd_notify("WATCHDOG=1")
+        else:
+            evento("bucle_parado", detalle=",".join(
+                n for n, t in nucleo.LATIDOS.items() if time.monotonic() - t >= BUCLE_MAX))
+        time.sleep(LATIDO)
+
+
+def esperar_reloj(maximo=120):
+    """La primera vez, el certificado se fecha con el reloj del equipo: si la
+    placa arrancó en 2015 y luego NTP lo pone en hora, el certificado "aún no
+    vale" y los navegadores lo rechazan. Esperar un poco a NTP antes de crearlo."""
+    if os.path.exists(CERT):
+        return
+    fin = time.monotonic() + maximo
+    while time.monotonic() < fin:
+        h = sistema.hora()
+        if h["sincronizada"] or not h["ntp"]:
+            return
+        sistema.hora.olvidar()
+        time.sleep(5)
 
 
 def main():
     os.makedirs(DATOS, exist_ok=True)
+    # el driver moderno de Intel para todo (hijos y el buscador NDI): si unos
+    # procesos lo llevan y otros no, GStreamer rehace su registro de plugins en
+    # cada arranque de proceso (el plugin va cambia con esa variable)
+    if glob.glob("/usr/lib/*/dri/iHD_drv_video.so"):
+        os.environ.setdefault("LIBVA_DRIVER_NAME", "iHD")
     cargar_eventos()
     nucleo.CONF = Config()
     configurar_ndi(nucleo.CONF.get()["transporte"])
@@ -63,6 +119,7 @@ def main():
     nucleo.CORTAFUEGOS = Cortafuegos()
     nucleo.SESIONES = Sesiones()
     nucleo.INTENTOS = LimiteIntentos()
+    esperar_reloj()
     nucleo.HTTPS = contexto_tls()
     evento("inicio", version=VERSION)
     sistema.MOTIVO = sistema.calcular_motivo()
@@ -75,6 +132,8 @@ def main():
         threading.Thread(target=cifrado.serve_forever, daemon=True).start()
     else:
         evento("sin_https")
+    sd_notify("READY=1")
+    threading.Thread(target=latir, daemon=True).start()
 
     def salir(*_):
         fin = sistema.apagado_en_curso()
