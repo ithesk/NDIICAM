@@ -190,7 +190,9 @@ class Panel(BaseHTTPRequestHandler):
         self._error("sin_sesion", 401)
 
     def _cookie(self, testigo, edad=DURACION_SESION):
-        partes = [f"{COOKIE}={testigo}", "Path=/", "HttpOnly", "SameSite=Strict", f"Max-Age={edad}"]
+        # Lax: al abrir el panel desde el QR del HDMI o un enlace llega la cookie y no
+        # pide entrar otra vez; los POST siguen protegidos por la comprobación de Origin
+        partes = [f"{COOKIE}={testigo}", "Path=/", "HttpOnly", "SameSite=Lax", f"Max-Age={edad}"]
         if getattr(self.server, "tls", False):
             partes.append("Secure")
         return "; ".join(partes)

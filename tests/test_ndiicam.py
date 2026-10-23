@@ -564,7 +564,7 @@ class AccesoAlPanel(unittest.TestCase):
         self.assertEqual(r.status, 200)
         cookie = r.getheader("Set-Cookie").split(";")[0]
         self.assertIn("HttpOnly", r.getheader("Set-Cookie"))
-        self.assertIn("SameSite=Strict", r.getheader("Set-Cookie"))
+        self.assertIn("SameSite=Lax", r.getheader("Set-Cookie"))
         r, _ = self.pedir("GET", "/api/grabaciones", cookie=cookie)
         self.assertEqual(r.status, 200)
         r, d = self.pedir("POST", "/api/clave/crear", {"clave": "otra-clave-larga"})
