@@ -3073,7 +3073,8 @@ const RT = {
     anadir_ndi: "Fuente NDI", anadir_ingesta: "Emisión entrante (ATEM, OBS…)", anadir_red: "+ Añadir entrada de la red…",
     usb_solas: "Las cámaras y el audio USB aparecen solos al conectarlos.",
     elige_ruta: "Elige primero una ruta (o crea una) para añadirle salidas.",
-    fuente_red: "Fuente de la red", buscando: "Buscando fuentes NDI…", elige_fuente: "— elige una fuente —",
+    fuente_red: "Fuente de la red", buscando: "Buscando fuentes NDI…", elige_fuente: "— elige una fuente —", aplicar_fuente: "Aplicar",
+    fuente_actual: (f) => `En uso: ${f}`,
     sin_fuente_ndi: "Sin fuente: elígela en el engranaje",
     atem_emite: "Que el ATEM, OBS o el móvil emitan a:", xml: "Descargar ajustes para ATEM",
     llega: (l) => l && l.publicando ? `Llegando por ${l.protocolo || "RTMP"}${l.desde ? " desde " + l.desde : ""}` : "Esperando a que publique",
@@ -3131,7 +3132,8 @@ const RT = {
     anadir_ndi: "NDI source", anadir_ingesta: "Incoming stream (ATEM, OBS…)", anadir_red: "+ Add a network input…",
     usb_solas: "USB cameras and audio appear on their own when plugged in.",
     elige_ruta: "Pick a route first (or create one) to add outputs to it.",
-    fuente_red: "Network source", buscando: "Looking for NDI sources…", elige_fuente: "— pick a source —",
+    fuente_red: "Network source", buscando: "Looking for NDI sources…", elige_fuente: "— pick a source —", aplicar_fuente: "Apply",
+    fuente_actual: (f) => `In use: ${f}`,
     sin_fuente_ndi: "No source: pick it with the gear",
     atem_emite: "Have the ATEM, OBS or the phone stream to:", xml: "Download settings for ATEM",
     llega: (l) => l && l.publicando ? `Arriving over ${l.protocolo || "RTMP"}${l.desde ? " from " + l.desde : ""}` : "Waiting for it to publish",
@@ -3186,6 +3188,7 @@ let RD = null;               // lo último que dijo /api/rutas
 let RB = null;               // borrador: {entradas_red, rutas}
 let rtSel = null, rtCableSel = null, rtHoja = false, rtTocado = null, rtArrastre = null;
 let rtSucio = false, rtGuardarT = 0, rtVista = "";
+const rtNdiElegida = {};      // entrada NDI -> fuente elegida y aún sin aplicar
 let rtVersion = 0, rtEnviando = false, rtError = null;      // guardado: versión del borrador que se envió
 let rtArrastreNodo = false;                                  // se está moviendo un bloque del lienzo
 let rtPila = [];                                             // deshacer: borradores anteriores a algo destructivo
@@ -3226,7 +3229,13 @@ async function rtCargar() {
     const d = await api("/api/rutas");
     RD = d;
     rtPintarMonitor();
-    if (!rtSucio && !rtEnviando) RB = rtBorradorDe(d);
+    // el borrador solo se sustituye si el equipo trae algo distinto: los ajustes
+    // abiertos guardan referencias a sus objetos, y cambiarlos cada 2 s por copias
+    // iguales hacía que lo elegido se escribiera en una copia que ya no se guarda
+    if (!rtSucio && !rtEnviando) {
+      const nuevo = rtBorradorDe(d);
+      if (JSON.stringify(nuevo) !== JSON.stringify(RB)) RB = nuevo;
+    }
     // oculto no se pinta: colocaría los bloques con un lienzo de ancho 0
     if (pestana === "rutas") rtPintar();
   } catch (_) { /* sin sesión o caído: lo dice el panel */ }
@@ -3618,11 +3627,25 @@ function rtAjustesEntrada(e) {
     if (red.fuente && !lista.includes(red.fuente)) lista.unshift(red.fuente);
     // la primera opción es "elige": sin ella, el navegador enseña la primera fuente
     // como elegida aunque no lo esté, y elegir esa misma no avisa de ningún cambio
+    // se elige en el desplegable y se guarda con Aplicar: lo elegido se recuerda
+    // aparte (rtNdiElegida) para que un repintado no lo devuelva a lo guardado
+    const elegida = rtNdiElegida[e.id] ?? red.fuente;
+    const aplicar = rel("button", { class: "boton principal", type: "button", text: rt("aplicar_fuente"),
+      disabled: !elegida || elegida === red.fuente, onclick: () => {
+        // el objeto vigente del borrador, por id (no el que había al pintar)
+        const x = RB.entradas_red.find((y) => y.id === e.id);
+        const f = rtNdiElegida[e.id];
+        if (!x || !f) return;
+        x.fuente = f; x.nombre = f; delete rtNdiElegida[e.id];
+        rtCambio(true); rtPintar(); } });
     t.push(rtCampo("rtNdiF", rt("fuente_red"), rel("select", { id: "rtNdiF", onchange: (ev) => {
       if (!ev.target.value) return;
-      red.fuente = ev.target.value; red.nombre = ev.target.value; rtCambio(true); } },
-      rel("option", { value: "", text: lista.length ? rt("elige_fuente") : rt("buscando"), disabled: true, selected: !red.fuente }),
-      ...lista.map((x) => rel("option", { value: x, text: x, selected: x === red.fuente })))));
+      rtNdiElegida[e.id] = ev.target.value;
+      aplicar.disabled = ev.target.value === red.fuente; } },
+      rel("option", { value: "", text: lista.length ? rt("elige_fuente") : rt("buscando"), disabled: true, selected: !elegida }),
+      ...lista.map((x) => rel("option", { value: x, text: x, selected: x === elegida })))),
+      rel("div", { class: "botones" }, aplicar),
+      rel("div", { class: "nota", text: red.fuente ? rt("fuente_actual")(red.fuente) : rt("sin_fuente_ndi") }));
   }
   const usos = RB.rutas.filter((r) => r.video === e.id || r.audio === e.id).map((r) => r.nombre);
   t.push(rel("div", { class: "nota", text: rt("se_usa")(usos) }));
