@@ -95,7 +95,7 @@ class ServidorPuente:
         self.reparto = False
         self.reintento = 0.0
         self.usuarios = None    # permisos aplicados (rutas), para cambiarlos en caliente
-        self._cache = {}        # camino -> (hora, respuesta de /v3/paths/get)
+        self._cache = {}        # "_lista" -> (hora, {camino: estado}) de /v3/paths/list
 
     def disponible(self):
         return os.access(MEDIAMTX, os.X_OK)
@@ -127,14 +127,17 @@ class ServidorPuente:
         evento("puente_servidor", puerto=PUERTO_RTMP)
 
     def _camino(self, camino):
-        """/v3/paths/get de un camino, guardado 1,5 s: el panel, el medidor y el
-        supervisor lo piden a la vez, y MediaMTX no tiene por qué contestar a todos."""
+        """El estado de un camino, sacado de /v3/paths/list y guardado 1,5 s: el
+        panel, el medidor y el supervisor lo piden a la vez, y una sola consulta da
+        todos. (Con /v3/paths/get, cada camino que aún no publica deja un "path not
+        found" en el diario de MediaMTX cada dos segundos.)"""
         ahora = time.monotonic()
-        t, r = self._cache.get(camino, (0.0, None))
+        t, por_nombre = self._cache.get("_lista", (0.0, None))
         if ahora - t > 1.5:
-            r = self._api(f"/v3/paths/get/{camino}")
-            self._cache[camino] = (ahora, r)
-        return r
+            r = self._api("/v3/paths/list?itemsPerPage=1000")
+            por_nombre = {x.get("name"): x for x in (r or {}).get("items") or []} if r is not None else None
+            self._cache["_lista"] = (ahora, por_nombre)
+        return (por_nombre or {}).get(camino)
 
     def ruta_info(self, camino):
         """Si alguien publica en ese camino, desde dónde, qué manda y cuántos leen."""
@@ -208,7 +211,7 @@ class ServidorPuente:
         """Quién publica (ATEM u otro), desde dónde y qué manda."""
         if self.proc is None or self.proc.poll() is not None:
             return {"activo": False}
-        ruta = self._api(f"/v3/paths/get/live/{self.clave}")
+        ruta = self._camino(f"live/{self.clave}")
         res = {"activo": True, "publicando": False}
         if not ruta or not ruta.get("ready"):
             return res

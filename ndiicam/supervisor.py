@@ -444,6 +444,9 @@ class Receptor:
                    modo=f"{c.get('ancho')}×{c.get('alto')}" + (f" @{fps:g}" if fps else ""))
         self.prev = (t, c)
 
+SIN_AVANCE = 8      # s activo sin sacar fotogramas: el auxiliar se da por colgado
+
+
 class Auxiliar:
     """Un proceso de la edición Pro que no es una cámara ni el receptor: la
     reemisión de una fuente NDI (reemision.py) o el programa final del puente
@@ -461,12 +464,13 @@ class Auxiliar:
         self.fallos = 0
         self.c = {}
         self.prev = None
+        self.parado = None          # desde cuándo está activo sin sacar nada
         self.stats = {"fps": 0, "mbps": 0, "audio_activo": False}
 
     def arrancar(self, obj):
         self.obj = obj
         self.estado, self.error = "conectando", ""
-        self.c, self.prev = {}, None
+        self.c, self.prev, self.parado = {}, None, None
         self.stats = {"fps": 0, "mbps": 0, "audio_activo": False}
         self.proc = lanzar(self.script, obj, env=entorno_va())
         threading.Thread(target=self._leer, args=(self.proc,), daemon=True).start()
@@ -530,6 +534,15 @@ class Auxiliar:
                           "audio_activo": c["aud"] > p["aud"],
                           "audio_db": {"peak": c.get("db_peak"), "rms": c.get("db_rms")},
                           "desfase_ms": c.get("desfase_ms")}
+        # vivo pero sin sacar nada (la fuente se fue y volvió y este lector quedó
+        # colgado de la conexión vieja): reiniciarlo, porque solo no se recupera
+        if self.estado == "activa" and self.prev and c.get("out", 0) == self.prev[1].get("out", 0):
+            self.parado = self.parado or t
+            if t - self.parado > SIN_AVANCE:
+                self.parado = None
+                return self._fallo("sin_senal")
+        else:
+            self.parado = None
         if c.get("out", 0) > 0 and self.estado != "activa":
             self.estado, self.desde, self.fallos = "activa", t, 0
             evento(f"{self.prefijo}_activa", fuente=self.obj.get("nombre", ""),

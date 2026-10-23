@@ -37,6 +37,7 @@ NIVEL = {"db_peak": None, "db_rms": None}
 SEGMENTO = 10 * 60
 VENTANA = 10.0          # s: la llegada más temprana en esta ventana marca el desfase
 PASO_DERIVA = 0.002     # s por segundo que se corrige la deriva como mucho
+SIN_VIDEO = 6.0         # s sin vídeo del ATEM, tras haberlo recibido: se da por caído
 ARRANQUE = 10.0         # s tras el primer fotograma en los que el desfase se corrige de golpe
 
 
@@ -200,9 +201,22 @@ def main():
     bus.add_signal_watch()
     bus.connect("message", mensaje)
 
+    visto = {"rx": 0, "t": time.monotonic()}
+
     def tic():
         extra = {"desfase_ms": round(reloj.offset * 1000)} if reloj and reloj.offset is not None else {}
         informar({**CONTADORES, **NIVEL, **extra, "t": time.monotonic()})
+        # con el audio de la consola el pipeline no termina aunque el ATEM se vaya
+        # (la consola sigue sonando): si deja de llegar vídeo, salir con error para
+        # que el supervisor lo vuelva a lanzar cuando el ATEM vuelva a publicar
+        ahora = time.monotonic()
+        if CONTADORES["rx"] != visto["rx"]:
+            visto.update(rx=CONTADORES["rx"], t=ahora)
+        elif CONTADORES["rx"] and ahora - visto["t"] > SIN_VIDEO:
+            informar({"error": "sin_video", "elemento": "src"})
+            salida[0] = 1
+            bucle.quit()
+            return False
         return True
     GLib.timeout_add(2000, tic)
 

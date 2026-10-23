@@ -156,18 +156,21 @@ class ConfMediaMTX(unittest.TestCase):
         self.assertEqual(llamadas, [("/v3/config/global/patch", {"authInternalUsers": [{"user": "any"}]})])
         self.assertEqual(s.conf, "despues")
 
-    def test_paths_get_se_guarda_un_momento(self):
+    def test_una_sola_consulta_para_todos_los_caminos(self):
         s = puente.ServidorPuente()
         s.proc = FalsoProc()
-        n = [0]
+        pedidas = []
 
         def api(ruta, datos=None):
-            n[0] += 1
-            return {"ready": True, "tracks": ["H264", "MPEG-4 Audio"], "readers": [1, 2]}
+            pedidas.append(ruta)
+            return {"items": [{"name": "live/x", "ready": True, "tracks": ["H264", "MPEG-4 Audio"],
+                               "readers": [1, 2]}]}
         s._api = api
         self.assertTrue(s.ruta_lista("live/x"))
         self.assertEqual(s.ruta_info("live/x")["lectores"], 2)
-        self.assertEqual(n[0], 1)
+        self.assertFalse(s.ruta_lista("live/otro"))     # no publica: sin consultarlo aparte
+        self.assertEqual(len(pedidas), 1)
+        self.assertTrue(pedidas[0].startswith("/v3/paths/list"))
 
 
 class FalsoProc:
@@ -511,3 +514,28 @@ class Terminar(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class AuxiliarColgado(unittest.TestCase):
+    """Un auxiliar que sigue informando pero no saca fotogramas se reinicia."""
+
+    def medir_serie(self, outs):
+        a = supervisor.Auxiliar("relevo.py", "relevo")
+        fallos = []
+        a._fallo = lambda e: fallos.append(e)
+        a.proc, a.obj, a.estado = object(), {"nombre": "Culto"}, "activa"
+        for i, out in enumerate(outs):
+            a.c = {"t": i * 2.0, "out": out, "bytes": 0, "aud": 0}
+            a.medir(i * 2.0)
+            if fallos:
+                break
+        return fallos
+
+    def test_sin_avance_reinicia(self):
+        self.assertEqual(self.medir_serie([100, 130] + [130] * 8), ["sin_senal"])
+
+    def test_avanzando_no_reinicia(self):
+        self.assertEqual(self.medir_serie([i * 30 for i in range(15)]), [])
+
+    def test_parada_corta_no_reinicia(self):
+        self.assertEqual(self.medir_serie([0, 30, 60, 60, 60, 90, 120]), [])
