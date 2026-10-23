@@ -380,8 +380,8 @@ def estatico(salida, lang="en", tema="claro", vista="monitor"):
     html = html.replace('<script>\n"use strict";', '<script>\n"use strict";\n' + falso, 1)
     # 30 consultas rápidas que llenan las gráficas y luego parar: Chrome sin ventana
     # solo hace la foto cuando la página se calma
-    html = html.replace("setTimeout(refrescar, 2000);",
-                        "if ((window.vueltas = (window.vueltas || 0) + 1) < 30) setTimeout(refrescar, 30);", 1)
+    html = html.replace("refrescarT = setTimeout(refrescar, 2000);",
+                        "if ((window.vueltas = (window.vueltas || 0) + 1) < 30) refrescarT = setTimeout(refrescar, 30);", 1)
     html = html.replace("c.img.src = `/api/fuente/preview?id=${encodeURIComponent(id)}&t=${Date.now()}`;",
                         "c.img.src = DEMO_PREVIAS[id];", 1)
     # las vistas previas de las cámaras de las rutas, también inventadas

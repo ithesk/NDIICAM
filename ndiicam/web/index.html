@@ -172,17 +172,19 @@
   .rt-obra > div { min-width: 0; }
   .rt-barra { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 8px; }
   .rt-barra .esp { margin-left: auto; }
-  .rt-guardado { font-size: 12.5px; color: var(--suave); }
+  .rt-guardado { font-size: 12.5px; color: var(--suave); display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+  .rt-guardado.mal { color: var(--mal); font-weight: 600; }
+  .rt-guardado .boton { padding: 2px 8px; font-size: 12px; }
   .rt-marco { border: 1px solid var(--borde); border-radius: 14px; background: var(--panel); overflow: auto; position: relative; height: 620px;
     background-image: radial-gradient(var(--pista) 1.2px, transparent 1.2px); background-size: 22px 22px; }
   .rt-lienzo { position: relative; height: 900px; }
-  .etq { font-size: 11px; font-weight: 600; padding: 1px 7px; border-radius: 999px; background: var(--pista); color: var(--suave); white-space: nowrap; }
+  .etq { font-size: 12.5px; font-weight: 600; padding: 1px 7px; border-radius: 999px; background: var(--pista); color: var(--suave); white-space: nowrap; }
   .etq.ok { background: var(--ok-f); color: var(--ok); } .etq.aviso { background: var(--aviso-f); color: var(--aviso); }
   .etq.mal { background: var(--mal-f); color: var(--mal); }
   #rtCables { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
   /* las rutas necesitan sitio: esta pestaña usa más ancho que el resto */
   body[data-tab="rutas"] .envoltura { max-width: 1360px; }
-  .rt-col { position: absolute; top: 12px; font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--suave); }
+  .rt-col { position: absolute; top: 12px; font-size: 12.5px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--suave); }
   .rt-cable { fill: none; stroke-width: 3; stroke-linecap: round; }
   .rt-cable.v { stroke: var(--acento); } .rt-cable.a { stroke: var(--ok); } .rt-cable.p { stroke: #8b5cf6; }
   .rt-cable.vivo { stroke-dasharray: 9 7; animation: rt-corre 1s linear infinite; }
@@ -191,14 +193,18 @@
   .rt-toque { fill: none; stroke: transparent; stroke-width: 16; cursor: pointer; }
   @keyframes rt-corre { to { stroke-dashoffset: -32; } }
   .rt-nodo { position: absolute; width: 214px; background: var(--panel); border: 1px solid var(--borde); border-radius: 12px;
-    box-shadow: 0 2px 8px rgba(0,0,0,.06); user-select: none; touch-action: none; }
+    box-shadow: 0 2px 8px rgba(0,0,0,.06); user-select: none; }
+  /* solo lo que se arrastra bloquea el desplazamiento táctil: el resto del nodo deja mover el lienzo */
+  .rt-nodo .cab, .rt-enchufe { touch-action: none; }
   .rt-nodo.ruta { width: 236px; border-color: color-mix(in srgb, #8b5cf6 45%, var(--borde)); }
   .rt-nodo.sel { border-color: var(--acento); box-shadow: 0 0 0 2px var(--acento-f, rgba(37,99,235,.15)); }
   .rt-nodo.parada { opacity: .6; }
   .rt-nodo .cab { display: flex; align-items: center; gap: 7px; padding: 8px 10px; cursor: grab; border-bottom: 1px solid var(--borde); }
   .rt-nodo .cab b { font-size: 13.5px; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .rt-nodo .cab .rt-ti { color: var(--acento); display: grid; } .rt-nodo.ruta .cab .rt-ti { color: #8b5cf6; }
-  .rt-ajustar { border: 0; background: none; color: var(--suave); cursor: pointer; padding: 2px; border-radius: 6px; display: grid; }
+  .rt-ajustar { border: 0; background: none; color: var(--suave); cursor: pointer; padding: 2px; border-radius: 6px; display: grid; position: relative; }
+  /* área de toque de 32 px sin cambiar el dibujo */
+  .rt-ajustar::before, .rt-quitar::before, .rt-enchufe::before { content: ""; position: absolute; inset: -7px; border-radius: 50%; }
   .rt-ajustar:hover { color: var(--acento); }
   .rt-nodo .cuerpo { padding: 8px 10px; display: flex; flex-direction: column; gap: 6px; }
   .rt-nodo .cuerpo small { color: var(--suave); font-size: 12px; line-height: 1.3; overflow-wrap: anywhere; }
@@ -207,6 +213,7 @@
   .rt-puerto.sal { justify-content: flex-end; }
   .rt-enchufe { position: absolute; width: 16px; height: 16px; border-radius: 50%; border: 3px solid var(--panel); top: 50%;
     transform: translateY(-50%); cursor: crosshair; box-shadow: 0 0 0 1px var(--borde); }
+  .rt-enchufe:focus-visible { outline: 2px solid var(--acento); outline-offset: 3px; }
   .rt-puerto.ent .rt-enchufe { left: -19px; } .rt-puerto.sal .rt-enchufe { right: -19px; }
   .rt-enchufe.v { background: var(--acento); } .rt-enchufe.a { background: var(--ok); } .rt-enchufe.p { background: #8b5cf6; }
   .rt-enchufe.destino, .rt-enchufe.elegido { transform: translateY(-50%) scale(1.35); }
@@ -237,7 +244,7 @@
   .rt-bloque { background: var(--fondo); border-radius: 11px; padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; }
   .rt-chip { display: flex; align-items: center; gap: 8px; border: 1px solid var(--borde); background: var(--panel); border-radius: 10px; padding: 7px 8px; }
   .rt-chip .tx { flex: 1; min-width: 0; } .rt-chip b { display: block; font-size: 13.5px; } .rt-chip small { display: block; font-size: 12px; color: var(--suave); overflow-wrap: anywhere; }
-  .rt-quitar { border: 0; background: none; color: var(--suave); cursor: pointer; padding: 4px 7px; border-radius: 7px; font-size: 16px; line-height: 1; }
+  .rt-quitar { border: 0; background: none; color: var(--suave); cursor: pointer; padding: 4px 7px; border-radius: 7px; font-size: 16px; line-height: 1; position: relative; }
   .rt-quitar:hover { color: var(--mal); }
   .rt-fila-ent { display: flex; gap: 10px; align-items: center; padding: 8px 0; border-top: 1px solid var(--borde); }
   .rt-fila-ent:first-of-type { border-top: 0; }
@@ -248,7 +255,7 @@
   @media (max-width: 980px) {
     .rt-obra { grid-template-columns: minmax(0, 1fr); }
     .rt-marco { height: 520px; }
-    .rt-insp { position: fixed; left: 0; right: 0; bottom: 0; top: auto; z-index: 40; max-height: 78vh;
+    .rt-insp { position: fixed; left: 0; right: 0; bottom: 0; top: auto; z-index: 40; max-height: 78vh; max-height: 78dvh;
       padding: 0 8px calc(10px + env(safe-area-inset-bottom, 0px)); transform: translateY(105%); transition: transform .22s ease; }
     .rt-insp.abierta { transform: none; }
     .rt-insp > .tarjeta:first-child { box-shadow: 0 -6px 24px rgba(0,0,0,.18); }
@@ -356,7 +363,7 @@
         <div class="rt-barra">
           <button type="button" class="boton" id="rtNuevaRuta" data-t="rt_new_route"></button>
           <button type="button" class="boton" id="rtAnadir" data-t="rt_add"></button>
-          <span class="rt-guardado" id="rtGuardado"></span>
+          <span class="rt-guardado" id="rtGuardado" role="status" aria-live="polite"></span>
           <button type="button" class="boton esp" id="rtOrdenar" data-t="rt_tidy"></button>
           <div class="segmentado" role="group" id="rtVistas">
             <button type="button" data-v="lienzo" data-t="rt_canvas"></button>
@@ -371,7 +378,7 @@
               <div class="rt-col" data-col="ruta" data-t="rt_routes"></div>
               <div class="rt-col" data-col="sal" data-t="g_outputs"></div>
             </div>
-            <span class="rt-ayuda" id="rtAyuda"></span>
+            <span class="rt-ayuda" id="rtAyuda" role="status"></span>
           </div>
           <div class="rt-leyenda">
             <span><i style="background:var(--acento)"></i><span data-t="rt_l_video"></span></span>
@@ -382,7 +389,7 @@
         </div>
         <div id="rtVistaLista" class="rt-lista" hidden></div>
       </div>
-      <aside class="rt-insp" id="rtInsp" aria-live="polite"></aside>
+      <aside class="rt-insp" id="rtInsp"></aside>
       <div class="rt-velo" id="rtVelo"></div>
     </div>
   </section>
@@ -1067,6 +1074,9 @@ const T = {
     ap_no_wifi: "Este equipo no tiene WiFi", ap_on: "Activar WiFi de configuración", ap_off: "Desactivar WiFi de configuración",
     confirm_ap: "Se activará durante 10 minutos la WiFi de configuración, además de la conexión actual. ¿Seguir?",
     confirm_reboot: "¿Reiniciar el equipo? La emisión se cortará cerca de un minuto.",
+    confirm_modo: "¿Cambiar el modo del equipo? Lo que está emitiendo o recibiendo se para en el acto.",
+    confirm_volver_modos: "¿Volver a los modos? Las rutas se paran, pero quedan guardadas por si vuelves a ellas.",
+    aria_nombre: "Nombre", navegador: "Navegador",
     confirm_forget: (s, act) => `¿Olvidar la red «${s}»?` + (act ? "\n\nEs la red que usa ahora: el equipo se desconectará de ella." : ""),
     confirm_connect: (s) => `¿Conectar el equipo a «${s}»?\n\nSi es una red distinta a la tuya, perderás este panel: búscalo luego desde esa red.`,
     connecting: (s) => `Conectando a «${s}»… puede tardar hasta 45 s.`,
@@ -1422,6 +1432,9 @@ const T = {
     ap_no_wifi: "This device has no WiFi", ap_on: "Turn on setup WiFi", ap_off: "Turn off setup WiFi",
     confirm_ap: "The setup WiFi will be on for 10 minutes, alongside the current connection. Continue?",
     confirm_reboot: "Reboot the device? Streaming will stop for about a minute.",
+    confirm_modo: "Change the device mode? Whatever it is sending or receiving stops right away.",
+    confirm_volver_modos: "Back to modes? The routes stop, but they stay saved in case you come back.",
+    aria_nombre: "Name", navegador: "Browser",
     confirm_forget: (s, act) => `Forget the network "${s}"?` + (act ? "\n\nIt is the network in use: the device will disconnect from it." : ""),
     confirm_connect: (s) => `Connect the device to "${s}"?\n\nIf it is a different network from yours, you will lose this panel: find it again from that network.`,
     connecting: (s) => `Connecting to "${s}"… it can take up to 45 s.`,
@@ -1565,7 +1578,10 @@ try { pestana = localStorage.getItem("ndiicam-tab") || "monitor"; } catch (_) { 
 if (["#monitor", "#config", "#sistema", "#rutas"].includes(location.hash)) pestana = location.hash.slice(1);   // enlace directo
 function aplicarPestana() {
   document.body.dataset.tab = pestana;
-  document.querySelectorAll("[data-tab-btn]").forEach((b) => b.classList.toggle("activo", b.dataset.tabBtn === pestana));
+  document.querySelectorAll("[data-tab-btn]").forEach((b) => {
+    b.classList.toggle("activo", b.dataset.tabBtn === pestana);
+    b.toggleAttribute("aria-current", b.dataset.tabBtn === pestana);
+  });
 }
 document.querySelectorAll("[data-tab-btn]").forEach((b) => b.addEventListener("click", () => {
   pestana = b.dataset.tabBtn;
@@ -1573,6 +1589,7 @@ document.querySelectorAll("[data-tab-btn]").forEach((b) => b.addEventListener("c
   aplicarPestana();
   window.scrollTo({ top: 0 });
   if (pestana === "sistema") abrirSistema();
+  if (pestana === "rutas" && typeof rtPintar === "function") rtPintar();    // el lienzo no se pinta mientras está oculto
 }));
 aplicarPestana();
 document.querySelectorAll(".idioma button").forEach((b) => b.addEventListener("click", () => {
@@ -2780,6 +2797,8 @@ async function guardarHdmi(datos) {
   try { await api("/api/config", datos); } catch (err) { mensaje("msgHdmi", err.message, "mal"); }
 }
 for (const r of document.querySelectorAll("input[name=modo]")) r.addEventListener("change", async () => {
+  // cambia lo que hace el equipo en el acto: mejor preguntar
+  if (!confirm(t("confirm_modo"))) { if (ultimo) pintar(ultimo); return; }
   try { await api("/api/config", { modo: r.value }); refrescarAhora(); } catch (err) { mensaje("msgModo", err.message, "mal"); }
 });
 $("chkPuenteNdi").addEventListener("change", async () => {
@@ -2808,6 +2827,7 @@ $("hdmiQue").addEventListener("change", () => {
 });
 $("hdmiConsola").addEventListener("change", () => guardarHdmi({ hdmi_consola: $("hdmiConsola").value }));
 $("btVolverModos").addEventListener("click", async () => {
+  if (!confirm(t("confirm_volver_modos"))) return;
   try { await api("/api/rutas/motor", { motor: "modos" }); pestana = "config"; aplicarPestana(); refrescarAhora(); }
   catch (err) { mensaje("msgSistema", err.message, "mal"); }
 });
@@ -3007,6 +3027,13 @@ const RT = {
     obs_urls: "Direcciones", desconectar: "Desconectar", conexion: "Conexión", resolucion: "Resolución", fps: "Fotogramas",
     vista_previa: "Sin vista previa", calibrando: "Midiendo…", copia_corta: "copia",
     monitor_t: "Rutas", ver_rutas: "Ver rutas",
+    reintentar: "Reintentar", descartar: "Descartar cambios", deshacer: "Deshacer",
+    borrada: (n) => `«${n}» borrada`, quitada: (n) => `${n} quitada`, desconectada: "Conexión quitada",
+    confirmar_borrar: (n) => `«${n}» está en marcha. ¿Borrarla? Dejará de emitir en el acto.`,
+    confirmar_quitar: (n) => `«${n}» está en marcha. ¿Quitar esta salida?`,
+    hdmi_cambiado: (n) => `El monitor pasa de «${n}» a esta ruta.`,
+    tope_rutas: (n) => `Como mucho ${n} rutas.`, tope_entradas: (n) => `Como mucho ${n} entradas de red.`,
+    mostrar: "Mostrar", ocultar: "Ocultar", enchufe: (p, n) => `${p} de ${n}`,
   },
   en: {
     ayuda: "Drag from one coloured dot to another, or tap them one after the other · the gear opens the settings",
@@ -3054,6 +3081,13 @@ const RT = {
     obs_urls: "Addresses", desconectar: "Disconnect", conexion: "Connection", resolucion: "Resolution", fps: "Frame rate",
     vista_previa: "No preview", calibrando: "Measuring…", copia_corta: "copy",
     monitor_t: "Routes", ver_rutas: "Open routes",
+    reintentar: "Retry", descartar: "Discard changes", deshacer: "Undo",
+    borrada: (n) => `“${n}” deleted`, quitada: (n) => `${n} removed`, desconectada: "Connection removed",
+    confirmar_borrar: (n) => `“${n}” is running. Delete it? It stops streaming right away.`,
+    confirmar_quitar: (n) => `“${n}” is running. Remove this output?`,
+    hdmi_cambiado: (n) => `The monitor moves from “${n}” to this route.`,
+    tope_rutas: (n) => `At most ${n} routes.`, tope_entradas: (n) => `At most ${n} network inputs.`,
+    mostrar: "Show", ocultar: "Hide", enchufe: (p, n) => `${p} of ${n}`,
   },
 };
 const rt = (k) => (RT[lang] || RT.es)[k];
@@ -3090,12 +3124,31 @@ let RD = null;               // lo último que dijo /api/rutas
 let RB = null;               // borrador: {entradas_red, rutas}
 let rtSel = null, rtCableSel = null, rtHoja = false, rtTocado = null, rtArrastre = null;
 let rtSucio = false, rtGuardarT = 0, rtVista = "";
+let rtVersion = 0, rtEnviando = false, rtError = null;      // guardado: versión del borrador que se envió
+let rtArrastreNodo = false;                                  // se está moviendo un bloque del lienzo
+let rtPila = [];                                             // deshacer: borradores anteriores a algo destructivo
+let rtDeshacerT = 0, rtDeshacerHasta = 0, rtFocoPrevio = null;
 let rtPos = {};
 try { rtPos = JSON.parse(localStorage.getItem("ndiicam-rt-pos")) || {}; } catch (_) { rtPos = {}; }
 try { rtVista = localStorage.getItem("ndiicam-rt-vista") || ""; } catch (_) { rtVista = ""; }
 if (!["lienzo", "lista"].includes(rtVista)) rtVista = matchMedia("(max-width: 760px)").matches ? "lista" : "lienzo";
 const rtGuardarPos = () => { try { localStorage.setItem("ndiicam-rt-pos", JSON.stringify(rtPos)); } catch (_) { /* sin almacenamiento */ } };
-const rtEnt = (id) => (RD ? RD.entradas : []).find((e) => e.id === id);
+// las entradas que ve el panel: las USB que dice el servicio y las de red del borrador
+// (así una entrada recién añadida aparece al instante, con lo que el servicio sepa de ella)
+function rtEntradas() {
+  if (!RD || !RB) return [];
+  const del = (id) => RD.entradas.find((x) => x.id === id) || {};
+  return [...RD.entradas.filter((e) => !["ndi", "ingesta"].includes(e.tipo)),
+    ...RB.entradas_red.map((e) => ({ ...del(e.id), ...e, llega: del(e.id).llega }))];
+}
+const rtEnt = (id) => rtEntradas().find((e) => e.id === id);
+const rtBorradorDe = (d) => ({ entradas_red: d.entradas.filter((e) => ["ndi", "ingesta"].includes(e.tipo)).map(({ llega, ...e }) => e),
+  rutas: JSON.parse(JSON.stringify(d.rutas)) });
+const rtOcupado = () => {
+  // algo del usuario a medias: no se reconstruye lo que está tocando
+  const foco = document.activeElement;
+  return !!(rtArrastreNodo || rtArrastre || (foco && $("secRutas").contains(foco) && ["INPUT", "SELECT", "TEXTAREA"].includes(foco.tagName)));
+};
 const rtRuta = (id) => RB.rutas.find((r) => r.id === id);
 const rtSalida = (sid) => { for (const r of RB.rutas) { const s = r.salidas.find((x) => x.id === sid); if (s) return [r, s]; } return [null, null]; };
 const daImagen = (e) => ["usb_cam", "ndi", "ingesta"].includes(e.tipo);
@@ -3109,26 +3162,90 @@ async function rtCargar() {
     const d = await api("/api/rutas");
     RD = d;
     rtPintarMonitor();
-    if (!rtSucio) RB = { entradas_red: d.entradas.filter((e) => ["ndi", "ingesta"].includes(e.tipo)).map(({ llega, ...e }) => e),
-      rutas: JSON.parse(JSON.stringify(d.rutas)) };
-    rtPintar();
+    if (!rtSucio && !rtEnviando) RB = rtBorradorDe(d);
+    // oculto no se pinta: colocaría los bloques con un lienzo de ancho 0
+    if (pestana === "rutas") rtPintar();
   } catch (_) { /* sin sesión o caído: lo dice el panel */ }
 }
+function rtEstadoGuardado(texto, clase) {
+  // mientras se ofrece Deshacer, "Guardando…"/"Guardado" no lo pisan
+  if (!clase && Date.now() < rtDeshacerHasta) return;
+  const g = $("rtGuardado");
+  g.className = "rt-guardado" + (clase ? " " + clase : "");
+  g.replaceChildren(texto || "");
+}
 function rtCambio(inmediato) {
-  rtSucio = true; poner("rtGuardado", rt("guardando"));
+  rtSucio = true; rtVersion++; rtEstadoGuardado(rt("guardando"));
   clearTimeout(rtGuardarT);
   rtGuardarT = setTimeout(rtGuardar, inmediato ? 0 : 500);
 }
 async function rtGuardar() {
+  if (rtEnviando) { clearTimeout(rtGuardarT); rtGuardarT = setTimeout(rtGuardar, 200); return; }
+  const v = rtVersion;
+  rtEnviando = true;
   try {
     const d = await api("/api/rutas", { entradas_red: RB.entradas_red, rutas: RB.rutas });
-    RD = d; rtSucio = false;
-    // las ids y caminos los fija el servicio: el borrador sigue a lo guardado
-    RB = { entradas_red: d.entradas.filter((e) => ["ndi", "ingesta"].includes(e.tipo)).map(({ llega, ...e }) => e),
-      rutas: JSON.parse(JSON.stringify(d.rutas)) };
-    poner("rtGuardado", rt("guardado"));
+    rtEnviando = false; rtError = null; RD = d;
+    if (v === rtVersion) {
+      // nada cambió mientras viajaba: el borrador sigue a lo guardado (ids y caminos los fija el servicio)
+      rtSucio = false; RB = rtBorradorDe(d); rtEstadoGuardado(rt("guardado"));
+    } else {
+      // el usuario siguió editando: lo suyo manda y se reenvía
+      clearTimeout(rtGuardarT); rtGuardarT = setTimeout(rtGuardar, 0);
+    }
     rtPintar();
-  } catch (err) { poner("rtGuardado", rt("sin_guardar") + err.message); }
+  } catch (err) {
+    rtEnviando = false; rtError = err;
+    const g = $("rtGuardado");
+    g.className = "rt-guardado mal";
+    g.replaceChildren(rt("sin_guardar") + err.message + " ",
+      rel("button", { class: "boton", type: "button", text: rt("reintentar"), onclick: () => rtCambio(true) }),
+      rel("button", { class: "boton", type: "button", text: rt("descartar"), onclick: () => { rtSucio = false; rtError = null; rtEstadoGuardado(""); rtCargar(); } }));
+  }
+}
+// si se cierra la pestaña o el móvil pasa a segundo plano con cambios pendientes, se mandan igual
+function rtVaciar() {
+  if (!rtSucio || !RB) return;
+  clearTimeout(rtGuardarT);
+  try {
+    fetch("/api/rutas", { method: "POST", headers: { "Content-Type": "application/json" }, keepalive: true,
+      body: JSON.stringify({ entradas_red: RB.entradas_red, rutas: RB.rutas }) });
+    rtSucio = false;
+  } catch (_) { /* sin red: lo reintenta el temporizador */ }
+}
+window.addEventListener("pagehide", rtVaciar);
+document.addEventListener("visibilitychange", () => { if (document.visibilityState === "hidden") rtVaciar(); });
+// deshacer: se apunta el borrador antes de algo destructivo y se ofrece 6 segundos
+function rtApuntar() { rtPila.push(JSON.stringify(RB)); if (rtPila.length > 10) rtPila.shift(); }
+function rtOfrecerDeshacer(texto) {
+  const g = $("rtGuardado");
+  g.className = "rt-guardado";
+  rtDeshacerHasta = Date.now() + 6000;
+  g.replaceChildren(texto + " · ", rel("button", { class: "boton", type: "button", text: rt("deshacer"), onclick: () => {
+    const prev = rtPila.pop(); if (!prev) return;
+    rtDeshacerHasta = 0;
+    RB = JSON.parse(prev); rtSel = null; rtCableSel = null; rtCambio(true); rtPintar(); } }));
+  clearTimeout(rtDeshacerT);
+  rtDeshacerT = setTimeout(() => { rtDeshacerHasta = 0; if (!rtSucio && !rtError) rtEstadoGuardado(rt("guardado")); }, 6000);
+}
+const rtEnMarcha = (r) => rtEstado(r.id).estado === "en_marcha";
+function rtBorrarRuta(r) {
+  if (rtEnMarcha(r) && !confirm(rt("confirmar_borrar")(r.nombre))) return;
+  rtApuntar();
+  RB.rutas = RB.rutas.filter((x) => x !== r); if (rtSel === "r:" + r.id) rtSel = null;
+  rtCambio(true); rtPintar(); rtOfrecerDeshacer(rt("borrada")(r.nombre));
+}
+function rtQuitarSalida(r, s) {
+  if (rtEnMarcha(r) && !confirm(rt("confirmar_quitar")(r.nombre))) return;
+  rtApuntar();
+  r.salidas = r.salidas.filter((x) => x !== s); if (rtSel === "s:" + s.id) rtSel = null;
+  rtCambio(true); rtPintar(); rtOfrecerDeshacer(rt("quitada")(rt("salidas")[s.tipo]));
+}
+function rtDesconectar(c) {
+  rtApuntar();
+  if (c.p === "p") { const [r, s] = rtSalida(c.a.slice(2)); if (r) r.salidas = r.salidas.filter((x) => x !== s); }
+  else { const r = rtRuta(c.a.slice(2)); if (r) { if (c.p === "v") r.video = ""; else r.audio = ""; } }
+  rtCableSel = null; rtCambio(true); rtPintar(); rtOfrecerDeshacer(rt("desconectada"));
 }
 
 // ---------------------------------------------------------------- lienzo
@@ -3138,7 +3255,7 @@ const rtColumnas = (W = rtAnchoLienzo()) => ({ ent: 24, ruta: Math.round(W / 2 -
 function rtNodos() {
   // entradas, rutas y salidas como bloques del lienzo
   const n = [];
-  for (const e of RD.entradas) n.push({ id: "e:" + e.id, clase: "ent", e });
+  for (const e of rtEntradas()) n.push({ id: "e:" + e.id, clase: "ent", e });
   for (const r of RB.rutas) n.push({ id: "r:" + r.id, clase: "ruta", r });
   for (const r of RB.rutas) for (const s of r.salidas) n.push({ id: "s:" + s.id, clase: "sal", r, s });
   return n;
@@ -3153,8 +3270,10 @@ function rtCables() {
   }
   return c;
 }
+const rtAltoLienzo = () => Math.max(900, ...Object.values(rtPos).map((p) => p[1] + 160));
 function rtColocar(nodos) {
   // posiciones guardadas; lo que no tiene, al final de su columna
+  if (!$("rtMarco").clientWidth) return;        // oculto: sin ancho real no se recoloca ni se guarda nada
   const W = rtAnchoLienzo(), col = rtColumnas(W);
   const fondo = { ent: 44, ruta: 44, sal: 44 };
   for (const n of nodos) if (rtPos[n.id]) fondo[n.clase] = Math.max(fondo[n.clase], rtPos[n.id][1] + (n.clase === "ent" ? 230 : 170));
@@ -3162,6 +3281,9 @@ function rtColocar(nodos) {
     if (!rtPos[n.id]) { rtPos[n.id] = [col[n.clase], fondo[n.clase]]; fondo[n.clase] += n.clase === "ent" ? 230 : n.clase === "ruta" ? 250 : 130; }
     rtPos[n.id][0] = Math.min(rtPos[n.id][0], W - ANCHO[n.clase] - 4);
   }
+  // posiciones de bloques que ya no existen: fuera, que si no crecen sin fin
+  const ids = new Set(nodos.map((n) => n.id));
+  for (const id of Object.keys(rtPos)) if (!ids.has(id)) delete rtPos[id];
   rtGuardarPos();
 }
 function rtOrdenar() {
@@ -3173,11 +3295,12 @@ function rtOrdenar() {
   }
   rtGuardarPos(); rtPintar();
 }
-function rtPuerto(nid, p, texto, lado) {
-  return rel("div", { class: "rt-puerto " + lado },
-    lado === "ent" ? rel("span", { class: "rt-enchufe " + p, "data-n": nid, "data-p": p, "data-lado": "ent", title: texto }) : null,
-    rel("span", { text: texto }),
-    lado === "sal" ? rel("span", { class: "rt-enchufe " + p, "data-n": nid, "data-p": p, "data-lado": "sal", title: texto }) : null);
+function rtPuerto(nid, p, texto, lado, nombre) {
+  // el enchufe también se maneja con el teclado: Enter o Espacio lo "toca"
+  const enchufe = rel("span", { class: "rt-enchufe " + p, "data-n": nid, "data-p": p, "data-lado": lado, title: texto,
+    tabindex: "0", role: "button", "aria-label": rt("enchufe")(texto, nombre || ""),
+    onkeydown: (ev) => { if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); rtTocar(rtDatos(ev.currentTarget)); } } });
+  return rel("div", { class: "rt-puerto " + lado }, lado === "ent" ? enchufe : null, rel("span", { text: texto }), lado === "sal" ? enchufe : null);
 }
 function rtTextoSalida(r, s) {
   const h = rtHost(), P = (RD || {}).puertos || {};
@@ -3209,20 +3332,21 @@ function rtCrearNodo(n) {
     }
     const sub = n.e.tipo === "ingesta" ? rt("llega")(n.e.llega) : n.e.tipo === "ndi" ? n.e.fuente : rt("tipos")[n.e.tipo];
     cuerpo.append(rel("small", { text: sub }));
-    if (daImagen(n.e)) cuerpo.append(rtPuerto(n.id, "v", rt("imagen"), "sal"));
-    if (daAudio(n.e)) cuerpo.append(rtPuerto(n.id, "a", rt("audio"), "sal"));
+    if (daImagen(n.e)) cuerpo.append(rtPuerto(n.id, "v", rt("imagen"), "sal", titulo));
+    if (daAudio(n.e)) cuerpo.append(rtPuerto(n.id, "a", rt("audio"), "sal", titulo));
   } else if (n.clase === "ruta") {
     const r = n.r, e = rtEstado(r.id);
-    cuerpo.append(rtPuerto(n.id, "v", rt("imagen"), "ent"), rtPuerto(n.id, "a", rt("audio"), "ent"));
+    cuerpo.append(rtPuerto(n.id, "v", rt("imagen"), "ent", titulo), rtPuerto(n.id, "a", rt("audio"), "ent", titulo));
     cuerpo.append(rel("small", { text: r.audio ? `${r.ganancia > 0 ? "+" : ""}${r.ganancia} dB · ${rt("retraso").toLowerCase()} ${r.retraso} ms${r.mudo ? " · " + rt("silenciar").toLowerCase() : ""}` : rt("sin_audio") }));
     if (r.audio) { const vu = rel("div", { class: "rt-vu" }, rel("i")); rtVu(vu.firstChild, e); cuerpo.append(vu); }
     const etqs = rel("div", { style: "display:flex;gap:6px;flex-wrap:wrap;align-items:center" },
       rel("span", { class: "etq " + ({ en_marcha: "ok", error: "mal", esperando: "aviso" }[e.estado] || ""), text: rt("est")[e.estado] || "—" }),
       e.copia ? rel("span", { class: "etq ok", text: rt("copia_corta") }) : null,
-      rtErrores(r.id).length ? rel("span", { class: "etq mal", text: "!" }) : null);
-    cuerpo.append(etqs, rtPuerto(n.id, "p", rt("programa"), "sal"));
+      rtErrores(r.id).length ? rel("span", { class: "etq mal", title: rt("errores")[rtErrores(r.id)[0]] || rtErrores(r.id)[0],
+        text: "! " + (rt("errores")[rtErrores(r.id)[0]] || rtErrores(r.id)[0]).replace(/[:.].*$/, "") }) : null);
+    cuerpo.append(etqs, rtPuerto(n.id, "p", rt("programa"), "sal", titulo));
   } else {
-    cuerpo.append(rtPuerto(n.id, "p", "«" + n.r.nombre + "»", "ent"), rel("small", { text: rtTextoSalida(n.r, n.s) }));
+    cuerpo.append(rtPuerto(n.id, "p", "«" + n.r.nombre + "»", "ent", titulo), rel("small", { text: rtTextoSalida(n.r, n.s) }));
   }
   caja.append(cab, cuerpo);
   // mover arrastrando la cabecera
@@ -3231,11 +3355,15 @@ function rtCrearNodo(n) {
     ev.preventDefault();
     const p0 = rtPos[n.id], ox = ev.clientX - p0[0], oy = ev.clientY - p0[1]; let movido = false;
     cab.setPointerCapture(ev.pointerId);
+    rtArrastreNodo = true;
+    const alto = $("rtLienzo").offsetHeight || 900;
     const mover = (e) => { movido = true;
-      rtPos[n.id] = [Math.max(0, Math.min(rtAnchoLienzo() - ANCHO[n.clase] - 4, e.clientX - ox)), Math.max(30, Math.min(900 - 80, e.clientY - oy))];
+      rtPos[n.id] = [Math.max(0, Math.min(rtAnchoLienzo() - ANCHO[n.clase] - 4, e.clientX - ox)), Math.max(30, Math.min(alto - 80, e.clientY - oy))];
       caja.style.left = rtPos[n.id][0] + "px"; caja.style.top = rtPos[n.id][1] + "px"; rtDibujarCables(); };
     const soltar = () => { cab.removeEventListener("pointermove", mover); cab.removeEventListener("pointerup", soltar);
-      rtGuardarPos(); if (!movido) rtSeleccionar(n.id); };
+      cab.removeEventListener("pointercancel", soltar); rtArrastreNodo = false;
+      rtGuardarPos(); if (!movido) rtSeleccionar(n.id); else rtPintarLienzo(); };
+    cab.addEventListener("pointercancel", soltar);
     cab.addEventListener("pointermove", mover); cab.addEventListener("pointerup", soltar);
   });
   return caja;
@@ -3273,14 +3401,29 @@ function rtPintarLienzo() {
   for (const e of lienzo.querySelectorAll(".rt-col")) e.style.left = col[e.dataset.col] + "px";
   const nodos = rtNodos();
   rtColocar(nodos);
-  for (const n of lienzo.querySelectorAll(".rt-nodo")) n.remove();
-  for (const n of nodos) lienzo.append(rtCrearNodo(n));
+  lienzo.style.height = rtAltoLienzo() + "px";
+  // cada bloque se sustituye en su sitio por su id; el que se arrastra o tiene el foco se deja en paz
+  const vivos = new Map([...lienzo.querySelectorAll(".rt-nodo")].map((n) => [n.dataset.id, n]));
+  const foco = document.activeElement;
+  for (const n of nodos) {
+    const viejo = vivos.get(n.id); vivos.delete(n.id);
+    if (viejo && (rtArrastreNodo || (foco && viejo.contains(foco)))) continue;
+    const nuevo = rtCrearNodo(n);
+    if (viejo) viejo.replaceWith(nuevo); else lienzo.append(nuevo);
+  }
+  for (const n of vivos.values()) n.remove();
   rtDibujarCables();
   if (rtTocado) rtMarcarTocado();
 }
 // --- conectar: arrastrando o tocando
 const rtDatos = (e) => ({ n: e.dataset.n, p: e.dataset.p, lado: e.dataset.lado });
 const rtValida = (a, b) => a.lado !== b.lado && a.n !== b.n && a.p === b.p;
+function rtTocar(o) {
+  // primer toque: queda elegido; segundo toque en uno que case: se conecta; en el mismo: se suelta
+  if (rtTocado && rtValida(rtTocado, o)) { const t0 = rtTocado; rtTocado = null; rtConectar(t0, o); return; }
+  if (rtTocado && rtTocado.n === o.n && rtTocado.p === o.p) { rtTocado = null; rtMarcarTocado(); return; }
+  rtTocado = o; rtMarcarTocado(); rtAviso(rt("toca"));
+}
 function rtMarcarTocado() {
   const l = $("rtLienzo");
   for (const x of l.querySelectorAll(".rt-enchufe.elegido, .rt-enchufe.posible")) x.classList.remove("elegido", "posible");
@@ -3291,7 +3434,9 @@ function rtMarcarTocado() {
 }
 let rtAvisoT = 0;
 function rtAviso(txt, mal) { const a = $("rtAyuda"); a.textContent = txt; a.style.color = mal ? "var(--mal)" : "var(--acento)";
-  clearTimeout(rtAvisoT); rtAvisoT = setTimeout(() => { a.style.color = ""; a.textContent = rt("ayuda"); }, 3500); }
+  if (rtVista !== "lienzo") rtEstadoGuardado(txt, mal ? "mal" : "");
+  clearTimeout(rtAvisoT); rtAvisoT = setTimeout(() => { a.style.color = ""; a.textContent = rt("ayuda");
+    if (rtVista !== "lienzo" && !rtSucio && !rtError) rtEstadoGuardado(rt("guardado")); }, 3500); }
 function rtConectar(a, b) {
   const [s, d] = a.lado === "sal" ? [a, b] : [b, a];
   if (s.p === "v" || s.p === "a") {
@@ -3332,11 +3477,7 @@ function rtIniciarLienzo() {
     rtArrastre = null; a.prov.remove();
     for (const x of l.querySelectorAll(".rt-enchufe.destino, .rt-enchufe.malo")) x.classList.remove("destino", "malo");
     const e = document.elementFromPoint(ev.clientX, ev.clientY)?.closest?.(".rt-enchufe");
-    if (!a.movido) {
-      if (rtTocado && rtValida(rtTocado, a.o)) { const t0 = rtTocado; rtTocado = null; rtConectar(t0, a.o); return; }
-      if (rtTocado && rtTocado.n === a.o.n && rtTocado.p === a.o.p) { rtTocado = null; rtMarcarTocado(); return; }
-      rtTocado = a.o; rtMarcarTocado(); rtAviso(rt("toca")); return;
-    }
+    if (!a.movido) { rtTocar(a.o); return; }
     if (e && rtValida(a.o, rtDatos(e))) rtConectar(a.o, rtDatos(e));
     else if (e) rtAviso(a.o.lado === rtDatos(e).lado ? rt("mal_lado") : rt("mal_color"), true);
   });
@@ -3387,8 +3528,7 @@ function rtAjustesRuta(r) {
   }
   if (e.copia) t.push(rel("div", { class: "nota", text: rt("copia") }));
   if (e.lectores) t.push(rel("div", { class: "nota", text: rt("lectores")(e.lectores) }));
-  t.push(rel("div", { class: "botones" }, rel("button", { class: "boton peligro", type: "button", text: rt("borrar_ruta"), onclick: () => {
-    RB.rutas = RB.rutas.filter((x) => x !== r); rtSel = null; rtCambio(true); rtPintar(); } })));
+  t.push(rel("div", { class: "botones" }, rel("button", { class: "boton peligro", type: "button", text: rt("borrar_ruta"), onclick: () => rtBorrarRuta(r) })));
   return t;
 }
 function rtAjustesEntrada(e) {
@@ -3410,9 +3550,11 @@ function rtAjustesEntrada(e) {
   const usos = RB.rutas.filter((r) => r.video === e.id || r.audio === e.id).map((r) => r.nombre);
   t.push(rel("div", { class: "nota", text: rt("se_usa")(usos) }));
   if (red) t.push(rel("div", { class: "botones" }, rel("button", { class: "boton peligro", type: "button", text: rt("quitar"), onclick: () => {
+    if (RB.rutas.some((r) => (r.video === e.id || r.audio === e.id) && rtEnMarcha(r)) && !confirm(rt("confirmar_borrar")(e.nombre))) return;
+    rtApuntar();
     RB.entradas_red = RB.entradas_red.filter((x) => x !== red);
     for (const r of RB.rutas) { if (r.video === e.id) r.video = ""; if (r.audio === e.id) r.audio = ""; }
-    rtSel = null; rtCambio(true); rtPintar(); } })));
+    rtSel = null; rtCambio(true); rtPintar(); rtOfrecerDeshacer(rt("borrada")(e.nombre)); } })));
   return t;
 }
 function rtAjustesSalida(r, s) {
@@ -3425,19 +3567,24 @@ function rtAjustesSalida(r, s) {
   if (s.tipo === "obs" || s.tipo === "srt") t.push(rel("span", { class: "nota", text: rt("obs_urls") }),
     rel("div", { class: "mono", text: `OBS: rtmp://${h}:${P.rtmp || 1935}/live/${r.camino}` }),
     rel("div", { class: "mono", text: `TV, VLC: http://${h}:${P.hls || 8888}/live/${r.camino}/index.m3u8` }),
-    rel("div", { class: "mono", text: `${lang === "en" ? "Browser" : "Navegador"}: http://${h}:${P.hls || 8888}/live/${r.camino}/` }),
+    rel("div", { class: "mono", text: `${T[lang].navegador}: http://${h}:${P.hls || 8888}/live/${r.camino}/` }),
     rel("div", { class: "mono", text: `SRT: srt://${h}:${P.srt || 8890}?streamid=read:live/${r.camino}` }));
-  if (s.tipo === "rtmp") t.push(rtCampo("rtUrl", rt("url_rtmp"), rel("input", { type: "text", id: "rtUrl", value: s.url || "", autocomplete: "off", spellcheck: "false",
-    oninput: (ev) => { s.url = ev.target.value.trim(); rtCambio(); } })));
+  if (s.tipo === "rtmp") {
+    // la clave de emisión va tapada; si no se toca, se manda tal cual (enmascarada) y el servicio conserva la suya
+    const url = rel("input", { type: "password", id: "rtUrl", value: s.url || "", autocomplete: "off", spellcheck: "false",
+      oninput: (ev) => { s.url = ev.target.value.trim(); rtCambio(); } });
+    const ver = rel("button", { class: "boton", type: "button", text: rt("mostrar"), "aria-pressed": "false", onclick: () => {
+      const oculto = url.type === "password"; url.type = oculto ? "text" : "password"; ver.textContent = rt(oculto ? "ocultar" : "mostrar"); ver.setAttribute("aria-pressed", String(oculto)); } });
+    t.push(rtCampo("rtUrl", rt("url_rtmp"), rel("div", { class: "rt-desliza" }, url, ver)));
+  }
   if (s.tipo === "grabar") t.push(rtCampo("rtFmt", rt("formato"), rel("select", { id: "rtFmt", onchange: (ev) => { s.formato = ev.target.value; rtCambio(true); } },
     ...["mp4", "mkv"].map((f) => rel("option", { value: f, text: f.toUpperCase(), selected: (s.formato || "mp4") === f })))), rel("div", { class: "nota", text: rt("grabar_nota") }));
   if (s.tipo === "hdmi") t.push(rel("div", { class: "nota", text: rt("hdmi_nota") }));
-  t.push(rel("div", { class: "botones" }, rel("button", { class: "boton peligro", type: "button", text: rt("quitar"), onclick: () => {
-    r.salidas = r.salidas.filter((x) => x !== s); rtSel = null; rtCambio(true); rtPintar(); } })));
+  t.push(rel("div", { class: "botones" }, rel("button", { class: "boton peligro", type: "button", text: rt("quitar"), onclick: () => rtQuitarSalida(r, s) })));
   return t;
 }
 function rtPaleta() {
-  const sel = rtSel && rtSel.startsWith("r:") ? rtRuta(rtSel.slice(2)) : rtSel && rtSel.startsWith("s:") ? rtSalida(rtSel.slice(2))[0] : RB.rutas[0];
+  const sel = rtSel && rtSel.startsWith("r:") ? rtRuta(rtSel.slice(2)) : rtSel && rtSel.startsWith("s:") ? rtSalida(rtSel.slice(2))[0] : null;
   const lite = RD && !RD.pro && RB.rutas.length >= RD.limite_lite;
   return rel("div", { class: "tarjeta" }, rel("h3", { text: rt("anadir") }),
     rel("span", { class: "nota", text: rt("entradas") }),
@@ -3459,10 +3606,7 @@ function rtPintarInspector() {
   if (rtCableSel) {
     const c = rtCableSel;
     t = rel("div", { class: "tarjeta" }, rtBarraHoja(rt("ajustes")), rel("h3", { text: rt("conexion") }),
-      rel("div", { class: "botones" }, rel("button", { class: "boton peligro", type: "button", text: rt("desconectar"), onclick: () => {
-        if (c.p === "p") { const [r, s] = rtSalida(c.a.slice(2)); if (r) r.salidas = r.salidas.filter((x) => x !== s); }
-        else { const r = rtRuta(c.a.slice(2)); if (c.p === "v") r.video = ""; else r.audio = ""; }
-        rtCableSel = null; rtCambio(true); rtPintar(); } })));
+      rel("div", { class: "botones" }, rel("button", { class: "boton peligro", type: "button", text: rt("desconectar"), onclick: () => rtDesconectar(c) })));
   } else if (rtSel) {
     const [clase, id] = [rtSel[0], rtSel.slice(2)];
     let titulo = "", icono = "ruta", cuerpo = [], renombrar = null;
@@ -3472,7 +3616,7 @@ function rtPintarInspector() {
     else if (clase === "s" && rtSalida(id)[0]) { const [r, s] = rtSalida(id); titulo = rt("salidas")[s.tipo]; icono = s.tipo; cuerpo = rtAjustesSalida(r, s); }
     else { rtSel = null; }
     if (rtSel) {
-      const nombre = renombrar ? rel("input", { type: "text", id: "rtNombre", value: titulo, "aria-label": "Nombre",
+      const nombre = renombrar ? rel("input", { type: "text", id: "rtNombre", value: titulo, "aria-label": T[lang].aria_nombre,
         oninput: (ev) => { renombrar(ev.target.value); rtCambio(); } }) : rel("b", { text: titulo });
       t = rel("div", { class: "tarjeta" }, rtBarraHoja(rt("ajustes")), rel("div", { class: "rt-insp-cab" }, rtIcono(icono, 18), nombre), ...cuerpo);
     }
@@ -3481,25 +3625,48 @@ function rtPintarInspector() {
   ins.replaceChildren(...[t, lienzo ? rtPaleta() : null].filter(Boolean));
   const movil = matchMedia("(max-width: 980px)").matches;
   const abierta = movil && rtHoja && !!t;
+  rtHojaAbrir(ins, abierta);
+  ins.hidden = !lienzo && !movil && !t;
+}
+// la hoja del móvil es un diálogo: coge el foco al abrir y lo devuelve al cerrar
+function rtHojaAbrir(ins, abierta) {
+  const estaba = ins.classList.contains("abierta");
   ins.classList.toggle("abierta", abierta);
   $("rtVelo").classList.toggle("visible", abierta);
-  ins.hidden = !lienzo && !movil && !t;
+  if (abierta) { ins.setAttribute("role", "dialog"); ins.setAttribute("aria-modal", "true"); }
+  else { ins.removeAttribute("role"); ins.removeAttribute("aria-modal"); }
+  if (abierta && !estaba) {
+    rtFocoPrevio = document.activeElement;
+    const primero = ins.querySelector(".rt-cerrar button, input, select, button");
+    if (primero) primero.focus({ preventScroll: true });
+  } else if (!abierta && estaba && rtFocoPrevio && document.contains(rtFocoPrevio)) {
+    rtFocoPrevio.focus({ preventScroll: true }); rtFocoPrevio = null;
+  }
 }
 
 // ---------------------------------------------------------------- añadir
 function rtNuevaRuta() {
+  const tope = (RD && RD.limite_rutas) || 16;
+  if (RB.rutas.length >= tope) { rtAviso(rt("tope_rutas")(tope), true); return; }
   const n = RB.rutas.length + 1;
   const r = { id: rtNuevoId("r"), nombre: `${rt("nueva_ruta")} ${n}`, video: "", audio: "", ganancia: 0, retraso: 0, mudo: false, activa: true, salidas: [] };
   RB.rutas.push(r); rtSel = "r:" + r.id; rtHoja = !matchMedia("(max-width: 980px)").matches; rtCambio(true); rtPintar();
 }
 function rtAnadirEntrada(tipo) {
+  const tope = (RD && RD.limite_entradas) || 32;
+  if (RB.entradas_red.length >= tope) { rtAviso(rt("tope_entradas")(tope), true); return; }
   const e = tipo === "ndi"
     ? { id: rtNuevoId("ndi"), tipo, nombre: ((RD.red_ndi || [])[0] || {}).nombre || "NDI", fuente: ((RD.red_ndi || [])[0] || {}).nombre || "" }
     : { id: rtNuevoId("ing"), tipo, nombre: "ATEM" };
-  RB.entradas_red.push(e); rtSel = "e:" + e.id; rtHoja = true; rtCambio(true);
+  RB.entradas_red.push(e); rtSel = "e:" + e.id; rtHoja = true; rtCambio(true); rtPintar();
 }
 function rtAnadirSalida(r, tipo) {
-  if (tipo === "hdmi") for (const o of RB.rutas) o.salidas = o.salidas.filter((x) => x.tipo !== "hdmi");
+  if (tipo === "hdmi") {
+    // hay un monitor: se lo quita a la ruta que lo tuviera, avisando
+    const otra = RB.rutas.find((o) => o !== r && o.salidas.some((x) => x.tipo === "hdmi"));
+    if (otra) { rtApuntar(); rtAviso(rt("hdmi_cambiado")(otra.nombre)); }
+    for (const o of RB.rutas) o.salidas = o.salidas.filter((x) => x.tipo !== "hdmi");
+  }
   const s = { id: rtNuevoId("s"), tipo };
   if (tipo === "ndi") s.nombre = r.nombre;
   if (tipo === "grabar") s.formato = "mp4";
@@ -3509,7 +3676,7 @@ function rtAnadirSalida(r, tipo) {
 
 // ---------------------------------------------------------------- vista lista (el móvil)
 function rtPintarLista() {
-  const cont = $("rtVistaLista"), ents = RD.entradas;
+  const cont = $("rtVistaLista"), ents = rtEntradas();
   const tarjetas = RB.rutas.map((r) => {
     const e = rtEstado(r.id), v = rtEnt(r.video), a = rtEnt(r.audio);
     const selV = rel("select", { id: "lv-" + r.id, onchange: (ev) => { r.video = ev.target.value; rtCambio(true); rtPintar(); } },
@@ -3524,21 +3691,20 @@ function rtPintarLista() {
     const chips = r.salidas.map((s) => rel("div", { class: "rt-chip" }, rtIcono(s.tipo),
       rel("span", { class: "tx" }, rel("b", { text: rt("salidas")[s.tipo] }), rel("small", { text: rtTextoSalida(r, s) })),
       rel("button", { class: "boton", type: "button", text: rt("ajustes"), onclick: () => rtSeleccionar("s:" + s.id) }),
-      rel("button", { class: "rt-quitar", type: "button", "aria-label": rt("quitar"), text: "×", onclick: () => {
-        r.salidas = r.salidas.filter((x) => x !== s); rtCambio(true); rtPintar(); } })));
+      rel("button", { class: "rt-quitar", type: "button", "aria-label": rt("quitar") + ": " + rt("salidas")[s.tipo], text: "×", onclick: () => rtQuitarSalida(r, s) })));
     const menu = rel("select", { id: "ls-" + r.id, "aria-label": rt("anadir_salida"), onchange: (ev) => { if (ev.target.value) rtAnadirSalida(r, ev.target.value); } },
       rel("option", { value: "", text: rt("anadir_salida") }),
       ...Object.keys(rt("salidas")).map((k) => rel("option", { value: k, text: rt("salidas")[k], disabled: r.salidas.some((x) => x.tipo === k) && k !== "rtmp" })));
     const errs = rtErrores(r.id).map((c) => rel("div", { class: "rt-err", text: rt("errores")[c] || c }));
     return rel("article", { class: "tarjeta", style: e.estado === "pausada" ? "opacity:.65" : "" },
       rel("div", { class: "rt-insp-cab" }, rtIcono("ruta", 18),
-        rel("input", { type: "text", id: "ln-" + r.id, value: r.nombre, "aria-label": "Nombre", oninput: (ev) => { r.nombre = ev.target.value; rtCambio(); } }),
+        rel("input", { type: "text", id: "ln-" + r.id, value: r.nombre, "aria-label": T[lang].aria_nombre, oninput: (ev) => { r.nombre = ev.target.value; rtCambio(); } }),
         rel("span", { class: "etq " + ({ en_marcha: "ok", error: "mal", esperando: "aviso" }[e.estado] || ""), text: rt("est")[e.estado] || "—" })),
       ...errs,
       rtCampo("lv-" + r.id, rt("imagen"), selV), rtCampo("la-" + r.id, rt("audio"), selA), audio,
       rel("span", { class: "nota", text: rt("sale_por") }), ...(chips.length ? chips : [rel("div", { class: "nota", text: rt("sin_salidas") })]), menu,
       rel("div", { class: "botones" }, rel("button", { class: "boton", type: "button", text: rt("ajustes"), onclick: () => rtSeleccionar("r:" + r.id) }),
-        rel("button", { class: "boton peligro", type: "button", text: rt("borrar_ruta"), onclick: () => { RB.rutas = RB.rutas.filter((x) => x !== r); rtCambio(true); rtPintar(); } })));
+        rel("button", { class: "boton peligro", type: "button", text: rt("borrar_ruta"), onclick: () => rtBorrarRuta(r) })));
   });
   const anadirRed = rel("select", { id: "lAddEnt", "aria-label": rt("anadir_red"), onchange: (ev) => { if (ev.target.value) rtAnadirEntrada(ev.target.value); } },
     rel("option", { value: "", text: rt("anadir_red") }), rel("option", { value: "ndi", text: rt("anadir_ndi") }), rel("option", { value: "ingesta", text: rt("anadir_ingesta") }));
@@ -3572,12 +3738,11 @@ function rtPintarMonitor() {
 // ---------------------------------------------------------------- general
 function rtPintar() {
   if (!RD || !RB) return;
-  // mientras se arrastra un deslizador o se escribe, no se repinta lo que se está tocando
-  const foco = document.activeElement;
-  const ocupado = foco && $("secRutas").contains(foco) && ["INPUT", "SELECT"].includes(foco.tagName) && rtSucio;
+  // mientras se arrastra algo, se escribe o hay un desplegable abierto, no se reconstruye lo que se está tocando
+  const ocupado = rtOcupado();
   $("rtVistaLienzo").hidden = rtVista !== "lienzo"; $("rtVistaLista").hidden = rtVista !== "lista";
   $("rtOrdenar").hidden = rtVista !== "lienzo";
-  for (const b of $("rtVistas").querySelectorAll("button")) b.classList.toggle("activo", b.dataset.v === rtVista);
+  for (const b of $("rtVistas").querySelectorAll("button")) { b.classList.toggle("activo", b.dataset.v === rtVista); b.toggleAttribute("aria-current", b.dataset.v === rtVista); }
   if (rtVista === "lienzo") rtPintarLienzo(); else if (!ocupado) rtPintarLista();
   if (!ocupado) rtPintarInspector();
   if (!$("rtAyuda").textContent) $("rtAyuda").textContent = rt("ayuda");
@@ -3586,7 +3751,7 @@ let rtCargaT = 0;
 function rtBucle() {
   clearTimeout(rtCargaT);
   const conRutas = ((ultimo || {}).config || {}).motor === "rutas";
-  if (conRutas && ["rutas", "monitor"].includes(pestana) && !rtArrastre) rtCargar();
+  if (conRutas && ["rutas", "monitor"].includes(pestana) && !rtArrastre && !rtArrastreNodo) rtCargar();
   rtCargaT = setTimeout(rtBucle, 2000);
 }
 function rtIniciar() {
@@ -3594,7 +3759,7 @@ function rtIniciar() {
   $("rtNuevaRuta").addEventListener("click", rtNuevaRuta);
   $("rtAnadir").addEventListener("click", () => { rtSel = null; rtCableSel = null; rtHoja = true;
     if (matchMedia("(max-width: 980px)").matches) { $("rtInsp").replaceChildren(rel("div", { class: "tarjeta" }, rtBarraHoja(rt("anadir")), ...rtPaleta().childNodes));
-      $("rtInsp").classList.add("abierta"); $("rtVelo").classList.add("visible"); } else rtPintar(); });
+      rtHojaAbrir($("rtInsp"), true); } else rtPintar(); });
   $("rtOrdenar").addEventListener("click", rtOrdenar);
   for (const b of $("rtVistas").querySelectorAll("button")) b.addEventListener("click", () => {
     rtVista = b.dataset.v; try { localStorage.setItem("ndiicam-rt-vista", rtVista); } catch (_) { /* sin almacenamiento */ } rtPintar(); });
@@ -3602,12 +3767,8 @@ function rtIniciar() {
   document.addEventListener("keydown", (ev) => {
     if (pestana !== "rutas") return;
     if (ev.key === "Escape") { if (rtTocado) { rtTocado = null; rtMarcarTocado(); } else rtCerrarHoja(); }
-    if ((ev.key === "Delete" || ev.key === "Backspace") && rtCableSel && !["INPUT", "SELECT", "TEXTAREA"].includes(document.activeElement.tagName)) {
-      const c = rtCableSel;
-      if (c.p === "p") { const [r, s] = rtSalida(c.a.slice(2)); if (r) r.salidas = r.salidas.filter((x) => x !== s); }
-      else { const r = rtRuta(c.a.slice(2)); if (c.p === "v") r.video = ""; else r.audio = ""; }
-      rtCableSel = null; rtCambio(true); rtPintar();
-    }
+    // solo Suprimir: Retroceso es demasiado fácil de pulsar sin querer
+    if (ev.key === "Delete" && rtCableSel && !["INPUT", "SELECT", "TEXTAREA"].includes(document.activeElement.tagName)) rtDesconectar(rtCableSel);
   });
   let redim = 0;
   window.addEventListener("resize", () => { clearTimeout(redim); redim = setTimeout(() => { if (pestana === "rutas") rtPintar(); }, 150); });
