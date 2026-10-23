@@ -3032,7 +3032,8 @@ const RT = {
       sin_imagen: "Falta la imagen: conecta un cable azul a «imagen».", imagen_no_esta: "La entrada de la imagen no está conectada.",
       imagen_no_valida: "Esa entrada no da imagen.", audio_no_esta: "La entrada del audio no está conectada.",
       audio_no_valido: "Esa entrada no da audio.", sin_salidas: "Sin salidas: conéctale alguna.",
-      ndi_a_ndi: "Ya es una fuente NDI: no se vuelve a sacar por NDI.", ndi_repetido: "Otra ruta usa ese nombre NDI.",
+      ndi_a_ndi: "Ya es una fuente NDI: no se vuelve a sacar por NDI.",
+      fuente_sin_imagen: "La fuente está en la red pero no manda imagen. En OBS, comprueba que esa fuente esté activa y dando imagen.", ndi_repetido: "Otra ruta usa ese nombre NDI.",
       hdmi_ocupado: "El monitor lo tiene otra ruta.", url_rtmp_invalida: "La URL RTMP no es válida.",
       sin_gpu: "Este equipo no puede codificar H.264 para esta salida (sin GPU útil).",
       camara_ocupada: "Esa cámara ya la usa otra ruta: una cámara solo puede ir en una.",
@@ -3087,7 +3088,8 @@ const RT = {
       sin_imagen: "No picture: connect a blue cable to “picture”.", imagen_no_esta: "The picture input is not connected.",
       imagen_no_valida: "That input gives no picture.", audio_no_esta: "The audio input is not connected.",
       audio_no_valido: "That input gives no audio.", sin_salidas: "No outputs: connect one.",
-      ndi_a_ndi: "It is already an NDI source: it does not go out as NDI again.", ndi_repetido: "Another route uses that NDI name.",
+      ndi_a_ndi: "It is already an NDI source: it does not go out as NDI again.",
+      fuente_sin_imagen: "The source is on the network but sends no picture. In OBS, check that the source is active and showing something.", ndi_repetido: "Another route uses that NDI name.",
       hdmi_ocupado: "Another route has the monitor.", url_rtmp_invalida: "The RTMP URL is not valid.",
       sin_gpu: "This device cannot encode H.264 for this output (no usable GPU).",
       camara_ocupada: "Another route already uses that camera: a camera can only be in one.",
@@ -3192,7 +3194,9 @@ const rtSalida = (sid) => { for (const r of RB.rutas) { const s = r.salidas.find
 const daImagen = (e) => ["usb_cam", "ndi", "ingesta"].includes(e.tipo);
 const daAudio = (e) => e.tipo === "usb_cam" ? !!e.audio_dev : ["usb_audio", "ndi", "ingesta"].includes(e.tipo);
 const rtEstado = (rid) => ((RD || {}).estado || {})[rid] || {};
-const rtErrores = (rid) => ((RD || {}).errores || {})[rid] || [];
+// los de la validación (RD.errores) y los de la marcha (estado: fuente sin imagen, HDMI caído…)
+const rtErrores = (rid) => [...new Set([...(((RD || {}).errores || {})[rid] || []),
+  ...((((RD || {}).estado || {})[rid] || {}).errores || [])])];
 const rtHost = () => location.hostname;
 
 async function rtCargar() {

@@ -412,6 +412,7 @@ class Receptor:
             espera = 2 if puente else min(15, 3 * self.fallos)
         self.detener()
         self.estado, self.error = "error", error
+        self.ultimo_error = error     # sobrevive al reintento: el panel explica por qué no hay imagen
         self.reintento = time.time() + espera
 
     def detener(self):
@@ -511,6 +512,7 @@ class Auxiliar:
         self.fallos += 1
         self.detener()
         self.estado, self.error = "error", error
+        self.ultimo_error = error
         self.reintento = time.time() + min(30, 3 * self.fallos)
 
     def detener(self):
@@ -795,6 +797,11 @@ class MotorRutas:
                 est = "error" if "error" in ests else "en_marcha" if all(e == "ok" for e in ests) else "esperando"
             procs = {c.split(":")[0]: p for c, p in por_ruta.get(rid, [])}
             principal = procs.get("cam") or procs.get("prog") or procs.get("reem") or procs.get("rx")
+            # la fuente de red (NDI, ATEM) está anunciada pero no manda imagen: decirlo
+            # en vez de un "esperando" sin más (OBS con la fuente apagada, por ejemplo)
+            if (principal is not None and getattr(principal, "fallos", 0) > 0
+                    and getattr(principal, "ultimo_error", "") in ("sin_senal", "sin_video")):
+                err = list(err) + ["fuente_sin_imagen"]
             st = getattr(principal, "stats", {}) if principal else {}
             info = PUENTE.ruta_info(f"live/{r['camino']}") if any(
                 s["tipo"] in rutas_mod.DE_RED for s in r["salidas"]) else {}

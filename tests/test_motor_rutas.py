@@ -539,3 +539,23 @@ class AuxiliarColgado(unittest.TestCase):
 
     def test_parada_corta_no_reinicia(self):
         self.assertEqual(self.medir_serie([0, 30, 60, 60, 60, 90, 120]), [])
+
+
+class FuenteSinImagen(unittest.TestCase):
+    """Una fuente anunciada que no manda imagen se explica en la ruta."""
+
+    def test_receptor_sin_senal_da_aviso(self):
+        m = supervisor.MotorRutas.__new__(supervisor.MotorRutas)
+        rx = types.SimpleNamespace(fallos=2, ultimo_error="sin_senal", stats={}, proc=None, estado="error")
+        m.procs = {"rx:r1": rx}
+        m.errores, m.ultimo = {}, {"pausadas": []}
+        m.limpias = [{"id": "r1", "camino": "r1", "salidas": [{"id": "s1", "tipo": "hdmi"}]}]
+        self.assertIn("fuente_sin_imagen", m.estado()["r1"]["errores"])
+
+    def test_sin_fallos_no_avisa(self):
+        m = supervisor.MotorRutas.__new__(supervisor.MotorRutas)
+        rx = types.SimpleNamespace(fallos=0, ultimo_error="sin_senal", stats={}, proc=None, estado="conectando")
+        m.procs = {"rx:r1": rx}
+        m.errores, m.ultimo = {}, {"pausadas": []}
+        m.limpias = [{"id": "r1", "camino": "r1", "salidas": [{"id": "s1", "tipo": "hdmi"}]}]
+        self.assertNotIn("fuente_sin_imagen", m.estado()["r1"]["errores"])
