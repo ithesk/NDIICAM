@@ -889,9 +889,14 @@ class MotorRutas:
                     salidas[s["id"]] = "error"            # el monitor tumbó el pipeline: va sin él
                 else:                                    # NDI y HDMI: los de la ruta
                     salidas[s["id"]] = "ok" if est == "en_marcha" else "esperando"
+            crudo = getattr(principal, "c", None) or {}
             res[rid] = {"estado": est, "errores": err, "salidas": salidas,
                         "lectores": info.get("lectores", 0),
                         "fps": st.get("fps_enviados", st.get("fps", 0)),
+                        "fps_camara": st.get("fps_camara"), "mbps": st.get("mbps_camara", st.get("mbps")),
+                        "descartes": st.get("descartes"), "latencia_ms": st.get("latencia_ms"),
+                        "receptores": crudo.get("conexiones"),      # receptores NDI (lo cuenta el plugin)
+                        "tally": getattr(principal, "tally", None),
                         "audio_db": st.get("audio_db"),
                         "calibracion": getattr(procs.get("cam"), "calibracion", None),
                         "copia": any(c.startswith("prog:") for c, _ in por_ruta.get(rid, []))}

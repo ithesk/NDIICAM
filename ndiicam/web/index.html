@@ -178,6 +178,17 @@
   .rt-barra { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 8px; }
   .rt-barra .esp { margin-left: auto; }
   .rt-dos { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 12px; }
+  .rt-tarjeta { margin-top: 12px; }
+  .rt-tarjeta .fuente-cuerpo { grid-template-columns: minmax(0, 1fr) minmax(0, 1.3fr); align-items: start; }
+  .rt-tarjeta.pausada { opacity: .75; }
+  .rt-tarjeta.pausada .fuente-cuerpo { grid-template-columns: 1fr; }
+  .rt-tarjeta .rt-vu { margin: 4px 0 10px; }
+  .rt-cifras { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 8px; margin-bottom: 10px; }
+  .rt-cifra { background: var(--pista); border-radius: 10px; padding: 8px 10px; }
+  .rt-cifra b { display: block; font-size: 17px; font-variant-numeric: tabular-nums; }
+  .rt-cifra small { color: var(--suave); font-size: 11.5px; }
+  .rt-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  @media (max-width: 700px) { .rt-tarjeta .fuente-cuerpo { grid-template-columns: 1fr; } }
   .rt-guardado.pendiente { color: var(--texto); font-weight: 600; display: inline-flex; align-items: center; gap: 8px; }
   .rt-guardado { font-size: 12.5px; color: var(--suave); display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; }
   .rt-guardado.mal { color: var(--mal); font-weight: 600; }
@@ -3077,6 +3088,7 @@ const RT = {
     usb_solas: "Las cámaras y el audio USB aparecen solos al conectarlos.",
     elige_ruta: "Elige primero una ruta (o crea una) para añadirle salidas.",
     fuente_red: "Fuente de la red", buscando: "Buscando fuentes NDI…", elige_fuente: "— elige una fuente —",
+    receptores_ndi: "receptores NDI", leyendo: "leyendo", latencia_corta: "latencia", descartes: "descartadas",
     cam_res: "Resolución", cam_fps: "Imágenes por segundo", cam_fmt: "Formato", cam_lat: "Latencia",
     fmt_auto: "Automático", fmt_mjpeg: "MJPEG (comprimido)", fmt_crudo: "Sin comprimir", lat_normal: "Normal", lat_baja: "Baja", lat_minima: "Mínima (sin audio)",
     cam_nota: "Se aplican al momento: la cámara se reinicia un instante.", cam_aplicado: "Ajuste de la cámara aplicado.",
@@ -3142,6 +3154,7 @@ const RT = {
     usb_solas: "USB cameras and audio appear on their own when plugged in.",
     elige_ruta: "Pick a route first (or create one) to add outputs to it.",
     fuente_red: "Network source", buscando: "Looking for NDI sources…", elige_fuente: "— pick a source —",
+    receptores_ndi: "NDI receivers", leyendo: "reading", latencia_corta: "latency", descartes: "dropped",
     cam_res: "Resolution", cam_fps: "Frames per second", cam_fmt: "Format", cam_lat: "Latency",
     fmt_auto: "Automatic", fmt_mjpeg: "MJPEG (compressed)", fmt_crudo: "Uncompressed", lat_normal: "Normal", lat_baja: "Low", lat_minima: "Minimal (no audio)",
     cam_nota: "They apply at once: the camera restarts for a moment.", cam_aplicado: "Camera setting applied.",
@@ -3209,13 +3222,17 @@ const rtSinVista = {};        // cámara -> cuándo falló su vista previa (se r
 // la vista previa, la selección, el sitio): si no cambia, el DOM se deja como está
 // y los clics no caen en elementos recién sustituidos
 const rtFirma = (html) => html.replace(/&amp;t=\d+/g, "").replace(/width:\s*[\d.]+%/g, "")
-  .replace(/\bsel\b/g, "").replace(/left:[^";]*;top:[^";]*/g, "");
+  .replace(/\bsel\b/g, "").replace(/left:[^";]*;top:[^";]*/g, "").replace(/(class="rt-cifra"><b>)[^<]*/g, "$1");
 function rtRefrescarVivo(viejo, nuevo) {
   // lo que sí cambia aunque la firma sea igual: vúmetros y vistas previas
   const vi = viejo.querySelectorAll(".rt-vu i"), vn = nuevo.querySelectorAll(".rt-vu i");
   if (vi.length === vn.length) vi.forEach((el, k) => { el.style.width = vn[k].style.width; });
   const ii = viejo.querySelectorAll("img.rt-vista"), inn = nuevo.querySelectorAll("img.rt-vista");
-  if (ii.length === inn.length) ii.forEach((el, k) => { if (el.src !== inn[k].src) el.src = inn[k].src; });
+  // por atributo: la propiedad .src devuelve la URL absoluta y al copiarla el HTML
+  // dejaba de coincidir con el recién construido (y se sustituía todo cada 2 s)
+  if (ii.length === inn.length) ii.forEach((el, k) => { const v = inn[k].getAttribute("src"); if (el.getAttribute("src") !== v) el.setAttribute("src", v); });
+  const ci = viejo.querySelectorAll(".rt-cifra b"), cn = nuevo.querySelectorAll(".rt-cifra b");
+  if (ci.length === cn.length) ci.forEach((el, k) => { if (el.textContent !== cn[k].textContent) el.textContent = cn[k].textContent; });
 }
 let rtVersion = 0, rtEnviando = false, rtError = null;      // guardado: versión del borrador que se envió
 let rtArrastreNodo = false;                                  // se está moviendo un bloque del lienzo
@@ -3256,7 +3273,6 @@ async function rtCargar() {
   try {
     const d = await api("/api/rutas");
     RD = d;
-    rtPintarMonitor();
     // el borrador solo se sustituye si el equipo trae algo distinto: los ajustes
     // abiertos guardan referencias a sus objetos, y cambiarlos cada 2 s por copias
     // iguales hacía que lo elegido se escribiera en una copia que ya no se guarda
@@ -3266,6 +3282,7 @@ async function rtCargar() {
       if (JSON.stringify(nuevo) !== JSON.stringify(RB)) RB = nuevo;
     }
     rtPintarGuardado();
+    rtPintarMonitor();      // con el borrador ya puesto: las entradas se resuelven por él
     // oculto no se pinta: colocaría los bloques con un lienzo de ancho 0
     if (pestana === "rutas") rtPintar();
   } catch (err) {
@@ -3923,16 +3940,43 @@ function rtPintarMonitor() {
   const con = RD && RD.motor === "rutas";
   sec.classList.toggle("oculto", !con);
   if (!con) return;
-  const filas = RD.rutas.map((r) => {
-    const e = rtEstado(r.id);
-    return rel("div", { class: "rt-fila-ent" }, rel("span", { class: "punto " + ({ en_marcha: "ok", error: "mal", esperando: "aviso" }[e.estado] || "") }),
-      rel("div", { class: "tx" }, rel("b", { text: r.nombre }),
-        rel("small", { text: r.salidas.map((s) => rt("salidas")[s.tipo] + ((e.salidas || {})[s.id] === "ok" ? " ✓" : "")).join(" · ") || rt("sin_salidas") })),
-      rel("span", { class: "nota", text: [rt("est")[e.estado] || "—", e.fps ? `${Math.round(e.fps)} fps` : "", e.lectores ? rt("lectores")(e.lectores) : ""].filter(Boolean).join(" · ") }));
+  // una tarjeta por ruta, como las de las cámaras en los modos: vista previa (si la
+  // imagen es una cámara), vúmetro, cifras y salidas. Cada 2 s se compara y solo se
+  // sustituye lo que cambió (los vúmetros y la vista previa se tocan en sitio)
+  const tarjetas = RD.rutas.map((r) => {
+    const e = rtEstado(r.id), v = rtEnt(r.video), ty = e.tally || {};
+    // en pausa, la tarjeta se queda en una línea: sin hueco para una imagen que no hay
+    const enPausa = e.estado === "pausada";
+    const vista = enPausa ? null : v && v.tipo === "usb_cam"
+      ? rel("img", { class: "preview rt-vista", alt: "", src: `/api/fuente/preview?id=${encodeURIComponent(v.id)}&t=${Date.now()}` })
+      : rel("div", { class: "preview-vacia", text: v ? v.nombre : rt("elige_imagen") });
+    const cifra = (txt, etq) => rel("div", { class: "rt-cifra" }, rel("b", { text: txt }), rel("small", { text: etq }));
+    const cifras = [];
+    if (e.estado === "en_marcha") {
+      cifras.push(cifra(e.fps_camara != null ? `${(+e.fps_camara).toFixed(0)} / ${(+e.fps).toFixed(0)}` : `${(+e.fps).toFixed(0)}`, "fps"));
+      if (e.mbps != null) cifras.push(cifra(`${(+e.mbps).toFixed(1)}`, "Mbit/s"));
+      if (e.receptores != null) cifras.push(cifra(String(e.receptores), rt("receptores_ndi")));
+      if (e.lectores) cifras.push(cifra(String(e.lectores), rt("leyendo")));
+      if (e.latencia_ms != null) cifras.push(cifra(`${Math.round(e.latencia_ms)} ms`, rt("latencia_corta")));
+      if (e.descartes) cifras.push(cifra(String(e.descartes), rt("descartes")));
+    }
+    const vu = r.audio ? rel("div", { class: "rt-vu" }, rel("i")) : null; if (vu) rtVu(vu.firstChild, e);
+    const salidas = rel("div", { class: "rt-chips" }, ...r.salidas.map((s) => rel("span", { class: "etq " + ({ ok: "ok", error: "mal", esperando: "aviso" }[(e.salidas || {})[s.id]] || ""),
+      text: rt("salidas")[s.tipo] + (s.tipo === "hdmi" ? " " + rtTextoSalida(r, s).replace(/ ·.*$/, "") : "") })));
+    const errs = rtErrores(r.id).map((c) => rel("div", { class: "rt-err", text: rt("errores")[c] || c }));
+    return rel("section", { class: "tarjeta fuente rt-tarjeta" + (enPausa ? " pausada" : ""), "data-id": r.id },
+      rel("div", { class: "fuente-cab" }, rel("div", null, rel("h3", { text: r.nombre }), rel("div", { class: "sub", text: `${rt("imagen")}: ${v ? v.nombre : "—"}` })),
+        ty.programa ? rel("span", { class: "pastilla mal vivo", text: T[lang].tally_program }) : ty.previo ? rel("span", { class: "pastilla ok", text: T[lang].tally_preview }) : null,
+        rel("span", { class: "etq " + ({ en_marcha: "ok", error: "mal", esperando: "aviso" }[e.estado] || ""), text: rt("est")[e.estado] || "—" }),
+        rel("button", { class: "boton", type: "button", text: rt("ajustes"), onclick: () => { pestana = "rutas"; aplicarPestana(); rtSeleccionar("r:" + r.id); } })),
+      rel("div", { class: "fuente-cuerpo" }, vista,
+        rel("div", null, vu, cifras.length ? rel("div", { class: "rt-cifras" }, ...cifras) : null, salidas, ...errs)));
   });
-  sec.replaceChildren(rel("div", { class: "fuente-cab" }, rel("div", null, rel("h3", { text: rt("monitor_t") })),
+  const nuevo = rel("div", null, rel("div", { class: "fuente-cab" }, rel("div", null, rel("h3", { text: rt("monitor_t") })),
     rel("button", { class: "boton", type: "button", text: rt("ver_rutas"), onclick: () => { pestana = "rutas"; aplicarPestana(); rtPintar(); } })),
-    ...(filas.length ? filas : [rel("div", { class: "nota", text: rt("sin_salidas") })]));
+    ...(tarjetas.length ? tarjetas : [rel("div", { class: "nota", text: rt("sin_salidas") })]));
+  if (rtFirma(nuevo.innerHTML) === rtFirma(sec.innerHTML)) { rtRefrescarVivo(sec, nuevo); return; }
+  sec.replaceChildren(...nuevo.childNodes);
 }
 
 // ---------------------------------------------------------------- general
