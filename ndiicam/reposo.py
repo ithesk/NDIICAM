@@ -132,7 +132,9 @@ def dibujar(cfg):
 
 
 def main():
-    cfg = json.loads(sys.argv[1])
+    # la configuración llega por la entrada estándar (lleva la clave de la WiFi de
+    # configuración: que no se vea en la lista de procesos); a mano, como argumento
+    cfg = json.loads(sys.argv[1] if len(sys.argv) > 1 else sys.stdin.readline())
     dibujar(cfg)
     Gst.init(None)
     # en pausa: kmssink enseña el fotograma de preparación y no vuelve a trabajar.

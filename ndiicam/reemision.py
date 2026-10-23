@@ -28,12 +28,11 @@ import gi
 gi.require_version("Gst", "1.0")
 from gi.repository import GLib, Gst  # noqa: E402
 
-from fuente import informar, liberar_disco, nivel_audio  # noqa: E402
+from fuente import informar, leer_cfg, liberar_disco, nivel_audio  # noqa: E402
 from nucleo import RETRASO_MAX_MS  # noqa: E402
 
 CONTADORES = {"rx": 0, "aud": 0, "out": 0, "bytes": 0}
 NIVEL = {"db_peak": None, "db_rms": None}
-RESERVA = 2 * 1024 ** 3     # al grabar, borrar lo más viejo si queda menos libre
 SEGMENTO = 10 * 60          # duración de cada fichero de grabación, en segundos
 
 
@@ -44,7 +43,9 @@ def descripcion(cfg):
     if cfg.get("vpp"):
         a_nv12 = "vapostproc ! video/x-raw(memory:VAMemory),format=NV12"
     else:
-        a_nv12 = f"videoconvert n-threads={os.cpu_count() or 2} ! video/x-raw,format=NV12"
+        # un solo hilo: la conversión va limitada por la memoria y con más hilos
+        # solo se añade sincronización (medido en fuente.py: 3 veces más CPU)
+        a_nv12 = "videoconvert n-threads=1 ! video/x-raw,format=NV12"
     kbps = int(cfg["kbps"])
     desc = ("ndisrc name=src ! ndisrcdemux name=d "
             "d.video ! queue name=qv max-size-buffers=4 leaky=downstream"
@@ -98,14 +99,14 @@ def descripcion(cfg):
 
 def nombre_fichero(cfg, d):
     def f(_mux, _fragmento):
-        liberar_disco(d, RESERVA)
+        liberar_disco(d, kbps=cfg.get("kbps"))
         nombre = re.sub(r"[^\w.-]+", "_", cfg["nombre"]).strip("_") or "ndi"
         return os.path.join(d, f"{nombre}_{time.strftime('%Y-%m-%d_%H-%M-%S')}.mp4")
     return f
 
 
 def main():
-    cfg = json.loads(sys.argv[1])
+    cfg = leer_cfg()
     os.nice(5)
     Gst.init(None)
     p = Gst.parse_launch(descripcion(cfg))

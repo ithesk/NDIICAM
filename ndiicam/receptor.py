@@ -40,6 +40,14 @@ def informar(datos):
     sys.stdout.flush()
 
 
+def leer_cfg():
+    """Como en fuente.py: una línea JSON por la entrada estándar (las direcciones con
+    clave no quedan a la vista en la lista de procesos) o, a mano, el primer argumento."""
+    if len(sys.argv) > 1:
+        return json.loads(sys.argv[1])
+    return json.loads(sys.stdin.readline())
+
+
 def nivel_audio(msg):
     """Pico y RMS en dBFS (el mayor de los canales) de un mensaje del elemento
     'level', o None si no es uno. GValueArray no siempre pasa a Python: se lee
@@ -78,7 +86,7 @@ def sonda_retardo(pipeline, acumulado):
 
 
 def main():
-    cfg = json.loads(sys.argv[1])
+    cfg = leer_cfg()
     # una fuente que obliga a escalar puede pedir más CPU de la que hay: con
     # prioridad baja y un núcleo libre, el sistema, la red y las cámaras van
     # antes (con el equipo saturado minutos seguidos, un Atom se llegó a colgar)
@@ -127,7 +135,8 @@ def main():
                     else " ! fakesink name=hdmi sync=false async=false")
         ndi = cfg.get("ndi_nombre")
         con_audio = ndi and cfg.get("ndi_audio")
-        desc = (f"rtmp2src name=src location={cfg['url']} ! flvdemux name=d "
+        # la dirección (con la clave de la ingesta) se pone con set_property, no en el texto
+        desc = ("rtmp2src name=src ! flvdemux name=d "
                 "d.video ! queue name=qd max-size-time=1000000000 ! h264parse"
                 f" ! {dec} ! queue name=qv max-size-buffers=2 leaky=downstream"
                 f" ! videoconvert n-threads={hilos} ! video/x-raw,format=UYVY")
@@ -164,6 +173,8 @@ def main():
     else:
         desc += " ! fakesink name=asink sync=false async=false"
     p = Gst.parse_launch(desc)
+    if puente:
+        p.get_by_name("src").set_property("location", cfg["url"])
     if puente and cfg.get("ndi_nombre"):
         p.get_by_name("ndi").set_property("ndi-name", cfg["ndi_nombre"])
     if not puente:
