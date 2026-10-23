@@ -10,7 +10,7 @@ import time
 
 import nucleo
 from gpu import simultaneo
-from nucleo import PUERTO_HLS, PUERTO_RTMP, PUERTO_SRT, cache_funcion, evento, sh
+from nucleo import AP_IF, PUERTO_HLS, PUERTO_RTMP, PUERTO_SRT, cache_funcion, evento, latido, sh
 
 TABLA = "ndiicam"
 # NDI: descubrimiento (5959), mensajes (5960) y un puerto por fuente desde 5961,
@@ -100,7 +100,17 @@ def reglas(modo, srt, extra, ssh):
         f"    udp dport {{ {conjunto(udp)} }} accept",
     ]
     lineas += [f"    {p} dport {a}-{b} accept" for p, a, b in rangos]
-    lineas += ["  }", "}", ""]
+    lineas += [
+        "  }",
+        # la WiFi de configuración no es un puente a la red del local: si el
+        # equipo reenvía paquetes (Docker, libvirt), nada entra ni sale por ap0.
+        # Política accept para no estorbar a esas otras reglas
+        "  chain reenvio {",
+        "    type filter hook forward priority filter; policy accept;",
+        f'    iifname "{AP_IF}" drop',
+        f'    oifname "{AP_IF}" drop',
+        "  }",
+        "}", ""]
     return "\n".join(lineas)
 
 
@@ -187,4 +197,5 @@ class Cortafuegos:
                                 [nucleo.CONF.fuente(f.cam["id"]) for f in nucleo.FUENTES.lista()])
             except Exception as ex:
                 evento("fallo_interno", detalle=str(ex))
+            latido("cortafuegos")
             time.sleep(5)

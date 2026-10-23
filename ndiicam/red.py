@@ -12,7 +12,7 @@ import yaml
 
 from nucleo import (AP_IF, AP_IP, CICLO_EXCLUSIVO, ESPERA_AP, PAUSA_EXCLUSIVO,
     PERFIL_TEMPORAL, RUN, canal, dispositivo_por_defecto, escribir_privado, evento,
-    interfaz_wifi, ip_de, leer, nm_valores, partir, sh, cacheado, olvidar_cache)
+    interfaz_wifi, ip_de, latido, leer, nm_valores, partir, sh, cacheado, olvidar_cache)
 
 
 # ----------------------------------------------------------------------- red
@@ -87,6 +87,7 @@ class Red:
                 self._paso()
             except Exception as ex:
                 evento("fallo_interno", detalle=str(ex))
+            latido("red")
             time.sleep(5)
 
     def _paso(self):
@@ -174,6 +175,8 @@ class Red:
                                "type", "__ap", "addr", ":".join(b)],
                               capture_output=True).returncode:
                 return False
+            # ap0 no reenvía hacia la red del local (además de la regla del cortafuegos)
+            sh(["sysctl", "-q", "-w", f"net.ipv4.conf.{AP_IF}.forwarding=0"])
         # mismo canal que la WiFi cliente si está en 2,4 GHz; si no, el 6
         w = self.info_wifi()
         ch = w["canal"] if w and w["banda"] == "2.4" and w["canal"] else 6
@@ -194,16 +197,16 @@ class Red:
             f"dhcp-leasefile={RUN}/dnsmasq.leases", f"pid-file={RUN}/dnsmasq.pid",
             ""]))
         self.ap_if = iface
+        # lo que digan va al diario del servicio: si un móvil no consigue
+        # asociarse o el DHCP falla, se ve en Sistema › Registro
         self.hostapd = subprocess.Popen(["hostapd", f"{RUN}/hostapd.conf"],
-                                        stdout=subprocess.DEVNULL,
-                                        stderr=subprocess.DEVNULL)
+                                        stdout=subprocess.DEVNULL, stderr=None)
         time.sleep(3)
         if self.hostapd.poll() is not None:
             return False
         sh(["ip", "addr", "add", f"{AP_IP}/24", "dev", iface])
         self.dnsmasq = subprocess.Popen(["dnsmasq", "-k", "-C", f"{RUN}/dnsmasq.conf"],
-                                        stdout=subprocess.DEVNULL,
-                                        stderr=subprocess.DEVNULL)
+                                        stdout=subprocess.DEVNULL, stderr=None)
         time.sleep(1)
         return self.dnsmasq.poll() is None
 
@@ -274,6 +277,10 @@ class Red:
         return sorted(res, key=lambda r: -r["prioridad"])
 
     def olvidar(self, ident):
+        """Quita un perfil WiFi guardado. Solo WiFi: el panel manda el nombre
+        del perfil y uno de cable ("Wired connection 1") dejaría el equipo sin red."""
+        if sh(["nmcli", "-g", "connection.type", "con", "show", ident]).strip() != "802-11-wireless":
+            return False
         if ident.startswith("netplan-"):
             # las redes escritas a mano en netplan comparten definición: se
             # quitan del YAML y no con nmcli, que se llevaría las demás
