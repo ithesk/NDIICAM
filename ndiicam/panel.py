@@ -309,7 +309,10 @@ class Panel(BaseHTTPRequestHandler):
             self.wfile.write(cuerpo)
         elif url.path == "/api/estado":
             cfg = nucleo.CONF.get()
-            self._json({**ESTADO, "config": {
+            pg = PAGINA.cargar()
+            # la huella del panel que se sirve ahora: si no es la de la pestaña
+            # abierta (se actualizó el equipo), el panel pide recargar
+            self._json({**ESTADO, "panel": pg.etag if pg else None, "config": {
                 "transporte": cfg["transporte"], "ap_ssid": cfg["ap_ssid"],
                 "ap_clave": cfg["ap_clave"], "pais": cfg["pais"], "idioma": cfg["idioma"],
                 "clave_panel": bool(cfg["clave_panel"]), "decodificadores": cfg["decodificadores"],
