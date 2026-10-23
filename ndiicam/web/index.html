@@ -1098,8 +1098,21 @@ const T = {
       cambio_ip_en_curso: "Ya hay un cambio de IP en curso.",
       actualizacion_en_curso: "Ya se está actualizando.", sin_actualizacion: "No hay ninguna actualización que instalar.",
       respaldo_invalido: "Ese archivo no es una copia de NDIICAM.", confirmacion: "Confirmación incorrecta.",
-      modo_invalido: "Resolución no válida.", sin_grub: "Este sistema no usa GRUB: no se puede cambiar la resolución de arranque.",
+      sin_grub: "Este sistema no usa GRUB: no se puede cambiar la resolución de arranque.",
       no_encontrado: "No encontrado.",
+      cuerpo_grande: "La petición es demasiado grande.", json_invalido: "La petición no es un JSON válido.",
+      sin_espacio: "No queda espacio en el disco del equipo: no se pudo guardar.",
+      formato_invalido: "Formato no válido.", grabar_cuando_invalido: "Horario de grabación no válido.",
+      idioma_invalido: "Idioma no válido.", decodificadores_invalido: "Valor de decodificadores no válido.",
+      origen_registro_invalido: "Origen del registro no válido.",
+      reloj_incorrecto: "El reloj del equipo está mal y los certificados no cuadran: pon la hora o espera a que sincronice.",
+      clave_puente_invalida: "Clave no válida: letras y números (8 a 32).",
+      entradas_invalidas: "Las entradas de red no son válidas o son demasiadas.",
+      fuente_invalida: "Esa fuente no es válida.", motor_invalido: "Motor no válido.",
+      retraso_invalido: "El retraso va de 0 a 1000 ms.",
+      rutas_invalidas: "Las rutas no son válidas o son demasiadas.",
+      sin_audio: "La cámara no tiene audio.", camara_ocupada: "Esa cámara ya la usa otra ruta.",
+      audio_ocupado: "Ese audio ya lo usa otra ruta.",
     },
     wifi_reasons: {
       clave: "Contraseña incorrecta.", no_encontrada: "No se encuentra la red: puede estar fuera de alcance.",
@@ -1440,8 +1453,21 @@ const T = {
       cambio_ip_en_curso: "An IP change is already in progress.",
       actualizacion_en_curso: "Already updating.", sin_actualizacion: "There is no update to install.",
       respaldo_invalido: "That file is not an NDIICAM backup.", confirmacion: "Wrong confirmation.",
-      modo_invalido: "Invalid resolution.", sin_grub: "This system does not use GRUB: the boot resolution cannot be changed.",
+      sin_grub: "This system does not use GRUB: the boot resolution cannot be changed.",
       no_encontrado: "Not found.",
+      cuerpo_grande: "The request is too large.", json_invalido: "The request is not valid JSON.",
+      sin_espacio: "No space left on the device's disk: could not save.",
+      formato_invalido: "Invalid format.", grabar_cuando_invalido: "Invalid recording schedule.",
+      idioma_invalido: "Invalid language.", decodificadores_invalido: "Invalid decoders value.",
+      origen_registro_invalido: "Invalid log source.",
+      reloj_incorrecto: "The device clock is wrong and certificates do not match: set the time or wait for it to sync.",
+      clave_puente_invalida: "Invalid key: letters and numbers (8 to 32).",
+      entradas_invalidas: "The network inputs are not valid or there are too many.",
+      fuente_invalida: "That source is not valid.", motor_invalido: "Invalid engine.",
+      retraso_invalido: "The delay goes from 0 to 1000 ms.",
+      rutas_invalidas: "The routes are not valid or there are too many.",
+      sin_audio: "This camera has no audio.", camara_ocupada: "Another route already uses that camera.",
+      audio_ocupado: "Another route already uses that audio.",
     },
     wifi_reasons: {
       clave: "Wrong password.", no_encontrada: "Network not found: it may be out of range.",
@@ -2284,7 +2310,7 @@ $("pgGuardar").addEventListener("click", async () => {
   if (pgEditado.has("audio")) datos.programa_audio = $("pgAudio").value;
   if (pgEditado.has("retraso")) datos.programa_retraso = Number($("pgRetraso").value);
   if (pgEditado.has("grabar")) datos.programa_grabar = $("pgGrabar").checked;
-  try { await api("/api/config", datos); pgEditado.clear(); mensaje("msgPrograma", t("saved_ok"), "ok"); refrescar(); }
+  try { await api("/api/config", datos); pgEditado.clear(); mensaje("msgPrograma", t("saved_ok"), "ok"); refrescarAhora(); }
   catch (err) { mensaje("msgPrograma", err.message, "mal"); }
 });
 
@@ -2338,7 +2364,7 @@ $("reemGuardar").addEventListener("click", async () => {
   try {
     await api("/api/config", datos);
     reemEditado.clear();
-    mensaje("msgReem", t("saved_ok"), "ok"); refrescar();
+    mensaje("msgReem", t("saved_ok"), "ok"); refrescarAhora();
   } catch (err) { mensaje("msgReem", err.message, "mal"); }
   setTimeout(() => mensaje("msgReem"), 6000);
 });
@@ -2564,15 +2590,23 @@ function pintar(e) {
   });
 }
 
+// un único temporizador: llamar a refrescar() desde un manejador no abre otra cadena
+let refrescarT = 0, refrescando = false;
 async function refrescar() {
+  clearTimeout(refrescarT);
+  if (refrescando) { refrescarT = setTimeout(refrescar, 200); return; }
+  refrescando = true;
   try {
     pintar(await api("/api/estado"));
     $("desconectado").classList.add("oculto");
   } catch (err) {
     $("desconectado").classList.toggle("oculto", !!err.sinSesion);
   }
-  setTimeout(refrescar, 2000);
+  refrescando = false;
+  clearTimeout(refrescarT);
+  refrescarT = setTimeout(refrescar, 2000);
 }
+const refrescarAhora = refrescar;
 
 // --------------------------------------------------------------- seguridad
 function pintarSeguridad(e) {
@@ -2746,18 +2780,18 @@ async function guardarHdmi(datos) {
   try { await api("/api/config", datos); } catch (err) { mensaje("msgHdmi", err.message, "mal"); }
 }
 for (const r of document.querySelectorAll("input[name=modo]")) r.addEventListener("change", async () => {
-  try { await api("/api/config", { modo: r.value }); refrescar(); } catch (err) { mensaje("msgModo", err.message, "mal"); }
+  try { await api("/api/config", { modo: r.value }); refrescarAhora(); } catch (err) { mensaje("msgModo", err.message, "mal"); }
 });
 $("chkPuenteNdi").addEventListener("change", async () => {
-  try { await api("/api/config", { puente_ndi: $("chkPuenteNdi").checked }); refrescar(); }
+  try { await api("/api/config", { puente_ndi: $("chkPuenteNdi").checked }); refrescarAhora(); }
   catch (err) { mensaje("msgReparto", err.message, "mal"); }
 });
 $("chkSimultaneo").addEventListener("change", async () => {
-  try { await api("/api/config", { simultaneo: $("chkSimultaneo").checked }); refrescar(); }
+  try { await api("/api/config", { simultaneo: $("chkSimultaneo").checked }); refrescarAhora(); }
   catch (err) { mensaje("msgModo", err.message, "mal"); }
 });
 $("rxFuente").addEventListener("change", async () => {
-  try { await api("/api/config", { rx_fuente: $("rxFuente").value }); refrescar(); } catch (err) { mensaje("msgRx", err.message, "mal"); }
+  try { await api("/api/config", { rx_fuente: $("rxFuente").value }); refrescarAhora(); } catch (err) { mensaje("msgRx", err.message, "mal"); }
 });
 $("btReiniciarTodo").addEventListener("click", async () => {
   $("btReiniciarTodo").disabled = true;
@@ -2774,7 +2808,7 @@ $("hdmiQue").addEventListener("change", () => {
 });
 $("hdmiConsola").addEventListener("change", () => guardarHdmi({ hdmi_consola: $("hdmiConsola").value }));
 $("btVolverModos").addEventListener("click", async () => {
-  try { await api("/api/rutas/motor", { motor: "modos" }); pestana = "config"; aplicarPestana(); refrescar(); }
+  try { await api("/api/rutas/motor", { motor: "modos" }); pestana = "config"; aplicarPestana(); refrescarAhora(); }
   catch (err) { mensaje("msgSistema", err.message, "mal"); }
 });
 $("btHdmiReboot").addEventListener("click", async () => {
@@ -2945,6 +2979,11 @@ const RT = {
       ndi_a_ndi: "Ya es una fuente NDI: no se vuelve a sacar por NDI.", ndi_repetido: "Otra ruta usa ese nombre NDI.",
       hdmi_ocupado: "El monitor lo tiene otra ruta.", url_rtmp_invalida: "La URL RTMP no es válida.",
       sin_gpu: "Este equipo no puede codificar H.264 para esta salida (sin GPU útil).",
+      camara_ocupada: "Esa cámara ya la usa otra ruta: una cámara solo puede ir en una.",
+      audio_ocupado: "Ese audio ya lo usa otra ruta.", audio_red_no_soportado: "El audio de otra fuente de red aún no se admite: usa el de la misma entrada o un audio USB.",
+      sin_mediamtx: "Falta el servidor de reparto (MediaMTX): las salidas de red no pueden funcionar.",
+      hdmi_fallido: "El monitor HDMI falló: la ruta sigue sin él.", audio_fallido: "El audio falló al abrirse: la ruta sigue sin él.",
+      rutas_invalidas: "Demasiadas rutas.", entradas_invalidas: "Demasiadas entradas de red.",
     },
     pausa_lite: (n) => `En la edición Lite el equipo lleva ${n} ruta a la vez: esta queda en pausa.`,
     nueva_ruta: "Nueva ruta", sin_audio: "Sin audio", elige_imagen: "— elige la imagen —",
@@ -2987,6 +3026,11 @@ const RT = {
       ndi_a_ndi: "It is already an NDI source: it does not go out as NDI again.", ndi_repetido: "Another route uses that NDI name.",
       hdmi_ocupado: "Another route has the monitor.", url_rtmp_invalida: "The RTMP URL is not valid.",
       sin_gpu: "This device cannot encode H.264 for this output (no usable GPU).",
+      camara_ocupada: "Another route already uses that camera: a camera can only be in one.",
+      audio_ocupado: "Another route already uses that audio.", audio_red_no_soportado: "Audio from another network source is not supported yet: use the same input's audio or a USB audio.",
+      sin_mediamtx: "The distribution server (MediaMTX) is missing: network outputs cannot work.",
+      hdmi_fallido: "The HDMI monitor failed: the route carries on without it.", audio_fallido: "The audio failed to open: the route carries on without it.",
+      rutas_invalidas: "Too many routes.", entradas_invalidas: "Too many network inputs.",
     },
     pausa_lite: (n) => `On the Lite edition the device runs ${n} route at a time: this one is paused.`,
     nueva_ruta: "New route", sin_audio: "No audio", elige_imagen: "— pick the picture —",
@@ -3568,7 +3612,7 @@ function rtIniciar() {
   let redim = 0;
   window.addEventListener("resize", () => { clearTimeout(redim); redim = setTimeout(() => { if (pestana === "rutas") rtPintar(); }, 150); });
   $("btProbarRutas").addEventListener("click", async () => {
-    try { await api("/api/rutas/motor", { motor: "rutas" }); pestana = "rutas"; aplicarPestana(); refrescar(); rtBucle(); }
+    try { await api("/api/rutas/motor", { motor: "rutas" }); pestana = "rutas"; aplicarPestana(); refrescarAhora(); rtBucle(); }
     catch (err) { mensaje("msgModo", err.message, "mal"); }
   });
   rtBucle();
