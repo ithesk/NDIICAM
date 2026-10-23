@@ -645,7 +645,6 @@
   <section class="tarjeta seccion" data-tab="sistema" id="secSeguridad">
     <h2 data-t="security"></h2>
     <div class="mensaje mal oculto" id="avisoHttp" style="margin-bottom:12px"></div>
-    <div class="mensaje info oculto" id="avisoApClave" style="margin-bottom:12px"></div>
     <dl>
       <dt data-t="sec_connection"></dt><dd id="segConexion">—</dd>
       <dt data-t="sec_fingerprint"></dt><dd class="mono" id="segHuella">—</dd>
@@ -736,8 +735,15 @@
     <div class="mensaje oculto" id="msgEquipo"></div>
 
     <h2 style="margin-top:20px" data-t="backup"></h2>
+    <div class="campos" id="bloqueClaveRespaldo">
+      <div>
+        <label for="inClaveRespaldo" data-t="backup_password"></label>
+        <input type="password" id="inClaveRespaldo" maxlength="128" autocomplete="current-password">
+        <div class="ayuda" data-t="backup_password_help"></div>
+      </div>
+    </div>
     <div class="botones" style="margin-top:0">
-      <a class="boton" href="/api/respaldo" download data-t="download_backup"></a>
+      <button class="boton" id="btDescargarRespaldo" data-t="download_backup"></button>
       <button class="boton" id="btRestaurar" data-t="restore_backup"></button>
       <input type="file" id="archivoRespaldo" accept="application/json,.json" class="oculto">
       <button class="boton peligro" id="btFabrica" data-t="factory_reset"></button>
@@ -917,8 +923,8 @@ const T = {
     sec_http: "Sin cifrar (HTTP)",
     sec_http_warn: "Estás entrando sin cifrar. Abre el panel con https:// para que la contraseña no viaje en claro.",
     sec_no_https: "Este equipo no pudo crear su certificado (falta openssl): el panel va sin cifrar.",
-    ap_default_warn: "La WiFi de configuración usa la clave por defecto (ndiicam-setup), que es pública: cualquiera cerca podría entrar al panel desde ella. Cámbiala más abajo, en «Nombre y red del equipo».",
     change_password: "Cambiar contraseña", current_password: "Contraseña actual", new_password: "Contraseña nueva",
+    backup_password: "Contraseña del panel", backup_password_help: "La copia lleva la configuración entera y las claves de las WiFi guardadas: hace falta la contraseña para descargarla.",
     repeat_password: "Repítela", password_help: "Al menos 8 caracteres. Cierra las demás sesiones abiertas.",
     password_mismatch: "Las dos contraseñas no coinciden.", password_changed: "Contraseña cambiada.",
     logout: "Cerrar sesión",
@@ -1087,7 +1093,7 @@ const T = {
       camara_invalida: "Esa cámara ya no está conectada.", audio_invalido: "Ese dispositivo de audio ya no está.",
       salida_gpu_invalida: "Salida GPU no válida.", gpu_no_disponible: "La GPU de este equipo no puede hacer esta salida.",
       kbps_invalido: "Calidad no válida.", puerto_invalido: "El puerto va de 1024 a 65535.",
-      hora_invalida: "La hora va como HH:MM.", latencia_invalida: "El búfer SRT va de 20 a 2000 ms.",
+      hora_invalida: "La hora va como HH:MM.", latencia_invalida: "Latencia no válida.", srt_latencia_invalida: "El búfer SRT va de 20 a 2000 ms.",
       url_rtmp_invalida: "Escribe la URL RTMP completa, empezando por rtmp:// o rtmps://.",
       fuente_ndi_invalida: "Esa fuente NDI no es válida.", modo_invalido: "Modo no válido.",
       transporte_invalido: "Transporte no válido.",
@@ -1114,7 +1120,8 @@ const T = {
       sin_espacio: "No queda espacio en el disco del equipo: no se pudo guardar.",
       formato_invalido: "Formato no válido.", grabar_cuando_invalido: "Horario de grabación no válido.",
       idioma_invalido: "Idioma no válido.", decodificadores_invalido: "Valor de decodificadores no válido.",
-      origen_registro_invalido: "Origen del registro no válido.",
+      registro_invalido: "Origen del registro no válido.", consola_invalida: "Resolución de la consola no válida.",
+      valor_invalido: "Valor no válido.", usar_post: "Esa petición va por POST.",
       reloj_incorrecto: "El reloj del equipo está mal y los certificados no cuadran: pon la hora o espera a que sincronice.",
       clave_puente_invalida: "Clave no válida: letras y números (8 a 32).",
       entradas_invalidas: "Las entradas de red no son válidas o son demasiadas.",
@@ -1193,6 +1200,10 @@ const T = {
       clave_creada: (d) => `Contraseña del panel creada desde ${d.ip}`,
       arranque: (d) => `Arranque: ${T.es.boot_reasons[d.motivo] || d.motivo}${d.detalle ? ` (${d.detalle})` : ""}`,
       apagado_equipo: () => "Apagado del equipo solicitado", zona_horaria: (d) => `Zona horaria: ${d.zona}`,
+      respaldo_campo_ignorado: (d) => `Copia restaurada sin ${(d.campos || []).length} campos no válidos: ${(d.campos || []).join(", ")}`,
+      config_no_guardada: (d) => `No se pudo guardar la configuración en el disco${d.detalle ? ` (${d.detalle})` : ""}`,
+      certificado_renovado: () => "Certificado del panel renovado: el navegador pedirá aceptarlo de nuevo",
+      bucle_parado: (d) => `Un bucle del servicio dejó de responder${d.detalle ? ` (${d.detalle})` : ""}: se reinicia`,
       cortafuegos: (d) => `Cortafuegos aplicado (${d.detalle})`, cortafuegos_error: (d) => `El cortafuegos falló: ${d.detalle}`,
       sin_https: () => "No se pudo crear el certificado: el panel va sin cifrar",
     },
@@ -1275,8 +1286,8 @@ const T = {
     sec_http: "Unencrypted (HTTP)",
     sec_http_warn: "You are connected without encryption. Open the panel with https:// so the password is not sent in the clear.",
     sec_no_https: "This device could not create its certificate (openssl missing): the panel is unencrypted.",
-    ap_default_warn: "The setup WiFi uses the default password (ndiicam-setup), which is public: anyone nearby could reach the panel through it. Change it below, under \u201cDevice name and network\u201d.",
     change_password: "Change password", current_password: "Current password", new_password: "New password",
+    backup_password: "Panel password", backup_password_help: "The backup holds the whole configuration and the saved WiFi passwords: the password is needed to download it.",
     repeat_password: "Repeat it", password_help: "At least 8 characters. Other open sessions are signed out.",
     password_mismatch: "The two passwords do not match.", password_changed: "Password changed.",
     logout: "Sign out",
@@ -1445,7 +1456,7 @@ const T = {
       camara_invalida: "That camera is no longer connected.",
       salida_gpu_invalida: "Invalid GPU output.", gpu_no_disponible: "This device's GPU cannot do this output.",
       kbps_invalido: "Invalid quality.", puerto_invalido: "The port goes from 1024 to 65535.",
-      hora_invalida: "The time goes as HH:MM.", latencia_invalida: "The SRT buffer goes from 20 to 2000 ms.",
+      hora_invalida: "The time goes as HH:MM.", latencia_invalida: "Invalid latency.", srt_latencia_invalida: "The SRT buffer goes from 20 to 2000 ms.",
       url_rtmp_invalida: "Enter the full RTMP URL, starting with rtmp:// or rtmps://.", audio_invalido: "That audio device is gone.",
       fuente_ndi_invalida: "That NDI source is not valid.", modo_invalido: "Invalid mode.",
       transporte_invalido: "Invalid transport.",
@@ -1472,7 +1483,8 @@ const T = {
       sin_espacio: "No space left on the device's disk: could not save.",
       formato_invalido: "Invalid format.", grabar_cuando_invalido: "Invalid recording schedule.",
       idioma_invalido: "Invalid language.", decodificadores_invalido: "Invalid decoders value.",
-      origen_registro_invalido: "Invalid log source.",
+      registro_invalido: "Invalid log source.", consola_invalida: "Invalid console resolution.",
+      valor_invalido: "Invalid value.", usar_post: "That request goes by POST.",
       reloj_incorrecto: "The device clock is wrong and certificates do not match: set the time or wait for it to sync.",
       clave_puente_invalida: "Invalid key: letters and numbers (8 to 32).",
       entradas_invalidas: "The network inputs are not valid or there are too many.",
@@ -1551,6 +1563,10 @@ const T = {
       clave_creada: (d) => `Panel password created from ${d.ip}`,
       arranque: (d) => `Boot: ${T.en.boot_reasons[d.motivo] || d.motivo}${d.detalle ? ` (${d.detalle})` : ""}`,
       apagado_equipo: () => "Device shutdown requested", zona_horaria: (d) => `Time zone: ${d.zona}`,
+      respaldo_campo_ignorado: (d) => `Backup restored without ${(d.campos || []).length} invalid fields: ${(d.campos || []).join(", ")}`,
+      config_no_guardada: (d) => `Could not save the configuration to disk${d.detalle ? ` (${d.detalle})` : ""}`,
+      certificado_renovado: () => "Panel certificate renewed: the browser will ask to accept it again",
+      bucle_parado: (d) => `A service loop stopped responding${d.detalle ? ` (${d.detalle})` : ""}: restarting`,
       cortafuegos: (d) => `Firewall applied (${d.detalle})`, cortafuegos_error: (d) => `The firewall failed: ${d.detalle}`,
       sin_https: () => "Could not create the certificate: the panel is unencrypted",
     },
@@ -1664,6 +1680,8 @@ async function api(ruta, datos) {
 let sesion = null;
 async function comprobarSesion() {
   try { sesion = await (await fetch("/api/sesion")).json(); } catch (_) { return false; }
+  // la ventana de recuperación caduca sola: desde la WiFi de configuración se vuelve a mirar cada minuto
+  if (sesion.desde_ap && !comprobarSesion.vigilando) { comprobarSesion.vigilando = true; setInterval(comprobarSesion, 60000); }
   if (sesion.autenticado) { $("entrada").classList.add("oculto"); return true; }
   pintarEntrada();
   return false;
@@ -2632,8 +2650,10 @@ function pintarSeguridad(e) {
   poner("segHuella", s.huella || "—");
   const aviso = !s.https && !e.desde_ap ? (s.https_disponible ? t("sec_http_warn") : t("sec_no_https")) : "";
   mensaje("avisoHttp", aviso, "mal");
-  mensaje("avisoApClave", s.ap_clave_defecto ? t("ap_default_warn") : "", "info");
-  $("bloqueClaveActual").classList.toggle("oculto", !!e.desde_ap);
+  // en la ventana de recuperación (WiFi de configuración, primeros minutos) no se pide la contraseña actual
+  const recuperacion = !!(sesion && sesion.recuperacion);
+  $("bloqueClaveActual").classList.toggle("oculto", recuperacion);
+  $("bloqueClaveRespaldo").classList.toggle("oculto", recuperacion);
   if (document.activeElement !== $("cfActivo") && !("cortafuegos" in elegido)) $("cfActivo").checked = cfg.cortafuegos !== false;
   rellenar($("inPuertosExtra"), cfg.puertos_extra, "inPuertosExtra");
   poner("cfEstado", cf.error ? T[lang].firewall_error(cf.error) : cf.activo ? T[lang].firewall_open(cf.abiertos || [])
@@ -2941,6 +2961,22 @@ function seguirConexion() {
 $("btBuscar").addEventListener("click", () => cargarWifi(true));
 
 // --------------------------------------------------------------- respaldo
+// la copia lleva la configuración entera y las claves WiFi: se pide la contraseña del panel
+$("btDescargarRespaldo").addEventListener("click", async () => {
+  const b = $("btDescargarRespaldo"); b.disabled = true; mensaje("msgRespaldo");
+  try {
+    const r = await fetch("/api/respaldo/descargar", { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ clave_actual: $("inClaveRespaldo").value }) });
+    if (!r.ok) { const j = await r.json().catch(() => ({})); throw new Error(textoError(j.error || "HTTP " + r.status)); }
+    const nombre = ((r.headers.get("Content-Disposition") || "").split("filename=")[1] || "").replace(/[\x22; ]/g, "")   // sin comillas ni espacios
+      || `ndiicam-${((ultimo || {}).equipo || {}).nombre || "equipo"}-${new Date().toISOString().slice(0, 10).replace(/-/g, "")}.json`;
+    const url = URL.createObjectURL(await r.blob());
+    const a = document.createElement("a"); a.href = url; a.download = nombre; document.body.append(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 10000);
+    $("inClaveRespaldo").value = "";
+  } catch (err) { mensaje("msgRespaldo", err.message, "mal"); }
+  b.disabled = false;
+});
 $("btRestaurar").addEventListener("click", () => $("archivoRespaldo").click());
 $("archivoRespaldo").addEventListener("change", async () => {
   const f = $("archivoRespaldo").files[0]; $("archivoRespaldo").value = "";
@@ -3196,9 +3232,9 @@ async function rtGuardar() {
     rtPintar();
   } catch (err) {
     rtEnviando = false; rtError = err;
-    const g = $("rtGuardado");
+    const g = $("rtGuardado"), max = err.datos && err.datos.maximo;
     g.className = "rt-guardado mal";
-    g.replaceChildren(rt("sin_guardar") + err.message + " ",
+    g.replaceChildren(rt("sin_guardar") + err.message + (max ? " " + rt(err.datos.error === "entradas_invalidas" ? "tope_entradas" : "tope_rutas")(max) : "") + " ",
       rel("button", { class: "boton", type: "button", text: rt("reintentar"), onclick: () => rtCambio(true) }),
       rel("button", { class: "boton", type: "button", text: rt("descartar"), onclick: () => { rtSucio = false; rtError = null; rtEstadoGuardado(""); rtCargar(); } }));
   }
