@@ -3089,6 +3089,9 @@ const RT = {
     elige_ruta: "Elige primero una ruta (o crea una) para añadirle salidas.",
     fuente_red: "Fuente de la red", buscando: "Buscando fuentes NDI…", elige_fuente: "— elige una fuente —",
     receptores_ndi: "receptores NDI", leyendo: "leyendo", latencia_corta: "latencia", descartes: "descartadas",
+    seleccion: "Selección", seleccionados: (n) => `${n} bloques seleccionados`, seleccion_nota: "Se mueven juntos arrastrando cualquiera. Mayús + clic añade o quita; Esc deselecciona.",
+    borrar_seleccion: "Borrar los seleccionados", confirmar_borrar_varios: (n) => `Hay rutas en marcha entre los ${n} bloques. ¿Borrarlos?`, borrados: (n) => `${n} bloques borrados`,
+    atajos: "Atajos: N nueva ruta · Supr borra lo seleccionado · Mayús+clic selección múltiple · Ctrl+S aplicar · Ctrl+Z deshacer · Esc cerrar · 1/2/3 pestañas",
     cam_res: "Resolución", cam_fps: "Imágenes por segundo", cam_fmt: "Formato", cam_lat: "Latencia",
     fmt_auto: "Automático", fmt_mjpeg: "MJPEG (comprimido)", fmt_crudo: "Sin comprimir", lat_normal: "Normal", lat_baja: "Baja", lat_minima: "Mínima (sin audio)",
     cam_nota: "Se aplican al momento: la cámara se reinicia un instante.", cam_aplicado: "Ajuste de la cámara aplicado.",
@@ -3155,6 +3158,9 @@ const RT = {
     elige_ruta: "Pick a route first (or create one) to add outputs to it.",
     fuente_red: "Network source", buscando: "Looking for NDI sources…", elige_fuente: "— pick a source —",
     receptores_ndi: "NDI receivers", leyendo: "reading", latencia_corta: "latency", descartes: "dropped",
+    seleccion: "Selection", seleccionados: (n) => `${n} blocks selected`, seleccion_nota: "They move together when you drag any of them. Shift + click adds or removes; Esc deselects.",
+    borrar_seleccion: "Delete selected", confirmar_borrar_varios: (n) => `Some of the ${n} blocks are running routes. Delete them?`, borrados: (n) => `${n} blocks deleted`,
+    atajos: "Shortcuts: N new route · Del deletes the selection · Shift+click multi-select · Ctrl+S apply · Ctrl+Z undo · Esc close · 1/2/3 tabs",
     cam_res: "Resolution", cam_fps: "Frames per second", cam_fmt: "Format", cam_lat: "Latency",
     fmt_auto: "Automatic", fmt_mjpeg: "MJPEG (compressed)", fmt_crudo: "Uncompressed", lat_normal: "Normal", lat_baja: "Low", lat_minima: "Minimal (no audio)",
     cam_nota: "They apply at once: the camera restarts for a moment.", cam_aplicado: "Camera setting applied.",
@@ -3214,6 +3220,7 @@ const rtNuevoId = (p) => p + Math.random().toString(36).slice(2, 7);
 let RD = null;               // lo último que dijo /api/rutas
 let RB = null;               // borrador: {entradas_red, rutas}
 let rtSel = null, rtCableSel = null, rtHoja = false, rtTocado = null, rtArrastre = null;
+const rtMulti = new Set();    // varios bloques a la vez (Mayús + clic): se mueven y se borran juntos
 let rtSucio = false, rtGuardarT = 0, rtVista = "";
 let rtBase = null;            // lo que tiene el equipo: el borrador se compara con esto
 let rtVivoT = 0;
@@ -3473,7 +3480,7 @@ function rtCrearNodo(n) {
     : { en_marcha: "ok", ok: "ok", esperando: "aviso", error: "mal" }[est] || "";
   const titulo = n.clase === "ent" ? n.e.nombre : n.clase === "ruta" ? n.r.nombre : rt("salidas")[n.s.tipo];
   const icono = n.clase === "ent" ? n.e.tipo : n.clase === "ruta" ? "ruta" : n.s.tipo;
-  const caja = rel("div", { class: `rt-nodo ${n.clase}${rtSel === n.id ? " sel" : ""}${n.clase === "ruta" && est === "pausada" ? " parada" : ""}`,
+  const caja = rel("div", { class: `rt-nodo ${n.clase}${rtSel === n.id || rtMulti.has(n.id) ? " sel" : ""}${n.clase === "ruta" && est === "pausada" ? " parada" : ""}`,
     "data-id": n.id, style: `left:${x}px;top:${y}px` });
   const cab = rel("div", { class: "cab" }, rtIcono(icono), rel("b", { text: titulo }), rel("span", { class: "punto " + punto }),
     rel("button", { class: "rt-ajustar", type: "button", title: rt("ajustes"), "aria-label": rt("ajustes") + ": " + titulo,
@@ -3520,15 +3527,25 @@ function rtCrearNodo(n) {
     if (ev.target.closest(".rt-ajustar")) return;
     ev.preventDefault();
     const p0 = rtPos[n.id], ox = ev.clientX - p0[0], oy = ev.clientY - p0[1]; let movido = false;
+    const conMayus = ev.shiftKey;
+    // si el bloque está en una selección múltiple, se mueven todos a la vez
+    const grupo = rtMulti.has(n.id) ? [...rtMulti] : [n.id];
+    const inicio = Object.fromEntries(grupo.map((id) => [id, [...(rtPos[id] || p0)]]));
     cab.setPointerCapture(ev.pointerId);
     rtArrastreNodo = true;
     const alto = $("rtLienzo").offsetHeight || 900;
     const mover = (e) => { movido = true;
-      rtPos[n.id] = [Math.max(0, Math.min(rtAnchoLienzo() - ANCHO[n.clase] - 4, e.clientX - ox)), Math.max(30, Math.min(alto - 80, e.clientY - oy))];
-      caja.style.left = rtPos[n.id][0] + "px"; caja.style.top = rtPos[n.id][1] + "px"; rtDibujarCables(); };
+      const dx = e.clientX - ox - p0[0], dy = e.clientY - oy - p0[1];
+      for (const id of grupo) {
+        const clase = id[0] === "e" ? "ent" : id[0] === "r" ? "ruta" : "sal";
+        rtPos[id] = [Math.max(0, Math.min(rtAnchoLienzo() - ANCHO[clase] - 4, inicio[id][0] + dx)), Math.max(30, Math.min(alto - 80, inicio[id][1] + dy))];
+        const el = id === n.id ? caja : $("rtLienzo").querySelector(`[data-id="${CSS.escape(id)}"]`);
+        if (el) { el.style.left = rtPos[id][0] + "px"; el.style.top = rtPos[id][1] + "px"; }
+      }
+      rtDibujarCables(); };
     const soltar = () => { cab.removeEventListener("pointermove", mover); cab.removeEventListener("pointerup", soltar);
       cab.removeEventListener("pointercancel", soltar); rtArrastreNodo = false;
-      rtGuardarPos(); if (!movido) rtSeleccionar(n.id); else rtPintarLienzo(); };
+      rtGuardarPos(); if (movido) rtPintarLienzo(); else if (conMayus) rtAlternar(n.id); else rtSeleccionar(n.id); };
     cab.addEventListener("pointercancel", soltar);
     cab.addEventListener("pointermove", mover); cab.addEventListener("pointerup", soltar);
   });
@@ -3657,8 +3674,32 @@ function rtIniciarLienzo() {
 }
 
 // ---------------------------------------------------------------- ajustes (panel lateral u hoja)
-function rtSeleccionar(id) { rtSel = id; rtCableSel = null; rtHoja = true; rtPintar(); }
-function rtCerrarHoja() { rtHoja = false; rtSel = null; rtCableSel = null; rtPintar(); }
+function rtSeleccionar(id) { rtMulti.clear(); rtSel = id; rtCableSel = null; rtHoja = true; rtPintar(); }
+function rtAlternar(id) {
+  // Mayús + clic: entra o sale de la selección múltiple (lo ya seleccionado se queda)
+  if (rtSel && rtSel !== id) rtMulti.add(rtSel);
+  rtSel = null; rtCableSel = null;
+  if (rtMulti.has(id)) rtMulti.delete(id); else rtMulti.add(id);
+  if (rtMulti.size === 1) { rtSel = [...rtMulti][0]; rtMulti.clear(); }
+  rtHoja = true; rtPintar();
+}
+function rtBorrarVarios() {
+  const ids = [...rtMulti];
+  const rutas = ids.filter((id) => id.startsWith("r:")).map((id) => rtRuta(id.slice(2))).filter(Boolean);
+  if (rutas.some(rtEnMarcha) && !confirm(rt("confirmar_borrar_varios")(ids.length))) return;
+  rtApuntar();
+  for (const r of rutas) RB.rutas = RB.rutas.filter((x) => x !== r);
+  for (const id of ids.filter((id) => id.startsWith("s:"))) { const [r, s] = rtSalida(id.slice(2)); if (r) r.salidas = r.salidas.filter((x) => x !== s); }
+  for (const id of ids.filter((id) => id.startsWith("e:"))) {
+    const eid = id.slice(2);
+    if (RB.entradas_red.some((x) => x.id === eid)) {
+      RB.entradas_red = RB.entradas_red.filter((x) => x.id !== eid);
+      for (const r of RB.rutas) { if (r.video === eid) r.video = ""; if (r.audio === eid) r.audio = ""; }
+    }
+  }
+  rtMulti.clear(); rtSel = null; rtCambio(); rtPintar(); rtOfrecerDeshacer(rt("borrados")(ids.length));
+}
+function rtCerrarHoja() { rtHoja = false; rtSel = null; rtCableSel = null; rtMulti.clear(); rtPintar(); }
 function rtBarraHoja(t) { return rel("div", { class: "rt-cerrar" }, rel("b", { text: t }),
   rel("button", { class: "boton", type: "button", text: rt("cerrar"), onclick: rtCerrarHoja })); }
 function rtCampo(id, etq, ...hijos) { return rel("div", null, rel("label", { for: id, text: etq }), ...hijos); }
@@ -3814,7 +3855,11 @@ function rtPaleta() {
 function rtPintarInspector() {
   const ins = $("rtInsp");
   let t = null;
-  if (rtCableSel) {
+  if (rtMulti.size > 1) {
+    t = rel("div", { class: "tarjeta" }, rtBarraHoja(rt("seleccion")), rel("h3", { text: rt("seleccionados")(rtMulti.size) }),
+      rel("div", { class: "nota", text: rt("seleccion_nota") }),
+      rel("div", { class: "botones" }, rel("button", { class: "boton peligro", type: "button", text: rt("borrar_seleccion"), onclick: rtBorrarVarios })));
+  } else if (rtCableSel) {
     const c = rtCableSel;
     t = rel("div", { class: "tarjeta" }, rtBarraHoja(rt("ajustes")), rel("h3", { text: rt("conexion") }),
       rel("div", { class: "botones" }, rel("button", { class: "boton peligro", type: "button", text: rt("desconectar"), onclick: () => rtDesconectar(c) })));
@@ -3989,7 +4034,7 @@ function rtPintar() {
   for (const b of $("rtVistas").querySelectorAll("button")) { b.classList.toggle("activo", b.dataset.v === rtVista); b.toggleAttribute("aria-current", b.dataset.v === rtVista); }
   if (rtVista === "lienzo") rtPintarLienzo(); else if (!ocupado) rtPintarLista();
   if (!ocupado) rtPintarInspector();
-  if (!$("rtAyuda").textContent) $("rtAyuda").textContent = rt("ayuda");
+  if (!$("rtAyuda").textContent) $("rtAyuda").textContent = rt("ayuda") + " · ?";
 }
 let rtCargaT = 0;
 function rtBucle() {
@@ -4009,11 +4054,28 @@ function rtIniciar() {
     rtVista = b.dataset.v; try { localStorage.setItem("ndiicam-rt-vista", rtVista); } catch (_) { /* sin almacenamiento */ } rtPintar(); });
   $("rtVelo").addEventListener("click", rtCerrarHoja);
   document.addEventListener("keydown", (ev) => {
+    const escribiendo = ["INPUT", "SELECT", "TEXTAREA"].includes(document.activeElement.tagName);
+    // 1, 2 y 3 cambian de pestaña desde cualquier sitio (sin estar escribiendo)
+    if (!escribiendo && !ev.metaKey && !ev.ctrlKey && !ev.altKey && ["1", "2", "3"].includes(ev.key)) {
+      const orden = ["monitor", ((ultimo || {}).config || {}).motor === "rutas" ? "rutas" : "config", "sistema"];
+      pestana = orden[+ev.key - 1]; aplicarPestana(); if (pestana === "rutas") rtPintar(); return;
+    }
     if (pestana !== "rutas") return;
     if ((ev.metaKey || ev.ctrlKey) && ev.key.toLowerCase() === "s") { ev.preventDefault(); if (rtSucio && !rtEnviando) rtGuardar(); return; }
-    if (ev.key === "Escape") { if (rtTocado) { rtTocado = null; rtMarcarTocado(); } else rtCerrarHoja(); }
+    if ((ev.metaKey || ev.ctrlKey) && ev.key.toLowerCase() === "z" && !escribiendo) {
+      const prev = rtPila.pop(); if (prev) { ev.preventDefault(); rtDeshacerHasta = 0; RB = JSON.parse(prev); rtSel = null; rtCableSel = null; rtMulti.clear(); rtCambio(); rtPintar(); } return;
+    }
+    if (ev.key === "Escape") { if (rtTocado) { rtTocado = null; rtMarcarTocado(); } else rtCerrarHoja(); return; }
+    if (escribiendo) return;
+    if (ev.key.toLowerCase() === "n") { ev.preventDefault(); rtNuevaRuta(); return; }
+    if (ev.key === "?") { rtAviso(rt("atajos")); return; }
     // solo Suprimir: Retroceso es demasiado fácil de pulsar sin querer
-    if (ev.key === "Delete" && rtCableSel && !["INPUT", "SELECT", "TEXTAREA"].includes(document.activeElement.tagName)) rtDesconectar(rtCableSel);
+    if (ev.key === "Delete") {
+      if (rtMulti.size) rtBorrarVarios();
+      else if (rtCableSel) rtDesconectar(rtCableSel);
+      else if (rtSel && rtSel.startsWith("r:") && rtRuta(rtSel.slice(2))) rtBorrarRuta(rtRuta(rtSel.slice(2)));
+      else if (rtSel && rtSel.startsWith("s:")) { const [r, sal] = rtSalida(rtSel.slice(2)); if (r) rtQuitarSalida(r, sal); }
+    }
   });
   let redim = 0;
   window.addEventListener("resize", () => { clearTimeout(redim); redim = setTimeout(() => { if (pestana === "rutas") rtPintar(); }, 150); });

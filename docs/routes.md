@@ -125,6 +125,9 @@ Inputs are on the left, routes in the middle and outputs on the right.
 - **Add**: the right-hand panel adds network inputs, routes and, with a route selected, its
   outputs.
 - **Tidy up** lays the blocks out again. If you move them by hand, the browser remembers where.
+- **Several at once**: Shift + click selects several blocks; they move together and Del deletes them.
+- **Shortcuts**: `N` new route · `Del` deletes the selection · `Ctrl+S` apply · `Ctrl+Z` undo ·
+  `Esc` close · `1`/`2`/`3` tabs · `?` reminds you.
 - Wires **move when there is signal** and stay still when there is none.
 
 ### List and phone
@@ -134,10 +137,16 @@ outputs. On a phone it is the only view, and settings open as a sheet from the b
 
 ![List view of the routes, as seen on a phone](screenshots/routes-mobile-en.png)
 
-### Saving
+### Apply
 
-**There is no save button**: every change saves itself within half a second and the device
-applies it. Only the processes for what changed restart; everything else keeps streaming.
+Like Node-RED's *Deploy*: anything that restarts processes (inputs, outputs, sources, monitor,
+switching a route on or off) **stays pending** until you press **Apply** (or Ctrl+S). The top bar
+shows how many changes are not applied, and **Discard** goes back to what the device has. When
+you apply, only the processes for what changed restart; everything else keeps streaming.
+
+**Gain, delay and mute apply at once**, with no waiting: you fine-tune them by ear while
+streaming. A camera's settings (resolution, fps, format, latency), in its input's gear, also apply
+at once and restart only that camera.
 
 If a route is missing something, it stays stopped and its card says why, for example:
 - it has no video;
@@ -148,8 +157,9 @@ If a route is missing something, it stays stopped and its card says why, for exa
 
 ### Monitor
 
-With routes, the Monitor tab sums them up: how many are running, each output's state (✓ when it
-works), the fps and how many people are reading the program.
+With routes, the Monitor tab has a card per route: preview (when the picture is a camera), level
+meter, camera and sent fps, Mbit/s, NDI receivers, who is reading the program, latency, drops,
+tally, each output's state and its errors. Paused routes collapse to one line.
 
 ![Monitor with the routes engine: three routes running](screenshots/routes-monitor-en.png)
 

@@ -126,6 +126,9 @@ Las entradas van a la izquierda, las rutas en el centro y las salidas a la derec
 - **Añadir**: el panel de la derecha añade entradas de red, rutas y, con una ruta elegida, sus
   salidas.
 - **Ordenar** recoloca los bloques. Si los mueves a mano, el navegador recuerda dónde.
+- **Varios a la vez**: Mayús + clic selecciona varios bloques; se mueven juntos y Supr los borra.
+- **Atajos**: `N` nueva ruta · `Supr` borra lo seleccionado · `Ctrl+S` aplicar · `Ctrl+Z` deshacer ·
+  `Esc` cerrar · `1`/`2`/`3` pestañas · `?` los recuerda.
 - Los cables **se mueven cuando hay señal** y se quedan quietos cuando no.
 
 ### Lista y móvil
@@ -136,10 +139,16 @@ desde abajo.
 
 ![Vista lista de las rutas, como se ve en un móvil](screenshots/routes-mobile-es.png)
 
-### Guardar
+### Aplicar
 
-**No hay botón de guardar**: cada cambio se guarda solo, en medio segundo, y el equipo lo aplica.
-Solo se reinician los procesos de lo que ha cambiado; el resto sigue emitiendo.
+Como el *Deploy* de Node-RED: lo que reinicia procesos (entradas, salidas, fuentes, monitor,
+encender o apagar una ruta) **queda pendiente** hasta que pulses **Aplicar** (o Ctrl+S). Arriba
+se ve cuántos cambios hay sin aplicar, y **Descartar** vuelve a lo que tiene el equipo. Al aplicar,
+solo se reinician los procesos de lo que ha cambiado; el resto sigue emitiendo.
+
+**Ganancia, retraso y silencio se aplican al momento**, sin esperar: se afinan de oído mientras
+se emite. Los ajustes de una cámara (resolución, fps, formato, latencia), que están en el engranaje
+de su entrada, también van al momento y reinician solo esa cámara.
 
 Si a una ruta le falta algo, se queda parada y la tarjeta dice por qué, por ejemplo:
 - no tiene imagen;
@@ -150,8 +159,10 @@ Si a una ruta le falta algo, se queda parada y la tarjeta dice por qué, por eje
 
 ### Monitor
 
-Con rutas, la pestaña Monitor las resume: cuántas están en marcha, el estado de cada salida
-(✓ cuando funciona), los fps y cuánta gente está leyendo el programa.
+Con rutas, la pestaña Monitor tiene una tarjeta por ruta: vista previa (si la imagen es una
+cámara), vúmetro, fps de la cámara y enviados, Mbit/s, receptores NDI, quién lee el programa,
+latencia, descartes, tally, el estado de cada salida y sus errores. Las rutas en pausa quedan en
+una línea.
 
 ![Monitor con el motor de rutas: tres rutas en marcha](screenshots/routes-monitor-es.png)
 
