@@ -178,7 +178,8 @@ Running the installer again updates NDIICAM and keeps your settings.
    and pick `<DEVICE> (NDIICAM)`.
 
 **No network?** After 60 s without any known network the device turns on the setup WiFi
-`NDIICAM-XXXX` (password `ndiicam-setup`, change it in the panel). Join it from a phone:
+`NDIICAM-XXXX`. Its password is unique to each device: the installer prints it and the HDMI
+help screen shows it (so does the panel, under *Device*). Join it from a phone:
 the panel opens by itself. Pick your network and type its password. The result is shown on
 the same screen; then go back to your network and open `https://<device>.local`.
 
@@ -218,13 +219,20 @@ directly.
   others.
 - Scripts (Companion, curl) can also use *Basic Auth* with the panel password:
   `curl -k -u :PASSWORD https://<device>.local/api/estado`.
-- **Not asked from the setup WiFi**: anyone on it already knows its password, and it is the
-  way back in if you forget the panel password. So change its default password
-  (`ndiicam-setup`); the panel warns until you do.
+- **From the setup WiFi** you do not get in for free either: only during the **10 minutes**
+  after it comes up (or while no password exists yet). That is how you recover a forgotten
+  password: reboot the device without a network, join its WiFi and change it. That WiFi's
+  password is unique to each device (there is no default) and is changed under *Device*.
+- **The backup** carries the whole configuration and the saved WiFi passwords: downloading it
+  asks for the panel password, even with a session open.
+- **Bounded requests**: the server handles at most 32 at a time, rejects bodies larger than
+  each API allows and drops after 10 s anyone who does not finish talking. A
+  `Content-Security-Policy` only lets the page's own code run.
 - **Firewall**: its own nftables table (`inet ndiicam`) that only lets in SSH, the panel,
   mDNS, the setup WiFi's DHCP/DNS and, depending on the mode, NDI (5959-5999), the cameras'
   SRT or the bridge's RTMP/SRT. It does not touch other system rules. If the device runs other
-  services, add their ports under *Extra ports*.
+  services, add their ports under *Extra ports*. The setup WiFi never forwards into the venue's
+  network, even if forwarding is enabled on the device (Docker).
 
 ### Reliability
 

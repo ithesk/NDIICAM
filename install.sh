@@ -9,9 +9,14 @@ set -euo pipefail
 
 REPO="${NDIICAM_REPO:-ithesk/NDIICAM}"
 RAMA="${NDIICAM_BRANCH:-main}"
+# el SDK no tiene una URL por versión ni publica hashes: se descarga por TLS del
+# servidor oficial y se acepta su licencia. Lo demás (MediaMTX, el plugin) va con
+# versión y SHA-256 fijados
 NDI_SDK_URL="https://downloads.ndi.tv/SDK/NDI_SDK_Linux/Install_NDI_SDK_v6_Linux.tar.gz"
+# el plugin precompilado sale de las releases de este repositorio, con su .sha256
+# al lado (integridad de la descarga; la autenticidad la da el TLS de GitHub)
 PLUGIN_URL="https://github.com/$REPO/releases/latest/download/libgstndi-x86_64.so"
-GST_RS_TAG="0.12.11"      # versión de gst-plugins-rs para compilar el plugin NDI
+GST_RS_TAG="0.12.11"      # versión (tag) de gst-plugins-rs para compilar el plugin NDI
 
 ACEPTAR_NDI=0
 RED=1
@@ -259,6 +264,9 @@ systemctl is-active --quiet ndiicam.service || {
 
 EQUIPO="$(hostname)"
 IP="$(ip -4 -o route get 1.1.1.1 2>/dev/null | awk '{for (i=1;i<NF;i++) if ($i=="src") print $(i+1)}')"
+# la clave de la WiFi de configuración es propia de cada equipo (el servicio la
+# genera al arrancar); también sale en la pantalla de ayuda HDMI y en el panel
+AP_CLAVE="$(python3 -c 'import json; print(json.load(open("/etc/ndiicam/config.json")).get("ap_clave", ""))' 2>/dev/null || true)"
 cat <<EOF
 
   NDIICAM is installed / NDIICAM está instalado
@@ -269,7 +277,8 @@ cat <<EOF
                 avisa del certificado (es propio del equipo): acéptalo
   NDI source:   ${EQUIPO^^} (NDIICAM)
   Setup WiFi:   turns on when no known network is available / se activa sin red conocida
-                password / clave: ndiicam-setup  (change it in the panel / cámbiala en el panel)
+                password / clave: ${AP_CLAVE:-(see the panel or the HDMI help screen / ver el panel o la pantalla HDMI)}
+                (unique to this device; change it in the panel / propia de este equipo; cámbiala en el panel)
 
 EOF
 if [ "$REINICIO_HUC" -eq 1 ]; then

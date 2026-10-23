@@ -178,9 +178,10 @@ Volver a ejecutar el instalador actualiza NDIICAM y conserva la configuración.
    y elige `<EQUIPO> (NDIICAM)`.
 
 **¿Sin red?** Tras 60 s sin ninguna red conocida, el equipo activa la WiFi de configuración
-`NDIICAM-XXXX` (clave `ndiicam-setup`, cámbiala en el panel). Conéctate desde el móvil: el
-panel se abre solo. Elige tu red y escribe su clave. El resultado sale en la misma pantalla;
-después vuelve a tu red y abre `https://<equipo>.local`.
+`NDIICAM-XXXX`. Su clave es propia de cada equipo: la imprime el instalador y la enseña la
+pantalla de ayuda HDMI (y el panel, en *Equipo*). Conéctate desde el móvil: el panel se abre
+solo. Elige tu red y escribe su clave. El resultado sale en la misma pantalla; después vuelve
+a tu red y abre `https://<equipo>.local`.
 
 ## Panel
 
@@ -218,13 +219,20 @@ directamente.
   contraseña cierra las demás.
 - Para scripts (Companion, curl) vale también *Basic Auth* con la contraseña del panel:
   `curl -k -u :CLAVE https://<equipo>.local/api/estado`.
-- **Desde la WiFi de configuración no se pide**: quien está en ella ya conoce su clave, y es
-  la forma de volver a entrar si se olvida la del panel. Por eso conviene cambiar su clave
-  por defecto (`ndiicam-setup`); el panel avisa mientras no se haya cambiado.
+- **Desde la WiFi de configuración** tampoco se entra sin más: solo durante los **10 minutos**
+  siguientes a levantarla (o mientras no exista contraseña). Es la forma de recuperar una
+  contraseña olvidada: reinicia el equipo sin red, conéctate a su WiFi y cámbiala. La clave
+  de esa WiFi es propia de cada equipo (no hay una por defecto) y se cambia en *Equipo*.
+- **La copia de seguridad** lleva la configuración entera y las claves de las WiFi guardadas:
+  descargarla pide la contraseña del panel, aunque haya sesión.
+- **Peticiones acotadas**: el servidor atiende como mucho 32 a la vez, rechaza cuerpos mayores
+  de lo que cada API admite y corta a los 10 s a quien no termina de hablar. Y una
+  `Content-Security-Policy` solo deja ejecutar el código de la propia página.
 - **Cortafuegos**: una tabla propia de nftables (`inet ndiicam`) que solo deja entrar SSH, el
   panel, mDNS, DHCP/DNS de la WiFi de configuración y, según el modo, NDI (5959-5999), el SRT
   de las cámaras o el RTMP/SRT del puente. No toca otras reglas del sistema. Si el equipo
-  ejecuta otros servicios, sus puertos se añaden en *Puertos extra*.
+  ejecuta otros servicios, sus puertos se añaden en *Puertos extra*. La WiFi de configuración
+  no reenvía hacia la red del local aunque el equipo tenga el reenvío activado (Docker).
 
 ### Fiabilidad
 
