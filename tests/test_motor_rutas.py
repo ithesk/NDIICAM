@@ -559,3 +559,68 @@ class FuenteSinImagen(unittest.TestCase):
         m.errores, m.ultimo = {}, {"pausadas": []}
         m.limpias = [{"id": "r1", "camino": "r1", "salidas": [{"id": "s1", "tipo": "hdmi"}]}]
         self.assertNotIn("fuente_sin_imagen", m.estado()["r1"]["errores"])
+
+
+class CambioDeFuenteNDI(Motor):
+    """Cambiar la fuente de una entrada NDI reinicia el receptor con la nueva."""
+
+    def test_cambiar_fuente_reinicia_el_receptor(self):
+        self.cfg["entradas_red"] = [{"id": "n1", "tipo": "ndi", "nombre": "Mac", "fuente": "MAC (DJI)"}]
+        r = ruta(video="n1", audio="", salidas=[{"tipo": "hdmi"}])
+        procs = self.paso([r])
+        rx = procs["rx:r1"].proc
+        self.assertEqual(rx.obj["nombre"], "MAC (DJI)")
+        self.cfg["entradas_red"] = [{"id": "n1", "tipo": "ndi", "nombre": "Mac", "fuente": "MAC (Screen)"}]
+        procs = self.paso([r])
+        procs = self.paso([r])
+        self.assertTrue(rx.terminado, "el receptor viejo sigue vivo")
+        self.assertEqual(procs["rx:r1"].proc.obj["nombre"], "MAC (Screen)")
+
+    def test_cambiar_fuente_durante_la_espera_arranca_ya(self):
+        self.cfg["entradas_red"] = [{"id": "n1", "tipo": "ndi", "nombre": "Mac", "fuente": "MAC (DJI)"}]
+        r = ruta(video="n1", audio="", salidas=[{"tipo": "hdmi"}])
+        procs = self.paso([r])
+        rec = procs["rx:r1"]
+        # la DJI no manda imagen: el receptor cae y espera 15 s para reintentar
+        rec.detener()
+        rec.reintento, rec.fallos = supervisor.time.time() + 15, 5
+        self.cfg["entradas_red"] = [{"id": "n1", "tipo": "ndi", "nombre": "Mac", "fuente": "MAC (Screen)"}]
+        procs = self.paso([r])
+        self.assertIsNotNone(procs["rx:r1"].proc, "no arrancó con la fuente nueva")
+        self.assertEqual(procs["rx:r1"].proc.obj["nombre"], "MAC (Screen)")
+
+    def test_sin_cambios_respeta_la_espera(self):
+        self.cfg["entradas_red"] = [{"id": "n1", "tipo": "ndi", "nombre": "Mac", "fuente": "MAC (DJI)"}]
+        r = ruta(video="n1", audio="", salidas=[{"tipo": "hdmi"}])
+        procs = self.paso([r])
+        rec = procs["rx:r1"]
+        rec.detener()
+        rec.reintento, rec.fallos = supervisor.time.time() + 15, 5
+        procs = self.paso([r])
+        self.assertIsNone(procs["rx:r1"].proc)
+
+
+class RutaApagada(unittest.TestCase):
+    """Una ruta apagada no reserva el monitor ni el nombre NDI."""
+
+    ENT = [{"id": "n1", "tipo": "ndi", "nombre": "Mac", "fuente": "MAC (Screen)"},
+           {"id": "pocket", "tipo": "usb_cam", "nombre": "Pocket", "dev": "/dev/video0", "audio_dev": None}]
+
+    def test_apagada_no_reserva_el_monitor(self):
+        apagada = {"id": "a", "nombre": "A", "video": "n1", "activa": False, "salidas": [{"id": "a-h", "tipo": "hdmi"}]}
+        otra = {"id": "b", "nombre": "B", "video": "n1", "activa": True, "salidas": [{"id": "b-h", "tipo": "hdmi"}]}
+        limpias, err = rutas.validar([apagada, otra], self.ENT)
+        self.assertNotIn("hdmi_ocupado", err.get("b", []))
+        self.assertEqual([s["tipo"] for s in limpias[1]["salidas"]], ["hdmi"])
+        self.assertEqual([s["tipo"] for s in limpias[0]["salidas"]], ["hdmi"])   # la apagada lo conserva
+        pl = rutas.plan(limpias, self.ENT, True, err)
+        self.assertEqual([(p["clave"], p["hdmi"]) for p in pl["procesos"]], [("rx:b", True)])
+
+    def test_apagada_no_reserva_el_nombre_ndi(self):
+        apagada = {"id": "a", "nombre": "A", "video": "pocket", "activa": False,
+                   "salidas": [{"id": "a-n", "tipo": "ndi", "nombre": "Culto"}]}
+        otra = {"id": "b", "nombre": "B", "video": "pocket", "activa": True,
+                "salidas": [{"id": "b-n", "tipo": "ndi", "nombre": "Culto"}]}
+        limpias, err = rutas.validar([apagada, otra], self.ENT)
+        self.assertNotIn("ndi_repetido", err.get("b", []))
+        self.assertEqual(limpias[1]["salidas"][0]["nombre"], "Culto")

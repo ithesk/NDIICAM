@@ -126,7 +126,9 @@ def validar(rutas, entradas):
             ns = {"id": sid, "tipo": tipo}
             if tipo == "ndi":
                 ns["nombre"] = str(s.get("nombre") or nr["nombre"])[:48].strip() or "Programa"
-                if ns["nombre"].lower() in nombres_ndi:
+                # solo las rutas encendidas reservan su nombre (como el monitor, la
+                # cámara o el audio): una ruta apagada no le quita nada a las demás
+                if nr["activa"] and ns["nombre"].lower() in nombres_ndi:
                     # dos fuentes NDI del mismo equipo no pueden llamarse igual: la
                     # segunda sale con un número detrás, y se avisa
                     err.append("ndi_repetido")
@@ -134,12 +136,13 @@ def validar(rutas, entradas):
                     while f"{base} {n}".lower() in nombres_ndi:
                         n += 1
                     ns["nombre"] = f"{base} {n}"
-                nombres_ndi.add(ns["nombre"].lower())
+                if nr["activa"]:
+                    nombres_ndi.add(ns["nombre"].lower())
                 if v and v["tipo"] == "ndi":
                     err.append("ndi_a_ndi")       # ya es una fuente NDI: no se reemite como NDI
-            elif tipo == "hdmi":
+            elif tipo == "hdmi" and nr["activa"]:
                 if hdmi_de is not None:
-                    err.append("hdmi_ocupado")    # un solo monitor: lo tiene la primera ruta
+                    err.append("hdmi_ocupado")    # un solo monitor: lo tiene la primera ruta encendida
                     continue
                 hdmi_de = rid
             elif tipo == "grabar":

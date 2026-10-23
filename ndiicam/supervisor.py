@@ -565,6 +565,7 @@ class MotorRutas:
     def __init__(self, sup):
         self.sup = sup          # Fuentes: config, audio, objetivo() de las cámaras
         self.procs = {}         # clave -> objeto de proceso
+        self.lanzado = {}       # clave -> con qué se lanzó por última vez
         self.ultimo = {"procesos": [], "activas": [], "pausadas": [], "mediamtx": {}}
         self.errores = {}       # ruta -> errores; se sustituye entero al final de cada paso
         self._err = {}          # los del paso en curso (validar + lo que no se pudo arrancar)
@@ -640,6 +641,10 @@ class MotorRutas:
                     moribundos.append(p.detener())
                     evento("aplicando", fuente=pr["nombre_ruta"])
             p.forzar_reinicio = False
+            if p.proc is None and self.lanzado.get(clave) not in (None, obj):
+                # esperaba para reintentar con lo de antes (una fuente NDI que no manda
+                # imagen, por ejemplo) y le han cambiado algo: probar ya con lo nuevo
+                p.reintento, p.fallos = 0.0, 0
         arrancables = [(pr, obj) for clave, (pr, obj) in deseados.items()
                        if self.procs[clave].proc is None and time.time() >= self.procs[clave].reintento]
         if arrancables:
@@ -650,6 +655,7 @@ class MotorRutas:
             esperar_fin(moribundos)
             for pr, obj in arrancables:
                 self.procs[pr["clave"]].arrancar(obj)
+                self.lanzado[pr["clave"]] = obj
         # los errores, de una vez: el panel los lee desde otro hilo
         self.errores = {k: sorted(set(v)) for k, v in self._err.items() if v}
 
