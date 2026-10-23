@@ -8,9 +8,9 @@ import socket
 import time
 
 import nucleo
-from nucleo import (ESTADO, FPS_VALIDOS, GRABACIONES, NOMBRE_GRABACION, PUERTO_HLS, PUERTO_RTMP,
-    PUERTO_SRT, RESOLUCIONES, RUTA_PROGRAMA, VERSION, bytes_red, conexiones_por_pid, evento, ip_de, leer,
-    nombre_de)
+from nucleo import (ESTADO, FPS_VALIDOS, GRABACIONES, LIMITE_ENTRADAS, LIMITE_RUTAS, NOMBRE_GRABACION,
+    PUERTO_HLS, PUERTO_RTMP, PUERTO_SRT, RESOLUCIONES, RUTA_PROGRAMA, VERSION, bytes_red,
+    conexiones_por_pid, evento, ip_de, latido, leer, nombre_de)
 from camaras import camaras as camaras_conectadas, modo_consola_activo, pantallas
 from gpu import (capacidad_gpu, capacidad_vpp, decodificador_h264, energia_rapl,
     edicion, simultaneo, tiempos_cpu, tiempos_gpu, uso_gpu, vatios)
@@ -42,6 +42,7 @@ def medidor():
             prev = {"t": t, "tx": tx, "rx": rx, "cpu": cpu, "rapl": rapl, "gpu": gpu}
         except Exception as ex:
             evento("fallo_interno", detalle=str(ex))
+        latido("medidor")
         time.sleep(2)
 
 def estado_receptor():
@@ -96,11 +97,18 @@ def estado_rutas():
         if e["tipo"] == "ingesta":
             e["llega"] = PUENTE.ruta_info(f"live/{e['clave']}")
         ents.append(e)
+    # la clave de YouTube no sale del equipo: el panel la ve tapada (y al
+    # devolverla tapada, se conserva la guardada)
+    for r in limpias:
+        for sal in r.get("salidas") or []:
+            if sal.get("tipo") == "rtmp" and sal.get("url"):
+                sal["url"] = ocultar_clave_rtmp(sal["url"])
     return {"motor": cfg.get("motor", "modos"), "entradas": ents, "rutas": limpias,
             "errores": errores, "estado": est, "activas": activas, "pausadas": pausadas,
             "red_ndi": nucleo.BUSCADOR.lista() if nucleo.BUSCADOR else [],
             "puertos": {"rtmp": PUERTO_RTMP, "srt": PUERTO_SRT, "hls": PUERTO_HLS},
-            "limite_lite": rutas_mod.LIMITE_LITE, "pro": simultaneo(cfg)}
+            "limite_lite": rutas_mod.LIMITE_LITE, "pro": simultaneo(cfg),
+            "limite_rutas": LIMITE_RUTAS, "limite_entradas": LIMITE_ENTRADAS}
 
 def estado_programa(cfg):
     """El programa final del puente (Pro): vídeo del ATEM + audio de la consola."""

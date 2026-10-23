@@ -2,6 +2,8 @@
 # Copyright (C) 2026 Pablo Holguín. GPL-3.0-or-later: ver LICENSE.
 import base64
 import datetime
+import gzip
+import hashlib
 import ipaddress
 import json
 import os
@@ -17,10 +19,10 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
 import nucleo
-from nucleo import (AP_CLAVE_DEFECTO, AP_IP, CLAVE_PUENTE, ESTADO, EVENTOS, FPS_VALIDOS, GRABACIONES,
-    GRABAR_CUANDO, HORA, IDIOMAS, MODOS, MODOS_CONSOLA, NOMBRE_EQUIPO, NOMBRE_GRABACION,
-    NOMBRE_NDI, RESOLUCIONES, RETRASO_MAX_MS, SALIDAS_EXTRA, SALIDAS_GPU, URL_RTMP, WEB, clave_correcta, cliente_ip,
-    configurar_ndi, evento, resumen_clave, sh, FORMATOS, LATENCIAS)
+from nucleo import (AP_CLAVE_DEFECTO, AP_IP, ESTADO, EVENTOS, GRABACIONES, LIMITE_ENTRADAS,
+    LIMITE_RUTAS, NOMBRE_EQUIPO, NOMBRE_GRABACION, SinEspacio, WEB, clave_correcta,
+    cliente_ip, configurar_ndi, evento, resumen_clave, sh)
+from validar import validar_config, validar_fuente
 from camaras import fijar_modo_consola
 from gpu import capacidad_gpu, simultaneo
 from puente import clave_puente, xml_atem
@@ -31,14 +33,59 @@ import rutas as rutas_mod
 from actualizador import (cambiar_nombre_equipo, reiniciar_servicio, respaldo, restaurar,
     valores_fabrica)
 from estado import grabaciones
-from cortafuegos import puertos_extra
 from seguridad import CLAVE_MINIMA, COOKIE, DURACION_SESION, huella_certificado
 import sistema
+
+CUERPO_MAX = 16384              # bytes de cuerpo de una petición normal
+CUERPO_MAX_GRANDE = 262144      # rutas enteras y copias de seguridad
+CONEXIONES_MAX = 32             # peticiones atendidas a la vez
+RECUPERACION_AP = 600           # s tras levantar la WiFi de configuración sin pedir contraseña
+_AUTH_CACHE = {}                # (ip, sha256(clave)) -> hasta cuándo vale, para Basic Auth
+_auth_lock = threading.Lock()
+
+
+class Pagina:
+    """index.html listo para servir: comprimido, con ETag y con los hashes de
+    sus <script> para la Content-Security-Policy. Se relee si cambia en disco."""
+
+    def __init__(self):
+        self.lock = threading.Lock()
+        self.mtime = None
+        self.cuerpo = self.gz = self.etag = self.csp = None
+
+    def cargar(self):
+        try:
+            mtime = os.path.getmtime(WEB)
+        except OSError:
+            return None
+        with self.lock:
+            if mtime != self.mtime:
+                with open(WEB, "rb") as f:
+                    self.cuerpo = f.read()
+                self.gz = gzip.compress(self.cuerpo, 6)
+                self.etag = '"' + hashlib.sha256(self.cuerpo).hexdigest()[:32] + '"'
+                hashes = " ".join(
+                    "'sha256-" + base64.b64encode(hashlib.sha256(m.group(1).encode()).digest()).decode() + "'"
+                    for m in re.finditer(r"<script>(.*?)</script>", self.cuerpo.decode(), re.S))
+                # scripts: solo los inline de la propia página (por hash); estilos inline
+                # (hay atributos style); imágenes del propio equipo; nada de otros sitios
+                scripts = hashes or "'self'"
+                self.csp = (f"default-src 'self'; script-src {scripts}; "
+                            "style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; "
+                            "connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; "
+                            "form-action 'self'")
+                self.mtime = mtime
+            return self
+
+
+PAGINA = Pagina()
 
 
 class Panel(BaseHTTPRequestHandler):
     server_version = "NDIICAM"
-    timeout = 60
+    # leer cabeceras y cuerpo: un cliente que no habla no retiene el hilo. Las
+    # descargas largas lo suben a mano
+    timeout = 10
 
     def log_message(self, *args):
         pass
@@ -55,22 +102,46 @@ class Panel(BaseHTTPRequestHandler):
     def _error(self, codigo_error, http=400):
         self._json({"error": codigo_error}, http)
 
-    def _cuerpo(self, maximo=16384):
-        n = min(int(self.headers.get("Content-Length") or 0), maximo)
+    def _cuerpo(self, maximo=CUERPO_MAX):
+        """El JSON del cuerpo, o None tras responder el error: un Content-Length
+        negativo o absurdo no hace leer hasta el infinito, y uno mayor que el
+        máximo se rechaza (antes se truncaba y se daba por bueno)."""
+        try:
+            n = int(self.headers.get("Content-Length") or 0)
+        except ValueError:
+            n = -1
+        if n < 0 or n > maximo:
+            self._error("cuerpo_grande", 413)
+            return None
         try:
             datos = json.loads(self.rfile.read(n) or b"{}")
-            return datos if isinstance(datos, dict) else {}
-        except ValueError:
-            return {}
+        except (ValueError, OSError):
+            self._error("json_invalido")
+            return None
+        return datos if isinstance(datos, dict) else {}
 
     def end_headers(self):
         self.send_header("X-Content-Type-Options", "nosniff")
         self.send_header("X-Frame-Options", "DENY")
         self.send_header("Referrer-Policy", "same-origin")
+        if PAGINA.csp:
+            self.send_header("Content-Security-Policy", PAGINA.csp)
         super().end_headers()
 
     def _desde_ap(self):
         return cliente_ip(self).startswith("10.42.0.")
+
+    def _recuperacion_ap(self):
+        """Desde la WiFi de configuración se entra sin contraseña solo mientras no
+        exista (primer uso) o en los 10 minutos siguientes a levantarla: así sigue
+        sirviendo para recuperar una contraseña olvidada (basta reiniciar el
+        equipo sin red), pero no da el panel a cualquiera que sepa la clave WiFi."""
+        if not self._desde_ap():
+            return False
+        if not nucleo.CONF.get()["clave_panel"]:
+            return True
+        red = nucleo.RED
+        return bool(red and red.ap_activo and time.time() - red.ap_desde < RECUPERACION_AP)
 
     def _testigo(self):
         try:
@@ -83,7 +154,7 @@ class Panel(BaseHTTPRequestHandler):
         """La contraseña del panel es obligatoria. Desde la WiFi de configuración
         no se pide: quien está ahí ya conoce su clave, y así sirve para recuperarla.
         Vale la cookie de sesión (el navegador) o Basic Auth (scripts, Companion)."""
-        if self._desde_ap():
+        if self._recuperacion_ap():
             return True
         guardada = nucleo.CONF.get()["clave_panel"]
         if not guardada:
@@ -99,8 +170,18 @@ class Panel(BaseHTTPRequestHandler):
                 clave = base64.b64decode(cab[6:]).decode().partition(":")[2]
             except ValueError:
                 clave = ""
+            # Companion pide el estado cada segundo: no recalcular PBKDF2 cada vez
+            marca = (ip, hashlib.sha256(clave.encode()).hexdigest(), guardada)
+            ahora = time.monotonic()
+            with _auth_lock:
+                if _AUTH_CACHE.get(marca, 0) > ahora:
+                    return True
             if clave_correcta(clave, guardada):
                 nucleo.INTENTOS.acierto(ip)
+                with _auth_lock:
+                    if len(_AUTH_CACHE) > 200:
+                        _AUTH_CACHE.clear()
+                    _AUTH_CACHE[marca] = ahora + 60
                 return True
             nucleo.INTENTOS.fallo(ip)
         return False
@@ -148,7 +229,8 @@ class Panel(BaseHTTPRequestHandler):
     def _sesion_info(self):
         cfg = nucleo.CONF.get()
         return {"autenticado": self._autorizado(), "clave_creada": bool(cfg["clave_panel"]),
-                "desde_ap": self._desde_ap(), "espera": nucleo.INTENTOS.espera(cliente_ip(self)),
+                "desde_ap": self._desde_ap(), "recuperacion": self._recuperacion_ap(),
+                "espera": nucleo.INTENTOS.espera(cliente_ip(self)),
                 "https": bool(getattr(self.server, "tls", False)), "minimo": CLAVE_MINIMA,
                 "idioma": cfg["idioma"]}
 
@@ -200,14 +282,26 @@ class Panel(BaseHTTPRequestHandler):
         if url.path not in ("/", "/index.html") and not self._autorizado():
             return self._pedir_clave()
         if url.path in ("/", "/index.html"):
-            try:
-                with open(WEB, "rb") as f:
-                    cuerpo = f.read()
-            except OSError:
+            pg = PAGINA.cargar()
+            if pg is None:
                 return self.send_error(500)
+            # 250 KB sin comprimir: por la WiFi de configuración son segundos.
+            # Comprimida y con ETag, las recargas no vuelven a bajarla
+            if self.headers.get("If-None-Match") == pg.etag:
+                self.send_response(304)
+                self.send_header("ETag", pg.etag)
+                self.send_header("Cache-Control", "no-cache")
+                self.end_headers()
+                return
+            comprimir = "gzip" in (self.headers.get("Accept-Encoding") or "")
+            cuerpo = pg.gz if comprimir else pg.cuerpo
             self.send_response(200)
             self.send_header("Content-Type", "text/html; charset=utf-8")
-            self.send_header("Cache-Control", "no-store")
+            self.send_header("Cache-Control", "no-cache")
+            self.send_header("ETag", pg.etag)
+            self.send_header("Vary", "Accept-Encoding")
+            if comprimir:
+                self.send_header("Content-Encoding", "gzip")
             self.send_header("Content-Length", str(len(cuerpo)))
             self.end_headers()
             self.wfile.write(cuerpo)
@@ -282,6 +376,9 @@ class Panel(BaseHTTPRequestHandler):
             self._json({"arranques": sistema.arranques()})
         elif url.path == "/api/sistema/zonas":
             self._json({"zonas": sistema.zonas(), **sistema.hora()})
+        elif url.path == "/api/respaldo":
+            # la copia lleva las claves WiFi: se pide por POST con la contraseña
+            self._error("usar_post", 405)
         elif url.path.startswith("/grabaciones/"):
             self._descargar(url.path[len("/grabaciones/"):])
         elif url.path == "/api/wifi/redes":
@@ -290,17 +387,34 @@ class Panel(BaseHTTPRequestHandler):
         elif url.path == "/api/actualizacion":
             self._json(nucleo.ACTUALIZADOR.comprobar() if parse_qs(url.query).get("comprobar")
                        else nucleo.ACTUALIZADOR.info)
-        elif url.path == "/api/respaldo":
-            cuerpo = json.dumps(respaldo(), indent=2, ensure_ascii=False).encode()
-            nombre = f"ndiicam-{socket.gethostname()}-{datetime.date.today():%Y%m%d}.json"
-            self.send_response(200)
-            self.send_header("Content-Type", "application/json; charset=utf-8")
-            self.send_header("Content-Disposition", f'attachment; filename="{nombre}"')
-            self.send_header("Content-Length", str(len(cuerpo)))
-            self.end_headers()
-            self.wfile.write(cuerpo)
         else:
             self._error("no_encontrado", 404)
+
+    def _descargar_respaldo(self, d):
+        """La copia de seguridad lleva la configuración entera y las claves de las
+        WiFi guardadas: además de la sesión, hace falta la contraseña del panel."""
+        if not self._clave_actual(d):
+            return self._error("clave_actual_incorrecta", 403)
+        cuerpo = json.dumps(respaldo(), indent=2, ensure_ascii=False).encode()
+        nombre = f"ndiicam-{socket.gethostname()}-{datetime.date.today():%Y%m%d}.json"
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Content-Disposition", f'attachment; filename="{nombre}"')
+        self.send_header("Content-Length", str(len(cuerpo)))
+        self.end_headers()
+        self.wfile.write(cuerpo)
+
+    def _clave_actual(self, d):
+        """Si el cuerpo trae la contraseña del panel correcta (para lo delicado:
+        cambiarla, descargar la copia). En la ventana de recuperación desde la
+        WiFi de configuración no hace falta."""
+        if self._recuperacion_ap():
+            return True
+        guardada = nucleo.CONF.get()["clave_panel"]
+        if guardada and clave_correcta(str(d.get("clave_actual", "")), guardada):
+            return True
+        nucleo.INTENTOS.fallo(cliente_ip(self))
+        return False
 
     def _descargar(self, nombre):
         if not NOMBRE_GRABACION.match(nombre):
@@ -311,6 +425,7 @@ class Panel(BaseHTTPRequestHandler):
         except OSError:
             return self._error("no_encontrado", 404)
         with f:
+            self.connection.settimeout(60)     # por WiFi floja un trozo puede tardar
             self.send_response(200)
             self.send_header("Content-Type", "video/x-matroska" if nombre.endswith(".mkv") else "video/mp4")
             self.send_header("Content-Disposition", f'attachment; filename="{nombre}"')
@@ -330,7 +445,7 @@ class Panel(BaseHTTPRequestHandler):
         lineas = sistema.registro(uno("origen", "servicio"), uno("arranque"), uno("nivel", "todo"),
                                   uno("buscar"), n)
         if lineas is None:
-            return self._error("modo_invalido")
+            return self._error("registro_invalido")
         if uno("formato") != "txt":
             return self._json({"lineas": lineas})
         cuerpo = sistema.registro_texto(lineas).encode()
@@ -348,23 +463,34 @@ class Panel(BaseHTTPRequestHandler):
         ruta = urlparse(self.path).path
         if not getattr(self.server, "tls", False) and nucleo.HTTPS and not self._desde_ap():
             return self._error("usar_https", 403)    # nada viaja sin cifrar por la red
+        grande = ruta in ("/api/respaldo", "/api/rutas")
+        d = self._cuerpo(CUERPO_MAX_GRANDE if grande else CUERPO_MAX)
+        if d is None:
+            return
+        try:
+            self._post(ruta, d)
+        except SinEspacio:
+            # el cambio se aplicó en memoria pero no cabe en el disco
+            self._error("sin_espacio", 507)
+
+    def _post(self, ruta, d):
         if ruta == "/api/login":
-            return self._entrar(self._cuerpo())
+            return self._entrar(d)
         if ruta == "/api/clave/crear":
-            return self._crear_clave(self._cuerpo())
+            return self._crear_clave(d)
         if ruta == "/api/logout":
             nucleo.SESIONES.cerrar(self._testigo())
             return self._json_sesion({"ok": True}, "", 0)
         if not self._autorizado():
             return self._pedir_clave()
         if ruta == "/api/respaldo":
-            d = self._cuerpo(maximo=262144)
             if "config" not in d and "wifi" not in d:
                 return self._error("respaldo_invalido")
             restaurar(d)
             reiniciar_servicio()
             return self._json({"ok": True, "reinicio": True})
-        d = self._cuerpo()
+        if ruta == "/api/respaldo/descargar":
+            return self._descargar_respaldo(d)
         if ruta == "/api/config":
             return self._config(d)
         if ruta == "/api/fuente":
@@ -481,102 +607,21 @@ class Panel(BaseHTTPRequestHandler):
         fuente = next((f for f in nucleo.FUENTES.lista() if f.cam["id"] == ident), None)
         if fuente is None:
             return self._error("camara_invalida")
-        cambios = {}
-        if "activa" in d:
-            cambios["activa"] = bool(d["activa"])
-        if "ndi_nombre" in d:
-            v = str(d["ndi_nombre"]).strip()
-            if not NOMBRE_NDI.match(v):
-                return self._error("nombre_ndi_invalido")
-            cambios["ndi_nombre"] = v
-        if "resolucion" in d:
-            if d["resolucion"] not in RESOLUCIONES:
-                return self._error("resolucion_invalida")
-            cambios["resolucion"] = d["resolucion"]
-        if "fps" in d:
-            if d["fps"] not in FPS_VALIDOS:
-                return self._error("fps_invalido")
-            cambios["fps"] = d["fps"]
-        if "audio" in d:
-            v = str(d["audio"])
-            if v not in ("auto", "off") and v not in {a["id"] for a in nucleo.FUENTES.audio}:
-                return self._error("audio_invalido")
-            cambios["audio"] = v
-        if "gpu_salida" in d:
-            v = str(d["gpu_salida"])
-            if v not in SALIDAS_GPU:
-                return self._error("salida_gpu_invalida")
-            if v != "no" and not capacidad_gpu()["disponible"]:
-                return self._error("gpu_no_disponible")
-            cambios["gpu_salida"] = v
-        if "gpu_extra" in d:
-            v = d["gpu_extra"]
-            if not isinstance(v, list) or any(str(x) not in SALIDAS_EXTRA for x in v):
-                return self._error("salida_gpu_invalida")
-            cambios["gpu_extra"] = sorted({str(x) for x in v})
-        if "gpu_kbps" in d:
-            try:
-                v = int(d["gpu_kbps"])
-            except (TypeError, ValueError):
-                v = 0
-            if not 1000 <= v <= 40000:
-                return self._error("kbps_invalido")
-            cambios["gpu_kbps"] = v
-        if "srt_puerto" in d:
-            try:
-                v = int(d["srt_puerto"])
-            except (TypeError, ValueError):
-                v = 0
-            if not 1024 <= v <= 65535:
-                return self._error("puerto_invalido")
-            cambios["srt_puerto"] = v
-        if "latencia" in d:
-            if d["latencia"] not in LATENCIAS:
-                return self._error("modo_invalido")
-            cambios["latencia"] = d["latencia"]
-        if "solo_monitor" in d:
-            cambios["solo_monitor"] = bool(d["solo_monitor"])
-        if "retraso_audio" in d:
-            try:
-                v = int(d["retraso_audio"])
-            except (TypeError, ValueError):
-                v = -1
-            if not 0 <= v <= RETRASO_MAX_MS:
-                return self._error("retraso_invalido")
-            cambios["retraso_audio"] = v
-        if "srt_latencia" in d:
-            try:
-                v = int(d["srt_latencia"])
-            except (TypeError, ValueError):
-                v = 0
-            if not 20 <= v <= 2000:
-                return self._error("latencia_invalida")
-            cambios["srt_latencia"] = v
-        if "formato" in d:
-            if d["formato"] not in FORMATOS:
-                return self._error("modo_invalido")
-            cambios["formato"] = d["formato"]
-        if "grabar_cuando" in d:
-            if d["grabar_cuando"] not in GRABAR_CUANDO:
-                return self._error("modo_invalido")
-            cambios["grabar_cuando"] = d["grabar_cuando"]
-        for campo in ("grabar_desde", "grabar_hasta"):
-            if campo in d:
-                v = str(d[campo])
-                if not HORA.match(v):
-                    return self._error("hora_invalida")
-                cambios[campo] = v
-        if "rtmp_url" in d:
-            v = str(d["rtmp_url"]).strip()
-            if "•" not in v:                # con puntos es la que ya había, oculta
-                if v and not URL_RTMP.match(v):
-                    return self._error("url_rtmp_invalida")
-                cambios["rtmp_url"] = v
+        antes = nucleo.CONF.fuente(ident)
+        # las reglas de cada campo están en validar.py (las mismas que al restaurar
+        # una copia); aquí solo lo que depende del equipo
+        cambios, errores = validar_fuente(d, antes)
+        if errores:
+            return self._error(next(iter(errores.values())))
+        if "audio" in cambios and cambios["audio"] not in ("auto", "off") and \
+                cambios["audio"] not in {a["id"] for a in nucleo.FUENTES.audio}:
+            return self._error("audio_invalido")
+        if cambios.get("gpu_salida", "no") != "no" and not capacidad_gpu()["disponible"]:
+            return self._error("gpu_no_disponible")
         quiere_rtmp = (cambios.get("gpu_salida") == "rtmp"
                        or "rtmp" in cambios.get("gpu_extra", []))
-        if quiere_rtmp and not (cambios.get("rtmp_url") or nucleo.CONF.fuente(ident)["rtmp_url"]):
+        if quiere_rtmp and not (cambios.get("rtmp_url") or antes["rtmp_url"]):
             return self._error("url_rtmp_invalida")
-        antes = nucleo.CONF.fuente(ident)
         cambios = {k: v for k, v in cambios.items() if antes.get(k) != v}
         if cambios:
             nucleo.CONF.actualizar_fuente(ident, cambios)
@@ -591,8 +636,9 @@ class Panel(BaseHTTPRequestHandler):
         cfg = nucleo.CONF.get()
         cambios = {}
         if "entradas_red" in d:
-            if not isinstance(d["entradas_red"], list) or len(d["entradas_red"]) > 32:
-                return self._error("entradas_invalidas")
+            if not isinstance(d["entradas_red"], list) or len(d["entradas_red"]) > LIMITE_ENTRADAS \
+                    or not all(isinstance(e, dict) for e in d["entradas_red"]):
+                return self._json({"error": "entradas_invalidas", "maximo": LIMITE_ENTRADAS}, 400)
             red, ids = [], set()
             antes = {e.get("id"): e for e in cfg.get("entradas_red") or []}
             for e in d["entradas_red"]:
@@ -610,11 +656,23 @@ class Panel(BaseHTTPRequestHandler):
                 red.append(ne)
             cambios["entradas_red"] = red
         if "rutas" in d:
-            if not isinstance(d["rutas"], list) or len(d["rutas"]) > 16:
-                return self._error("rutas_invalidas")
+            if not isinstance(d["rutas"], list) or len(d["rutas"]) > LIMITE_RUTAS or \
+                    not all(isinstance(r, dict) for r in d["rutas"]):
+                return self._json({"error": "rutas_invalidas", "maximo": LIMITE_RUTAS}, 400)
+            # el panel recibe las URL RTMP con la clave tapada: si la devuelve así,
+            # se queda la que había
+            previas = {s.get("id"): s.get("url") for r in cfg.get("rutas") or []
+                       for s in r.get("salidas") or [] if s.get("tipo") == "rtmp"}
+            for r in d["rutas"]:
+                for sal in (r.get("salidas") if isinstance(r.get("salidas"), list) else []):
+                    if isinstance(sal, dict) and sal.get("tipo") == "rtmp" and "•" in str(sal.get("url") or ""):
+                        sal["url"] = previas.get(sal.get("id")) or ""
             ents = nucleo.FUENTES.motor.entradas_actuales(
                 {c["id"]: c for c in camaras_conectadas()}, {**cfg, **cambios})
-            limpias, _ = rutas_mod.validar(d["rutas"], ents)
+            try:
+                limpias, _ = rutas_mod.validar(d["rutas"], ents)
+            except (TypeError, ValueError, AttributeError, KeyError):
+                return self._json({"error": "rutas_invalidas", "maximo": LIMITE_RUTAS}, 400)
             cambios["rutas"] = limpias
         if cambios:
             nucleo.CONF.actualizar(cambios)
@@ -641,148 +699,48 @@ class Panel(BaseHTTPRequestHandler):
 
     def _config(self, d):
         antes = nucleo.CONF.get()
-        cambios, reiniciar = {}, False
-        if "hdmi" in d:
-            cambios["hdmi"] = bool(d["hdmi"])
+        # las reglas de cada campo están en validar.py (las mismas que al restaurar
+        # una copia); aquí solo lo que depende del equipo o de la sesión
+        cambios, errores = validar_config(d, antes)
+        if errores:
+            return self._error(next(iter(errores.values())))
+        reiniciar = False
+        # solo cuando hace falta: lo que hay conectado ahora mismo
+        camaras = lambda: {f.cam["id"] for f in nucleo.FUENTES.lista()}   # noqa: E731
+        audios = lambda: {a["id"] for a in nucleo.FUENTES.audio}           # noqa: E731
         if "hdmi_fuente" in d:
             v = str(d["hdmi_fuente"])
-            if v != "auto" and v not in {f.cam["id"] for f in nucleo.FUENTES.lista()}:
+            if v != "auto" and v not in camaras():
                 return self._error("camara_invalida")
             cambios["hdmi_fuente"] = v
-        if "modo" in d:
-            if d["modo"] not in MODOS:
-                return self._error("modo_invalido")
-            cambios["modo"] = d["modo"]
-        if "decodificadores" in d:
-            v = str(d["decodificadores"])
-            if v != "auto" and v not in {str(i) for i in range(1, 5)}:
-                return self._error("modo_invalido")
-            cambios["decodificadores"] = v if v == "auto" else int(v)
         if d.get("puente_clave_nueva"):
             # clave nueva: el ATEM tendrá que cargar los ajustes otra vez
             cambios["puente_clave"] = secrets.token_urlsafe(9).replace("-", "x").replace("_", "y")
-        if "puente_clave" in d:
-            v = str(d["puente_clave"])
-            if not CLAVE_PUENTE.match(v):
-                return self._error("clave_puente_invalida")
-            cambios["puente_clave"] = v
-        if "rx_fuente" in d:
-            # una fuente de la red: vale aunque ahora no se vea (se reintenta)
-            v = str(d["rx_fuente"])
-            if len(v) > 200 or not v.isprintable():
-                return self._error("fuente_ndi_invalida")
-            cambios["rx_fuente"] = v
-        if "hdmi_consola" in d:
-            if d["hdmi_consola"] not in MODOS_CONSOLA:
-                return self._error("modo_invalido")
-            if d["hdmi_consola"] != antes["hdmi_consola"]:
-                if not fijar_modo_consola(d["hdmi_consola"]):
+        if "hdmi_consola" in cambios:
+            if cambios["hdmi_consola"] != antes["hdmi_consola"]:
+                if not fijar_modo_consola(cambios["hdmi_consola"]):
                     return self._error("sin_grub")
-                cambios["hdmi_consola"] = d["hdmi_consola"]
-        if "transporte" in d:
-            if d["transporte"] not in ("tcp", "udp"):
-                return self._error("transporte_invalido")
-            cambios["transporte"] = d["transporte"]
-        if "ap_ssid" in d:
-            v = str(d["ap_ssid"]).strip()
-            if not 1 <= len(v.encode()) <= 32 or not v.isprintable():
-                return self._error("ssid_invalido")
-            cambios["ap_ssid"] = v
-        if "ap_clave" in d:
-            v = str(d["ap_clave"])
-            if not 8 <= len(v) <= 63 or not v.isprintable():
-                return self._error("clave_wifi_invalida")
-            cambios["ap_clave"] = v
-        if "idioma" in d:
-            if d["idioma"] not in IDIOMAS:
-                return self._error("modo_invalido")
-            cambios["idioma"] = d["idioma"]
-        if "pais" in d:
-            v = str(d["pais"]).upper()
-            if not re.fullmatch(r"[A-Z]{2}", v):
-                return self._error("pais_invalido")
-            cambios["pais"] = v
+            else:
+                del cambios["hdmi_consola"]
         if "clave_panel" in d:
-            # obligatoria: se cambia, no se quita. Hace falta la actual, salvo desde
-            # la WiFi de configuración (para recuperarla si se olvida)
+            # obligatoria: se cambia, no se quita. Hace falta la actual, salvo en la
+            # ventana de recuperación desde la WiFi de configuración
             v = str(d["clave_panel"])
             if len(v) < CLAVE_MINIMA or len(v) > 128:
                 return self._error("clave_panel_corta")
-            if antes["clave_panel"] and not self._desde_ap() and not clave_correcta(
-                    str(d.get("clave_actual", "")), antes["clave_panel"]):
-                nucleo.INTENTOS.fallo(cliente_ip(self))
+            if antes["clave_panel"] and not self._clave_actual(d):
                 return self._error("clave_actual_incorrecta", 403)
             cambios["clave_panel"] = resumen_clave(v)
-        if "cortafuegos" in d:
-            cambios["cortafuegos"] = bool(d["cortafuegos"])
-        if "simultaneo" in d:
-            cambios["simultaneo"] = bool(d["simultaneo"])
-        if "puente_ndi" in d:
-            cambios["puente_ndi"] = bool(d["puente_ndi"])
-        # programa final del puente (Pro)
-        if "programa_audio" in d:
-            v = str(d["programa_audio"])
-            if v and v not in {a["id"] for a in nucleo.FUENTES.audio}:
-                return self._error("audio_invalido")
-            cambios["programa_audio"] = v
-        if "programa_retraso" in d:
-            try:
-                v = int(d["programa_retraso"])
-            except (TypeError, ValueError):
-                v = -1
-            if not 0 <= v <= RETRASO_MAX_MS:
-                return self._error("retraso_invalido")
-            cambios["programa_retraso"] = v
-        if "programa_grabar" in d:
-            cambios["programa_grabar"] = bool(d["programa_grabar"])
-        if "puente_hdmi" in d:
-            v = str(d["puente_hdmi"])
-            if v not in ("programa", "no") and v not in {f.cam["id"] for f in nucleo.FUENTES.lista()}:
-                return self._error("fuente_invalida")
-            cambios["puente_hdmi"] = v
-        # reemisión de una fuente NDI (equipo potente)
-        if "reem_fuente" in d:
-            v = str(d["reem_fuente"]).strip()
-            if len(v) > 200:
-                return self._error("fuente_invalida")
-            cambios["reem_fuente"] = v
-        if "reem_salidas" in d:
-            v = d["reem_salidas"]
-            if not isinstance(v, list) or any(str(x) not in SALIDAS_EXTRA for x in v):
-                return self._error("salida_gpu_invalida")
-            if v and not capacidad_gpu()["disponible"]:
-                return self._error("gpu_no_disponible")
-            cambios["reem_salidas"] = sorted({str(x) for x in v})
-        if "reem_kbps" in d:
-            try:
-                v = int(d["reem_kbps"])
-            except (TypeError, ValueError):
-                v = 0
-            if not 1000 <= v <= 50000:
-                return self._error("kbps_invalido")
-            cambios["reem_kbps"] = v
-        if "reem_srt_puerto" in d:
-            try:
-                v = int(d["reem_srt_puerto"])
-            except (TypeError, ValueError):
-                v = 0
-            if not 1024 <= v <= 65535:
-                return self._error("puerto_invalido")
-            cambios["reem_srt_puerto"] = v
-        if "reem_rtmp_url" in d:
-            v = str(d["reem_rtmp_url"]).strip()
-            if "•" not in v:                # con puntos es la que ya había, oculta
-                if v and not URL_RTMP.match(v):
-                    return self._error("url_rtmp_invalida")
-                cambios["reem_rtmp_url"] = v
+        if cambios.get("programa_audio") and cambios["programa_audio"] not in audios():
+            return self._error("audio_invalido")
+        if "puente_hdmi" in cambios and cambios["puente_hdmi"] not in ("programa", "no") \
+                and cambios["puente_hdmi"] not in camaras():
+            return self._error("fuente_invalida")
+        if cambios.get("reem_salidas") and not capacidad_gpu()["disponible"]:
+            return self._error("gpu_no_disponible")
         if "rtmp" in cambios.get("reem_salidas", []) and not (
                 cambios.get("reem_rtmp_url") or antes["reem_rtmp_url"]):
             return self._error("url_rtmp_invalida")
-        if "puertos_extra" in d:
-            v = str(d["puertos_extra"]).strip()
-            if len(v) > 300 or puertos_extra(v) is None:
-                return self._error("puertos_invalidos")
-            cambios["puertos_extra"] = v
         nuevo_nombre = None
         if "nombre_equipo" in d:
             v = str(d["nombre_equipo"]).strip()
@@ -843,14 +801,36 @@ class Panel(BaseHTTPRequestHandler):
         self._json({"ok": True})
 
 class Servidor(ThreadingHTTPServer):
-    """IPv4 e IPv6 en el mismo socket (<equipo>.local resuelve a ambos)."""
+    """IPv4 e IPv6 en el mismo socket (<equipo>.local resuelve a ambos). Un
+    hilo por petición, pero no más de CONEXIONES_MAX a la vez: quien abra
+    conexiones sin parar no agota los hilos ni la memoria del equipo."""
     address_family = socket.AF_INET6
     daemon_threads = True
     tls = False
 
+    def __init__(self, *args, **kwargs):
+        self.hueco = threading.BoundedSemaphore(CONEXIONES_MAX)
+        super().__init__(*args, **kwargs)
+
     def server_bind(self):
         self.socket.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_V6ONLY, 0)
         super().server_bind()
+
+    def process_request(self, request, client_address):
+        if not self.hueco.acquire(timeout=2):
+            self.shutdown_request(request)      # lleno: que reintente
+            return
+        try:
+            super().process_request(request, client_address)
+        except Exception:
+            self.hueco.release()
+            raise
+
+    def process_request_thread(self, request, client_address):
+        try:
+            super().process_request_thread(request, client_address)
+        finally:
+            self.hueco.release()
 
 
 class ServidorTLS(Servidor):

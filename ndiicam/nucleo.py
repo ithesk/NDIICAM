@@ -64,7 +64,9 @@ FPS_VALIDOS = (15, 24, 25, 30, 50, 60)
 # valores para las cámaras sin ajustes propios; 'fuentes' guarda los de cada una
 POR_DEFECTO = {"ndi_nombre": "NDIICAM", "resolucion": "1080p", "fps": 30, "audio": "auto",
                "fuentes": {}, "transporte": "tcp", "ap_ssid": "",
-               "ap_clave": "ndiicam-setup", "pais": "", "clave_panel": "",
+               # la clave de la WiFi de configuración se genera por equipo al arrancar
+               # (ver Config): una fija y publicada daría el panel a cualquiera
+               "ap_clave": "", "pais": "", "clave_panel": "",
                "hdmi": False, "hdmi_fuente": "auto", "hdmi_consola": "nativa",
                "modo": "emisor", "rx_fuente": "", "decodificadores": "auto",
                "puente_clave": "", "idioma": "es", "cortafuegos": True, "puertos_extra": "",
@@ -78,7 +80,11 @@ POR_DEFECTO = {"ndi_nombre": "NDIICAM", "resolucion": "1080p", "fps": 30, "audio
                "puente_hdmi": "programa",
                # motor "modos" (emisor, receptor, puente) o "rutas" (entradas → rutas → salidas)
                "motor": "modos", "entradas_red": [], "rutas": []}
-AP_CLAVE_DEFECTO = POR_DEFECTO["ap_clave"]
+AP_CLAVE_ANTIGUA = "ndiicam-setup"      # la de las versiones anteriores a la 0.6: pública
+AP_CLAVE_DEFECTO = AP_CLAVE_ANTIGUA      # (nombre que usa el panel para avisar de ella)
+# rutas y entradas de red que admite el motor de rutas (el panel lo enseña como tope)
+LIMITE_RUTAS = 16
+LIMITE_ENTRADAS = 32
 
 # decodificadores JPEG por fuente: jpegdec va en un solo hilo y con imágenes muy
 # detalladas no llega a 30 fps a 1080p. En "auto" se arranca con uno y se reparte
@@ -193,10 +199,21 @@ def leer(ruta, defecto=""):
         return defecto
 
 def escribir_privado(ruta, texto):
-    """Escribe un fichero legible solo por root (puede llevar contraseñas)."""
+    """Escribe un fichero legible solo por root (puede llevar contraseñas), y lo
+    deja en disco antes de volver: tras un corte de luz no queda vacío."""
     fd = os.open(ruta, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
     with os.fdopen(fd, "w") as f:
         f.write(texto)
+        f.flush()
+        os.fsync(f.fileno())
+
+
+def clave_ap_nueva():
+    """Clave de la WiFi de configuración: 12 caracteres sin los que se confunden
+    en una pantalla (0/O, 1/l), en tres grupos para copiarla del HDMI."""
+    letras = "abcdefghjkmnpqrstuvwxyz23456789"
+    grupos = ["".join(secrets.choice(letras) for _ in range(4)) for _ in range(3)]
+    return "-".join(grupos)
 
 def partir(linea):
     """Separa una línea de 'nmcli -t' respetando los ':' escapados."""
@@ -282,17 +299,40 @@ def evento(codigo, **datos):
     print(codigo, json.dumps(datos, ensure_ascii=False) if datos else "", flush=True)
     with _lock_eventos:
         try:
-            with open(EVENTOS_ARCHIVO, "a") as f:
+            # solo root: los eventos llevan IPs, nombres de red y detalles de errores
+            fd = os.open(EVENTOS_ARCHIVO, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
+            with os.fdopen(fd, "a") as f:
                 f.write(json.dumps(e, ensure_ascii=False) + "\n")
                 grande = f.tell() > EVENTOS_MAX_BYTES
             if grande:      # recortar a la mitad más reciente
                 with open(EVENTOS_ARCHIVO) as f:
                     lineas = f.readlines()
-                with open(EVENTOS_ARCHIVO + ".tmp", "w") as f:
-                    f.writelines(lineas[len(lineas) // 2:])
+                escribir_privado(EVENTOS_ARCHIVO + ".tmp", "".join(lineas[len(lineas) // 2:]))
                 os.replace(EVENTOS_ARCHIVO + ".tmp", EVENTOS_ARCHIVO)
         except OSError:
             pass
+
+# ---------------------------------------------------------- latidos (watchdog)
+
+# cada bucle del servicio anota cuándo dio su última vuelta; el hilo del watchdog
+# de systemd (ndiicam.py) solo avisa "sigo vivo" si todos han pasado hace poco
+LATIDOS = {}
+_lock_latidos = threading.Lock()
+
+def latido(nombre, fin=False):
+    """Anota que el bucle 'nombre' acaba de dar una vuelta; con fin=True, que
+    termina a propósito (ya no se le espera)."""
+    with _lock_latidos:
+        if fin:
+            LATIDOS.pop(nombre, None)
+        else:
+            LATIDOS[nombre] = time.monotonic()
+
+def bucles_vivos(maximo):
+    """False si algún bucle anotado lleva más de 'maximo' segundos sin pasar."""
+    ahora = time.monotonic()
+    with _lock_latidos:
+        return all(ahora - t < maximo for t in LATIDOS.values())
 
 def cargar_eventos():
     """Los últimos eventos guardados, al arrancar. Tras un cuelgue el final del
@@ -312,6 +352,11 @@ def cargar_eventos():
 
 # ------------------------------------------------------------- configuración
 
+class SinEspacio(OSError):
+    """No se pudo guardar la configuración (disco lleno o de solo lectura): el
+    cambio queda solo en memoria y el panel lo dice."""
+
+
 class Config:
     def __init__(self):
         self.lock = threading.Lock()
@@ -325,6 +370,20 @@ class Config:
             pass
         if not isinstance(self.datos.get("fuentes"), dict):
             self.datos["fuentes"] = {}
+        if self._asegurar_ap_clave():
+            try:
+                with self.lock:
+                    self._guardar()
+            except OSError:
+                pass        # se volverá a generar en el próximo arranque
+
+    def _asegurar_ap_clave(self):
+        """Clave de la WiFi de configuración propia de este equipo. La antigua
+        por defecto estaba en la documentación: se sustituye como si faltara."""
+        if self.datos.get("ap_clave") in ("", None, AP_CLAVE_ANTIGUA):
+            self.datos["ap_clave"] = clave_ap_nueva()
+            return True
+        return False
 
     def get(self):
         with self.lock:
@@ -364,15 +423,22 @@ class Config:
         with self.lock:
             self.datos = dict(POR_DEFECTO)
             self.datos["fuentes"] = {}
+            self._asegurar_ap_clave()
             try:
                 os.remove(CONFIG)
             except OSError:
                 pass
 
     def _guardar(self):
-        os.makedirs(os.path.dirname(CONFIG), exist_ok=True)
-        escribir_privado(CONFIG + ".tmp", json.dumps(self.datos, indent=2, ensure_ascii=False))
-        os.replace(CONFIG + ".tmp", CONFIG)
+        """Escribe la configuración entera. Si el disco no deja (lleno, solo
+        lectura), avisa con SinEspacio: el cambio sigue en memoria."""
+        try:
+            os.makedirs(os.path.dirname(CONFIG), exist_ok=True)
+            escribir_privado(CONFIG + ".tmp", json.dumps(self.datos, indent=2, ensure_ascii=False))
+            os.replace(CONFIG + ".tmp", CONFIG)
+        except OSError as ex:
+            evento("config_no_guardada", detalle=str(ex))
+            raise SinEspacio(str(ex)) from ex
 
 def configurar_ndi(transporte):
     """Fichero de configuración del NDI SDK. Con TCP, los receptores que no

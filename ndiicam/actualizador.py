@@ -6,6 +6,7 @@ import os
 import re
 import shlex
 import socket
+import ssl
 import subprocess
 import threading
 import time
@@ -15,6 +16,11 @@ import urllib.request
 import nucleo
 from nucleo import (DATOS, NOMBRE_EQUIPO, POR_DEFECTO, REPO, VERSION, configurar_ndi, evento,
     leer, sh, version_tupla)
+from validar import validar_copia
+
+# una versión publicada: v0.6.0. Es lo único que se admite para componer la URL
+# de descarga (el nombre viene de la API de GitHub)
+TAG_VERSION = re.compile(r"^v?\d+\.\d+\.\d+$")
 
 
 def reiniciar_servicio(espera=1.5):
@@ -67,7 +73,13 @@ class Actualizador:
         except urllib.error.HTTPError as ex:
             self.info.update(error="sin_versiones" if ex.code == 404 else f"http_{ex.code}")
         except (urllib.error.URLError, OSError, ValueError) as ex:
-            self.info.update(error="sin_internet", detalle=str(ex))
+            # un certificado "caducado" o "aún no válido" casi siempre es el reloj
+            # del equipo (sin NTP, arrancó en 2015): no es que no haya internet
+            razon = getattr(ex, "reason", ex)
+            if isinstance(razon, ssl.SSLCertVerificationError) or isinstance(ex, ssl.SSLCertVerificationError):
+                self.info.update(error="reloj_incorrecto", detalle=str(ex))
+            else:
+                self.info.update(error="sin_internet", detalle=str(ex))
         self.info["comprobado"] = time.time()
         return self.info
 
@@ -75,6 +87,9 @@ class Actualizador:
         if self.info["en_curso"] or not self.info["disponible"]:
             return False
         tag = self.info["ultima"]
+        if not TAG_VERSION.match(tag or ""):
+            evento("actualizacion_error", detalle=f"tag: {tag!r}")
+            return False
         self.info["en_curso"] = True
         os.makedirs(DATOS, exist_ok=True)
         with open(os.path.join(DATOS, "actualizando"), "w") as f:
@@ -113,22 +128,32 @@ def respaldo():
             "wifi": nucleo.RED.guardadas(con_claves=True) if nucleo.RED.wifi else []}
 
 def restaurar(d):
-    """Aplica una copia: ajustes, redes WiFi que falten y nombre del equipo."""
+    """Aplica una copia: ajustes, redes WiFi que falten y nombre del equipo. Los
+    ajustes pasan por las mismas reglas que el panel (validar.py): un valor roto
+    en la copia se descarta y se anota, en vez de dejar el servicio en bucle."""
     cfg = d.get("config") or {}
-    cambios = {k: cfg[k] for k in POR_DEFECTO if k in cfg}
-    if not isinstance(cambios.get("fuentes", {}), dict):
-        cambios.pop("fuentes", None)
+    if not isinstance(cfg, dict):
+        cfg = {}
+    cambios, ignorados = validar_copia({k: cfg[k] for k in POR_DEFECTO if k in cfg})
+    if ignorados:
+        evento("respaldo_campo_ignorado", campos=ignorados[:20])
     if cambios:
         nucleo.CONF.actualizar(cambios)
     anadidas = 0
     if nucleo.RED.wifi:
         actuales = {p["ssid"] for p in nucleo.RED.guardadas()}
         for w in d.get("wifi") or []:
-            ssid = str(w.get("ssid", ""))
-            if not ssid or ssid in actuales:
+            if not isinstance(w, dict):
                 continue
+            ssid = str(w.get("ssid", ""))
+            if not ssid or ssid in actuales or len(ssid.encode()) > 32:
+                continue
+            try:
+                prioridad = int(w.get("prioridad", 0))
+            except (TypeError, ValueError):
+                prioridad = 0
             r = nucleo.RED.anadir_perfil(ssid, str(w.get("clave", "")), w.get("seguridad") or None,
-                                  int(w.get("prioridad", 0)), w.get("ip"))
+                                         prioridad, w.get("ip") if isinstance(w.get("ip"), dict) else None)
             anadidas += r.returncode == 0
     equipo = str(d.get("equipo", ""))
     if equipo and NOMBRE_EQUIPO.match(equipo) and equipo != socket.gethostname():
