@@ -659,3 +659,44 @@ class VariasPantallas(BaseMotor):
         procs = self.paso([b], monitores=[self.DP2])
         self.assertIn("pantalla_no_esta", self.motor.errores["b"])
         self.assertIsNone(procs["cam:b"].obj["hdmi"])      # sigue, sin monitor
+
+
+class Mirillas(BaseMotor):
+    """La vista previa de una cámara sin ruta: solo mientras alguien mira el panel,
+    y se retira cuando una ruta necesita la cámara."""
+
+    CAMS = {"pocket": {**CAMS["pocket"], "modos": [(1920, 1080, 30, "MJPG"), (1280, 720, 30, "MJPG"), (640, 480, 30, "MJPG"),
+                                                   (640, 480, 15, "MJPG"), (320, 240, 30, "YUYV")]},
+            "mview": {**CAMS["mview"], "modos": [(1920, 1080, 60, "YUYV"), (1920, 1080, 30, "YUYV")]}}
+
+    def paso2(self, rutas_cfg):
+        self.cfg["rutas"] = rutas_cfg
+        self.motor.paso(self.cfg, self.CAMS, [MONITOR])
+        return self.motor.procs
+
+    def test_sin_nadie_mirando_no_hay_mirillas(self):
+        supervisor.nucleo.PANEL_VISTO = 0.0
+        self.assertEqual(self.paso2([]), {})
+
+    def test_mirando_una_por_camara_libre_en_modo_pequeno(self):
+        supervisor.nucleo.PANEL_VISTO = supervisor.time.time()
+        procs = self.paso2([])
+        self.assertEqual(sorted(procs), ["mir:mview", "mir:pocket"])
+        o = procs["mir:pocket"].proc.obj
+        self.assertEqual((o["fmt"], o["ancho"], o["alto"], o["fps"]), ("MJPG", 640, 480, 15))
+        self.assertEqual(procs["mir:mview"].proc.obj["fmt"], "YUYV")
+        self.assertEqual(procs["mir:pocket"].cam["id"], "pocket")     # el panel la encuentra por la cámara
+
+    def test_una_ruta_se_queda_la_camara(self):
+        supervisor.nucleo.PANEL_VISTO = supervisor.time.time()
+        mir = self.paso2([])["mir:pocket"].proc
+        procs = self.paso2([ruta(video="pocket", audio="", salidas=[{"tipo": "ndi"}])])
+        self.assertTrue(mir.terminado)
+        self.assertEqual(sorted(procs), ["cam:r1", "mir:mview"])
+
+    def test_al_dejar_de_mirar_se_apagan(self):
+        supervisor.nucleo.PANEL_VISTO = supervisor.time.time()
+        mir = self.paso2([])["mir:pocket"].proc
+        supervisor.nucleo.PANEL_VISTO = supervisor.time.time() - 60
+        self.assertEqual(self.paso2([]), {})
+        self.assertTrue(mir.terminado)

@@ -11,7 +11,8 @@ import time
 
 import nucleo
 from nucleo import (AP_IF, AP_IP, FUENTE_PY, GRABACIONES, MAX_DECODIFICADORES, PUERTO_RTMP,
-    NOMBRE_NDI_PUENTE, PROGRAMA_PY, PUERTO_RTMP_LOCAL, RECEPTOR_PY, REEMISION_PY, RELEVO_PY,
+    MIRILLA_PY, MIRILLA_TRAS, NOMBRE_NDI_PUENTE, PROGRAMA_PY, PUERTO_RTMP_LOCAL, RECEPTOR_PY,
+    REEMISION_PY, RELEVO_PY,
     REPOSO_PY, RESOLUCIONES, RUTA_PROGRAMA, SALIDAS_EXTRA, VERSION, conexiones_por_pid,
     dispositivo_por_defecto, evento, ip_de, ips_propias, leer)
 from camaras import audio_dispositivos, audio_hdmi, camaras, pantallas, resolucion_pantalla
@@ -471,8 +472,9 @@ class Auxiliar:
     (programa.py). Si falla, se reintenta cada vez más espaciado. 'prefijo' da
     nombre a sus eventos (reem_activa, programa_error...)."""
 
-    def __init__(self, script, prefijo):
+    def __init__(self, script, prefijo, callado=False):
         self.script, self.prefijo = script, prefijo
+        self.callado = callado      # sin eventos en la actividad (la mirilla va y viene sin más)
         self.proc = None
         self.obj = None
         self.estado = "apagado"     # apagado | conectando | activa | error
@@ -524,7 +526,7 @@ class Auxiliar:
             return
         if error == "eos" or "demultiplex" in error.lower():
             error = "sin_senal"
-        if self.estado == "activa" or self.fallos == 0:
+        if (self.estado == "activa" or self.fallos == 0) and not self.callado:
             evento(f"{self.prefijo}_error", fuente=self.obj.get("nombre", ""), detalle=error)
         self.fallos += 1
         self.detener()
@@ -564,7 +566,8 @@ class Auxiliar:
             self.parado = None
         if c.get("out", 0) > 0 and self.estado != "activa":
             self.estado, self.desde, self.fallos = "activa", t, 0
-            evento(f"{self.prefijo}_activa", fuente=self.obj.get("nombre", ""),
+            if not self.callado:
+                evento(f"{self.prefijo}_activa", fuente=self.obj.get("nombre", ""),
                    salidas=[s["modo"] for s in self.obj.get("salidas", [])],
                    consola=bool(self.obj.get("audio")), grabar=bool(self.obj.get("grabar")))
         self.prev = (t, c)
@@ -639,6 +642,16 @@ class MotorRutas:
             if obj is not None:
                 deseados[pr["clave"]] = (pr, obj)
         self.pantallas_usadas = set(self._usadas)
+        # cámaras que ninguna ruta usa: mientras alguien mira el panel, una mirilla
+        # por cámara (vista previa sin encender ninguna ruta). Se va sola cuando una
+        # ruta necesita la cámara (se para antes de arrancarla) o nadie mira
+        if time.time() - nucleo.PANEL_VISTO < MIRILLA_TRAS:
+            en_uso = {pr["cam"] for pr, _ in deseados.values() if pr["clase"] == "camara"}
+            for cid, cam in cams.items():
+                obj = None if cid in en_uso else self.objeto_mirilla(cam)
+                if obj:
+                    deseados[f"mir:{cid}"] = ({"clave": f"mir:{cid}", "clase": "mirilla", "cam": cid,
+                                               "ruta": None, "nombre_ruta": cam["nombre"]}, obj)
         moribundos = []
         for clave in list(self.procs):
             if clave not in deseados:
@@ -684,16 +697,37 @@ class MotorRutas:
     def nuevo(self, pr, cams):
         if pr["clase"] == "camara":
             return Fuente(cams[pr["cam"]])
+        if pr["clase"] == "mirilla":
+            a = Auxiliar(MIRILLA_PY, "mirilla", callado=True)
+            a.cam = cams[pr["cam"]]     # el panel busca la vista previa por la cámara
+            return a
         if pr["clase"] == "receptor":
             return Receptor()
         return Auxiliar({"programa": PROGRAMA_PY, "reemision": REEMISION_PY,
                          "relevo": RELEVO_PY}[pr["clase"]], pr["clase"])
+
+    def objeto_mirilla(self, cam):
+        """La cámara en su modo más pequeño (desde 640 de ancho) y lento: la vista
+        previa no necesita más y así ni el USB ni la CPU lo notan."""
+        modos = cam.get("modos") or []
+        if not modos:
+            return None
+        mjpg = [m for m in modos if m[3] == "MJPG"] or modos
+        grandes = [m for m in mjpg if m[0] >= 640] or mjpg
+        ancho, alto = min((m[0] * m[1], m[0], m[1]) for m in grandes)[1:]
+        fps = min((m[2] for m in grandes if (m[0], m[1]) == (ancho, alto) and m[2] >= 5),
+                  default=min(m[2] for m in grandes if (m[0], m[1]) == (ancho, alto)))
+        fmt = next(m[3] for m in grandes if (m[0], m[1], m[2]) == (ancho, alto, fps))
+        return {"dev": cam["dev"], "fmt": fmt, "ancho": ancho, "alto": alto, "fps": fps,
+                "preview": ruta_preview(cam["id"]), "nombre": cam["nombre"]}
 
     def objeto(self, pr, cfg, cams, monitores):
         """Lo que se le pasa al proceso: el mismo formato que en los modos. None si
         aún no toca arrancarlo (lo que lee de MediaMTX espera a que alguien publique;
         pero solo para arrancar: el que ya corre sigue aunque la fuente parpadee, y
         es él quien nota el corte y lo dice)."""
+        if pr["clase"] == "mirilla":
+            return self.objeto_mirilla(cams[pr["cam"]])
         local = PUERTO_RTMP_LOCAL
         a = pr.get("audio") or {}
         con_audio = a.get("de") is not None

@@ -46,7 +46,7 @@ Las rutas quedan guardadas por si vuelves a ellas.
 
 | Entrada | De dónde sale | Da |
 |---|---|---|
-| **Cámara USB** | aparece sola al enchufarla | imagen, y audio si tiene micrófono |
+| **Cámara USB** | aparece sola al enchufarla, con vista previa aunque ninguna ruta la use (mientras el panel esté abierto) | imagen, y audio si tiene micrófono |
 | **Audio USB** | aparece sola: una consola, una interfaz o un micrófono USB | audio |
 | **Fuente NDI** | *Añadir › Fuente NDI* y eliges una de la red (OBS, vMix, otra cámara…) | imagen y audio |
 | **Emisión entrante** | *Añadir › Emisión entrante*: un ATEM Mini Pro, OBS o un móvil emiten al equipo por RTMP o SRT | imagen y audio |
@@ -122,7 +122,7 @@ Las entradas van a la izquierda, las rutas en el centro y las salidas a la derec
 - **Conectar**: arrastra de un punto de color a otro, o tócalos uno tras otro. El azul es la
   imagen, el verde el audio y el morado el programa.
 - **Mover una salida a otra ruta**: arrástrala sobre el punto de la otra ruta.
-- **Ajustes**: el engranaje de cada bloque los abre en el panel de la derecha.
+- **Ajustes**: el engranaje de cada bloque (o un doble clic en él) los abre en el panel de la derecha.
 - **Añadir**: el panel de la derecha añade entradas de red, rutas y, con una ruta elegida, sus
   salidas.
 - **Ordenar** recoloca los bloques. Si los mueves a mano, el navegador recuerda dónde.

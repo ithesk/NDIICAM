@@ -352,6 +352,7 @@ class Panel(BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(cuerpo)
         elif url.path == "/api/rutas":
+            nucleo.PANEL_VISTO = time.time()    # alguien mira: vista previa de las cámaras libres
             self._json(estado_rutas())
         elif url.path == "/api/puente/atem.xml":
             # la IP de verdad: el ATEM puede no resolver nombres .local

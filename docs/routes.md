@@ -46,7 +46,7 @@ Your routes stay saved in case you come back.
 
 | Input | Where it comes from | Gives |
 |---|---|---|
-| **USB camera** | shows up by itself when plugged in | video, and audio if it has a microphone |
+| **USB camera** | shows up by itself when plugged in, with a preview even when no route uses it (while the panel is open) | video, and audio if it has a microphone |
 | **USB audio** | shows up by itself: a mixing console, an interface or a USB microphone | audio |
 | **NDI source** | *Add › NDI source*, then pick one on the network (OBS, vMix, another camera…) | video and audio |
 | **Incoming stream** | *Add › Incoming stream*: an ATEM Mini Pro, OBS or a phone streams to the device over RTMP or SRT | video and audio |
@@ -121,7 +121,7 @@ Inputs are on the left, routes in the middle and outputs on the right.
 - **Connect**: drag from one coloured dot to another, or tap them one after the other. Blue is the
   picture, green is audio and purple is the program.
 - **Move an output to another route**: drag it onto the other route's dot.
-- **Settings**: each block's gear opens them in the right-hand panel.
+- **Settings**: each block's gear (or a double-click on it) opens them in the right-hand panel.
 - **Add**: the right-hand panel adds network inputs, routes and, with a route selected, its
   outputs.
 - **Tidy up** lays the blocks out again. If you move them by hand, the browser remembers where.

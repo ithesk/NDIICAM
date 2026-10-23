@@ -3189,6 +3189,19 @@ let RB = null;               // borrador: {entradas_red, rutas}
 let rtSel = null, rtCableSel = null, rtHoja = false, rtTocado = null, rtArrastre = null;
 let rtSucio = false, rtGuardarT = 0, rtVista = "";
 const rtNdiElegida = {};      // entrada NDI -> fuente elegida y aún sin aplicar
+const rtSinVista = {};        // cámara -> cuándo falló su vista previa (se reintenta a los 8 s)
+// firma de un trozo de panel sin lo que cambia a cada momento (vúmetros, la hora de
+// la vista previa, la selección, el sitio): si no cambia, el DOM se deja como está
+// y los clics no caen en elementos recién sustituidos
+const rtFirma = (html) => html.replace(/&amp;t=\d+/g, "").replace(/width:\s*[\d.]+%/g, "")
+  .replace(/\bsel\b/g, "").replace(/left:[^";]*;top:[^";]*/g, "");
+function rtRefrescarVivo(viejo, nuevo) {
+  // lo que sí cambia aunque la firma sea igual: vúmetros y vistas previas
+  const vi = viejo.querySelectorAll(".rt-vu i"), vn = nuevo.querySelectorAll(".rt-vu i");
+  if (vi.length === vn.length) vi.forEach((el, k) => { el.style.width = vn[k].style.width; });
+  const ii = viejo.querySelectorAll("img.rt-vista"), inn = nuevo.querySelectorAll("img.rt-vista");
+  if (ii.length === inn.length) ii.forEach((el, k) => { if (el.src !== inn[k].src) el.src = inn[k].src; });
+}
 let rtVersion = 0, rtEnviando = false, rtError = null;      // guardado: versión del borrador que se envió
 let rtArrastreNodo = false;                                  // se está moviendo un bloque del lienzo
 let rtPila = [];                                             // deshacer: borradores anteriores a algo destructivo
@@ -3412,13 +3425,15 @@ function rtCrearNodo(n) {
       // la imagen de antes se reutiliza: el navegador sigue enseñándola mientras
       // carga la nueva. Una <img> recién creada sale en blanco hasta que carga, y
       // como el bloque se rehace cada 2 s, la vista previa parpadeaba
-      const src = `/api/fuente/preview?id=${encodeURIComponent(n.e.id)}&t=${Date.now()}`;
-      let img = $("rtLienzo").querySelector(`[data-id="${CSS.escape(n.id)}"] img.rt-vista`);
-      if (img) { img.src = src; } else {
-        img = rel("img", { class: "rt-vista", alt: "", src });
-        img.addEventListener("error", () => img.replaceWith(rel("div", { class: "rt-vista", text: rt("vista_previa") })));
+      // sin imagen (la cámara no da vista previa) se enseña el texto un rato antes de
+      // volver a probar: así el bloque no cambia cada 2 s
+      if (Date.now() - (rtSinVista[n.e.id] || 0) < 8000) {
+        cuerpo.append(rel("div", { class: "rt-vista", text: rt("vista_previa") }));
+      } else {
+        const img = rel("img", { class: "rt-vista", alt: "", src: `/api/fuente/preview?id=${encodeURIComponent(n.e.id)}&t=${Date.now()}` });
+        img.addEventListener("error", () => { rtSinVista[n.e.id] = Date.now(); img.replaceWith(rel("div", { class: "rt-vista", text: rt("vista_previa") })); });
+        cuerpo.append(img);
       }
-      cuerpo.append(img);
     }
     const sub = n.e.tipo === "ingesta" ? rt("llega")(n.e.llega) : n.e.tipo === "ndi" ? (n.e.fuente || rt("sin_fuente_ndi"))
       : rt("tipos")[n.e.tipo];
@@ -3440,6 +3455,7 @@ function rtCrearNodo(n) {
     cuerpo.append(rtPuerto(n.id, "p", "«" + n.r.nombre + "»", "ent", titulo), rel("small", { text: rtTextoSalida(n.r, n.s) }));
   }
   caja.append(cab, cuerpo);
+  caja.addEventListener("dblclick", (ev) => { if (!ev.target.closest(".rt-enchufe")) rtSeleccionar(n.id); });
   // mover arrastrando la cabecera
   cab.addEventListener("pointerdown", (ev) => {
     if (ev.target.closest(".rt-ajustar")) return;
@@ -3500,7 +3516,13 @@ function rtPintarLienzo() {
     const viejo = vivos.get(n.id); vivos.delete(n.id);
     if (viejo && (rtArrastreNodo || (foco && viejo.contains(foco)))) continue;
     const nuevo = rtCrearNodo(n);
-    if (viejo) viejo.replaceWith(nuevo); else lienzo.append(nuevo);
+    if (!viejo) { lienzo.append(nuevo); continue; }
+    if (rtFirma(viejo.outerHTML) === rtFirma(nuevo.outerHTML)) {
+      // mismo bloque: se queda (sus manejadores y sus clics siguen valiendo)
+      viejo.style.left = nuevo.style.left; viejo.style.top = nuevo.style.top;
+      viejo.classList.toggle("sel", nuevo.classList.contains("sel"));
+      rtRefrescarVivo(viejo, nuevo);
+    } else viejo.replaceWith(nuevo);
   }
   for (const n of vivos.values()) n.remove();
   rtDibujarCables();
@@ -3742,7 +3764,9 @@ function rtPintarInspector() {
     }
   }
   const lienzo = rtVista === "lienzo";
-  ins.replaceChildren(...[t, lienzo ? rtPaleta() : null].filter(Boolean));
+  const nuevo = rel("div", null, ...[t, lienzo ? rtPaleta() : null].filter(Boolean));
+  if (rtFirma(nuevo.innerHTML) === rtFirma(ins.innerHTML)) { rtRefrescarVivo(ins, nuevo); return; }
+  ins.replaceChildren(...nuevo.childNodes);
   const movil = matchMedia("(max-width: 980px)").matches;
   const abierta = movil && rtHoja && !!t;
   rtHojaAbrir(ins, abierta);
@@ -3829,7 +3853,7 @@ function rtPintarLista() {
   });
   const anadirRed = rel("select", { id: "lAddEnt", "aria-label": rt("anadir_red"), onchange: (ev) => { if (ev.target.value) rtAnadirEntrada(ev.target.value); } },
     rel("option", { value: "", text: rt("anadir_red") }), rel("option", { value: "ndi", text: rt("anadir_ndi") }), rel("option", { value: "ingesta", text: rt("anadir_ingesta") }));
-  cont.replaceChildren(...tarjetas,
+  const nuevo = rel("div", null, ...tarjetas,
     rel("button", { class: "boton principal", type: "button", text: "+ " + rt("nueva_ruta"), onclick: rtNuevaRuta }),
     rel("div", { class: "tarjeta" }, rel("h3", { text: rt("entradas") }),
       ...ents.map((e) => rel("div", { class: "rt-fila-ent" }, rtIcono(e.tipo, 18),
@@ -3837,6 +3861,8 @@ function rtPintarLista() {
           : e.tipo === "ndi" ? (e.fuente || rt("sin_fuente_ndi")) : rt("tipos")[e.tipo] })),
         rel("button", { class: "boton", type: "button", text: rt("ajustes"), onclick: () => rtSeleccionar("e:" + e.id) }))),
       anadirRed, rel("div", { class: "nota", text: rt("usb_solas") })));
+  if (rtFirma(nuevo.innerHTML) === rtFirma(cont.innerHTML)) { rtRefrescarVivo(cont, nuevo); return; }
+  cont.replaceChildren(...nuevo.childNodes);
 }
 
 // ---------------------------------------------------------------- resumen en Monitor
