@@ -2,6 +2,7 @@
 # Copyright (C) 2026 Pablo Holguín. GPL-3.0-or-later: ver LICENSE.
 import json
 import os
+import re
 import secrets
 import socket
 import subprocess
@@ -37,27 +38,48 @@ def conf_mediamtx(clave, reparto=False):
     return conf
 
 
-def conf_mediamtx_rutas(ingestas, publicaciones, hls=True):
+def usuarios_rutas(ingestas):
+    """Los permisos de MediaMTX con las rutas (lo que va en authInternalUsers): este
+    equipo publica y lee lo que quiera; desde la red solo se puede publicar en las
+    ingestas (live/<clave> de un ATEM, OBS, un móvil), y leer todo: es lo que se
+    reparte. En el formato de la API, para aplicarlo en caliente."""
+    local = {"user": "any", "pass": "", "ips": ["127.0.0.1", "::1"],
+             "permissions": [{"action": "publish"}, {"action": "read"}, {"action": "api"}]}
+    permisos = []
+    claves = sorted({c.split("/", 1)[1] for c in ingestas if c.startswith("live/")})
+    if claves:
+        permisos.append({"action": "publish",
+                         "path": "~^live/(" + "|".join(re.escape(k) for k in claves) + ")$"})
+    permisos.append({"action": "read"})
+    return [local, {"user": "any", "pass": "", "ips": [], "permissions": permisos}]
+
+
+def conf_mediamtx_rutas(ingestas, publicaciones=(), hls=True):
     """MediaMTX como bus de las rutas. ingestas: caminos donde publican de fuera (un
     ATEM, OBS, un móvil: live/<clave>), los únicos que se pueden publicar desde la
-    red. publicaciones: los programas de las rutas (live/<camino>), que solo publica
-    este equipo. Leer se puede todo y desde cualquier sitio: es lo que se reparte
-    (OBS por RTMP, la TV y el móvil por HLS, vMix y VLC por SRT)."""
+    red. Los programas de las rutas (live/<camino>) los publica este equipo. Leer se
+    puede todo y desde cualquier sitio (OBS por RTMP, la TV y el móvil por HLS, vMix
+    y VLC por SRT).
+
+    Las rutas se declaran por expresión regular (~^live/.*$): así la configuración no
+    cambia al añadir, quitar o renombrar rutas y MediaMTX no se reinicia (un reinicio
+    corta al ATEM, a OBS y las grabaciones). Solo cambia con las claves de las
+    ingestas, y eso se aplica por la API, también sin reiniciar."""
     conf = ("# generado por NDIICAM (rutas); se rehace cuando cambian\n"
             "logLevel: warn\napi: yes\napiAddress: 127.0.0.1:9997\n"
             "rtsp: no\nwebrtc: no\nmoq: no\nplayback: no\n"
             f"rtmp: yes\nrtmpAddress: :{PUERTO_RTMP}\n"
             f"srt: yes\nsrtAddress: :{PUERTO_SRT}\n")
     conf += (f"hls: yes\nhlsAddress: :{PUERTO_HLS}\nhlsAllowOrigins: ['*']\n" if hls else "hls: no\n")
-    conf += ("authInternalUsers:\n"
-             "- user: any\n  pass:\n  ips: ['127.0.0.1', '::1']\n  permissions:\n"
-             "  - action: publish\n  - action: read\n  - action: api\n"
-             "- user: any\n  pass:\n  ips: []\n  permissions:\n")
-    for c in ingestas:
-        conf += f"  - action: publish\n    path: {c}\n"
-    conf += "  - action: read\npaths:\n"
-    for c in list(dict.fromkeys([*ingestas, *publicaciones])):
-        conf += f"  {c}: {{}}\n"
+    conf += "authInternalUsers:\n"
+    for u in usuarios_rutas(ingestas):
+        conf += (f"- user: {u['user']}\n  pass:\n  ips: [{', '.join(repr(i) for i in u['ips'])}]\n"
+                 "  permissions:\n")
+        for pm in u["permissions"]:
+            conf += f"  - action: {pm['action']}\n"
+            if pm.get("path"):
+                conf += f"    path: '{pm['path']}'\n"
+    conf += "paths:\n  '~^live/.*$': {}\n"
     return conf
 
 
@@ -72,32 +94,53 @@ class ServidorPuente:
         self.conf = None
         self.reparto = False
         self.reintento = 0.0
+        self.usuarios = None    # permisos aplicados (rutas), para cambiarlos en caliente
+        self._cache = {}        # camino -> (hora, respuesta de /v3/paths/get)
 
     def disponible(self):
         return os.access(MEDIAMTX, os.X_OK)
 
-    def arrancar_conf(self, conf):
-        """Con una configuración dada (la de las rutas): se rehace solo si cambia."""
-        if self.proc is not None and self.proc.poll() is None and self.conf == conf:
+    def arrancar_conf(self, conf, usuarios=None):
+        """Con una configuración dada (la de las rutas). Si MediaMTX ya corre y solo
+        cambian los permisos (otra ingesta), se aplican por la API sin reiniciarlo:
+        reiniciar corta al ATEM, a OBS, a la TV y las grabaciones. Solo se rehace
+        si no corre o si la API no contesta."""
+        vivo = self.proc is not None and self.proc.poll() is None
+        if vivo and self.conf == conf:
+            return
+        if vivo and usuarios is not None and self._api(
+                "/v3/config/global/patch", {"authInternalUsers": usuarios}) is not None:
+            self.conf, self.usuarios = conf, usuarios
             return
         if time.time() < self.reintento:
             return
         self.detener()
         os.makedirs("/run/ndiicam", exist_ok=True)
         ruta = "/run/ndiicam/mediamtx.yml"
-        with open(ruta, "w") as f:
+        # con las claves de las ingestas dentro: que no lo lea cualquier usuario local
+        with os.fdopen(os.open(ruta, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600), "w") as f:
             f.write(conf)
-        self.conf, self.clave = conf, None
+        self.conf, self.usuarios, self.clave = conf, usuarios, None
         self.proc = subprocess.Popen([MEDIAMTX, ruta], cwd="/run/ndiicam",
                                      stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         self.reintento = time.time() + 5
         evento("puente_servidor", puerto=PUERTO_RTMP)
 
+    def _camino(self, camino):
+        """/v3/paths/get de un camino, guardado 1,5 s: el panel, el medidor y el
+        supervisor lo piden a la vez, y MediaMTX no tiene por qué contestar a todos."""
+        ahora = time.monotonic()
+        t, r = self._cache.get(camino, (0.0, None))
+        if ahora - t > 1.5:
+            r = self._api(f"/v3/paths/get/{camino}")
+            self._cache[camino] = (ahora, r)
+        return r
+
     def ruta_info(self, camino):
         """Si alguien publica en ese camino, desde dónde, qué manda y cuántos leen."""
         if self.proc is None or self.proc.poll() is not None:
             return {"activo": False, "publicando": False}
-        r = self._api(f"/v3/paths/get/{camino}")
+        r = self._camino(camino)
         if not r or not r.get("ready"):
             return {"activo": True, "publicando": False}
         fuente = r.get("source") or {}
@@ -129,6 +172,8 @@ class ServidorPuente:
 
     def detener(self):
         proc, self.proc = self.proc, None
+        self.conf = self.usuarios = None
+        self._cache = {}
         if proc and proc.poll() is None:
             proc.terminate()
             try:
@@ -136,10 +181,19 @@ class ServidorPuente:
             except subprocess.TimeoutExpired:
                 proc.kill()
 
-    def _api(self, ruta):
+    def _api(self, ruta, datos=None):
+        """GET, o PATCH con datos (JSON). None si falla; {} si contesta sin cuerpo.
+        Con 3 s de margen: con el equipo cargado MediaMTX tarda en contestar, y un
+        retraso aquí no puede parar una grabación."""
         try:
-            with urllib.request.urlopen(API_MEDIAMTX + ruta, timeout=1) as r:
-                return json.load(r)
+            req = urllib.request.Request(API_MEDIAMTX + ruta)
+            if datos is not None:
+                req = urllib.request.Request(API_MEDIAMTX + ruta, data=json.dumps(datos).encode(),
+                                             headers={"Content-Type": "application/json"},
+                                             method="PATCH")
+            with urllib.request.urlopen(req, timeout=3) as r:
+                cuerpo = r.read()
+                return json.loads(cuerpo) if cuerpo.strip() else {}
         except (OSError, ValueError):
             return None
 
@@ -147,7 +201,7 @@ class ServidorPuente:
         """Si alguien está publicando en esa ruta (el programa final, por ejemplo)."""
         if self.proc is None or self.proc.poll() is not None:
             return False
-        r = self._api(f"/v3/paths/get/{ruta}")
+        r = self._camino(ruta)
         return bool(r and r.get("ready"))
 
     def info(self):
