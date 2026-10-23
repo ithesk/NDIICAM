@@ -3053,7 +3053,8 @@ const RT = {
     anadir_ndi: "Fuente NDI", anadir_ingesta: "Emisión entrante (ATEM, OBS…)", anadir_red: "+ Añadir entrada de la red…",
     usb_solas: "Las cámaras y el audio USB aparecen solos al conectarlos.",
     elige_ruta: "Elige primero una ruta (o crea una) para añadirle salidas.",
-    fuente_red: "Fuente de la red", buscando: "Buscando fuentes NDI…",
+    fuente_red: "Fuente de la red", buscando: "Buscando fuentes NDI…", elige_fuente: "— elige una fuente —",
+    sin_fuente_ndi: "Sin fuente: elígela en el engranaje",
     atem_emite: "Que el ATEM, OBS o el móvil emitan a:", xml: "Descargar ajustes para ATEM",
     llega: (l) => l && l.publicando ? `Llegando por ${l.protocolo || "RTMP"}${l.desde ? " desde " + l.desde : ""}` : "Esperando a que publique",
     se_usa: (r) => "Se usa en: " + (r.length ? r.join(", ") : "ninguna ruta"),
@@ -3107,7 +3108,8 @@ const RT = {
     anadir_ndi: "NDI source", anadir_ingesta: "Incoming stream (ATEM, OBS…)", anadir_red: "+ Add a network input…",
     usb_solas: "USB cameras and audio appear on their own when plugged in.",
     elige_ruta: "Pick a route first (or create one) to add outputs to it.",
-    fuente_red: "Network source", buscando: "Looking for NDI sources…",
+    fuente_red: "Network source", buscando: "Looking for NDI sources…", elige_fuente: "— pick a source —",
+    sin_fuente_ndi: "No source: pick it with the gear",
     atem_emite: "Have the ATEM, OBS or the phone stream to:", xml: "Download settings for ATEM",
     llega: (l) => l && l.publicando ? `Arriving over ${l.protocolo || "RTMP"}${l.desde ? " from " + l.desde : ""}` : "Waiting for it to publish",
     se_usa: (r) => "Used in: " + (r.length ? r.join(", ") : "no route"),
@@ -3350,7 +3352,8 @@ function rtTextoSalida(r, s) {
 function rtCrearNodo(n) {
   const [x, y] = rtPos[n.id];
   const est = n.clase === "ruta" ? rtEstado(n.r.id).estado : n.clase === "sal" ? (rtEstado(n.r.id).salidas || {})[n.s.id] : null;
-  const punto = n.clase === "ent" ? (n.e.tipo === "ingesta" ? (n.e.llega && n.e.llega.publicando ? "ok" : "aviso") : "ok")
+  const punto = n.clase === "ent" ? (n.e.tipo === "ingesta" ? (n.e.llega && n.e.llega.publicando ? "ok" : "aviso")
+    : n.e.tipo === "ndi" && !n.e.fuente ? "aviso" : "ok")
     : { en_marcha: "ok", ok: "ok", esperando: "aviso", error: "mal" }[est] || "";
   const titulo = n.clase === "ent" ? n.e.nombre : n.clase === "ruta" ? n.r.nombre : rt("salidas")[n.s.tipo];
   const icono = n.clase === "ent" ? n.e.tipo : n.clase === "ruta" ? "ruta" : n.s.tipo;
@@ -3366,7 +3369,8 @@ function rtCrearNodo(n) {
       img.addEventListener("error", () => img.replaceWith(rel("div", { class: "rt-vista", text: rt("vista_previa") })));
       cuerpo.append(img);
     }
-    const sub = n.e.tipo === "ingesta" ? rt("llega")(n.e.llega) : n.e.tipo === "ndi" ? n.e.fuente : rt("tipos")[n.e.tipo];
+    const sub = n.e.tipo === "ingesta" ? rt("llega")(n.e.llega) : n.e.tipo === "ndi" ? (n.e.fuente || rt("sin_fuente_ndi"))
+      : rt("tipos")[n.e.tipo];
     cuerpo.append(rel("small", { text: sub }));
     if (daImagen(n.e)) cuerpo.append(rtPuerto(n.id, "v", rt("imagen"), "sal", titulo));
     if (daAudio(n.e)) cuerpo.append(rtPuerto(n.id, "a", rt("audio"), "sal", titulo));
@@ -3580,8 +3584,13 @@ function rtAjustesEntrada(e) {
   if (e.tipo === "ndi" && red) {
     const lista = (RD.red_ndi || []).map((x) => x.nombre);
     if (red.fuente && !lista.includes(red.fuente)) lista.unshift(red.fuente);
-    t.push(rtCampo("rtNdiF", rt("fuente_red"), rel("select", { id: "rtNdiF", onchange: (ev) => { red.fuente = ev.target.value; red.nombre = ev.target.value; rtCambio(true); } },
-      ...(lista.length ? lista : [rt("buscando")]).map((x) => rel("option", { value: x, text: x, selected: x === red.fuente })))));
+    // la primera opción es "elige": sin ella, el navegador enseña la primera fuente
+    // como elegida aunque no lo esté, y elegir esa misma no avisa de ningún cambio
+    t.push(rtCampo("rtNdiF", rt("fuente_red"), rel("select", { id: "rtNdiF", onchange: (ev) => {
+      if (!ev.target.value) return;
+      red.fuente = ev.target.value; red.nombre = ev.target.value; rtCambio(true); } },
+      rel("option", { value: "", text: lista.length ? rt("elige_fuente") : rt("buscando"), disabled: true, selected: !red.fuente }),
+      ...lista.map((x) => rel("option", { value: x, text: x, selected: x === red.fuente })))));
   }
   const usos = RB.rutas.filter((r) => r.video === e.id || r.audio === e.id).map((r) => r.nombre);
   t.push(rel("div", { class: "nota", text: rt("se_usa")(usos) }));
@@ -3748,7 +3757,8 @@ function rtPintarLista() {
     rel("button", { class: "boton principal", type: "button", text: "+ " + rt("nueva_ruta"), onclick: rtNuevaRuta }),
     rel("div", { class: "tarjeta" }, rel("h3", { text: rt("entradas") }),
       ...ents.map((e) => rel("div", { class: "rt-fila-ent" }, rtIcono(e.tipo, 18),
-        rel("div", { class: "tx" }, rel("b", { text: e.nombre }), rel("small", { text: e.tipo === "ingesta" ? rt("llega")(e.llega) : rt("tipos")[e.tipo] })),
+        rel("div", { class: "tx" }, rel("b", { text: e.nombre }), rel("small", { text: e.tipo === "ingesta" ? rt("llega")(e.llega)
+          : e.tipo === "ndi" ? (e.fuente || rt("sin_fuente_ndi")) : rt("tipos")[e.tipo] })),
         rel("button", { class: "boton", type: "button", text: rt("ajustes"), onclick: () => rtSeleccionar("e:" + e.id) }))),
       anadirRed, rel("div", { class: "nota", text: rt("usb_solas") })));
 }
