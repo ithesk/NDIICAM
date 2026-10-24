@@ -440,7 +440,8 @@ class Panel(BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(cuerpo)
             return
-        if len(partes) == 2 and grab_mod.SESION_RE.match(partes[0]) and grab_mod.TROZO_RE.match(partes[1]):
+        FICHERO_SESION = re.compile(r"^(trozo-\d{2,4}\.(mp4|mkv)|completa\.(mp4|mkv)|miniatura\.jpg)$")
+        if len(partes) == 2 and grab_mod.SESION_RE.match(partes[0]) and FICHERO_SESION.match(partes[1]):
             ruta, nombre = os.path.join(GRABACIONES, partes[0], partes[1]), f"{partes[0]}-{partes[1]}"
             en_linea = partes[1].endswith(".jpg") or self.headers.get("Range") is not None
         elif len(partes) == 1 and NOMBRE_GRABACION.match(camino):
@@ -597,6 +598,8 @@ class Panel(BaseHTTPRequestHandler):
             if not sesion:
                 return self._error("sin_sesion")
             m = grab_mod.marca(sesion, str(d.get("texto", ""))[:80])
+            if m is None:
+                return self._error("sin_sesion")
             return self._json({"ok": True, "sesion": sesion, "marca": m})
         if ruta in ("/api/usb/montar", "/api/usb/expulsar", "/api/usb/copiar"):
             dev = str(d.get("dev", ""))
@@ -613,7 +616,9 @@ class Panel(BaseHTTPRequestHandler):
                     return self._error("copia_en_curso")
                 grab_mod.copiar_a_usb(dev, sesiones, bool(d.get("unidas")))
                 return self._json({"ok": True})
-            except (OSError, RuntimeError) as ex:
+            except RuntimeError:
+                return self._error("copia_en_curso")
+            except (OSError, ValueError):
                 return self._error("usb_fallo")
         if ruta == "/api/reiniciar":
             nucleo.FUENTES.reiniciar_todo()

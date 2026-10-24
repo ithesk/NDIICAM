@@ -1211,6 +1211,9 @@ const T = {
       programa_error: (d) => `Programa final: ${d.detalle}; se reintenta`,
       calibracion: (d) => d.error ? `${d.fuente}: calibración del audio sin resultado (${d.error})` : `${d.fuente}: el audio va ${d.ms} ms por delante de la imagen (${d.palmadas} palmadas)`,
       reem_activa: (d) => `Reemitiendo ${d.fuente}: ${(d.salidas || []).map((m) => T.es["gpu_" + m]).join(", ")}`,
+      relevo_activa: (d) => `${d.fuente}: ${d.grabar ? "grabando" : "reenviando"}`, relevo_error: (d) => `${d.fuente}: la grabación o el reenvío falló (${d.detalle})`,
+      mirilla_activa: (d) => `${d.fuente}: vista previa`, pantalla_modo: (d) => `Pantalla ${d.pantalla} a ${d.modo}`,
+      pantallas_sin_alquiler: (d) => `Las pantallas no se alquilan (${d.detalle || d.pantalla}): un solo monitor`, pantalla_sin_modo: (d) => `No se pudo poner modo a la pantalla (${d.detalle})`,
       reem_error: (d) => `Reemisión de ${d.fuente}: ${d.detalle}; se reintenta`,
       deco_gpu_fallida: (d) => `${d.fuente}: la GPU no pudo decodificar su JPEG (${d.detalle}); se sigue por CPU`,
       gpu_medida: (d) => `GPU medida: ${d.jpeg ? "decodifica las cámaras" : "las cámaras siguen por CPU (no compensa)"}; ${d.h264 ? "decodifica el modo puente" : "el modo puente sigue por CPU"}`,
@@ -1583,6 +1586,9 @@ const T = {
       programa_error: (d) => `Final program: ${d.detalle}; retrying`,
       calibracion: (d) => d.error ? `${d.fuente}: audio calibration without result (${d.error})` : `${d.fuente}: audio is ${d.ms} ms ahead of the picture (${d.palmadas} claps)`,
       reem_activa: (d) => `Re-streaming ${d.fuente}: ${(d.salidas || []).map((m) => T.en["gpu_" + m]).join(", ")}`,
+      relevo_activa: (d) => `${d.fuente}: ${d.grabar ? "recording" : "relaying"}`, relevo_error: (d) => `${d.fuente}: recording or relay failed (${d.detalle})`,
+      mirilla_activa: (d) => `${d.fuente}: preview`, pantalla_modo: (d) => `Screen ${d.pantalla} set to ${d.modo}`,
+      pantallas_sin_alquiler: (d) => `Screens cannot be leased (${d.detalle || d.pantalla}): single monitor`, pantalla_sin_modo: (d) => `Could not set a mode on the screen (${d.detalle})`,
       reem_error: (d) => `Re-stream of ${d.fuente}: ${d.detalle}; retrying`,
       deco_gpu_fallida: (d) => `${d.fuente}: the GPU could not decode its JPEG (${d.detalle}); falling back to the CPU`,
       gpu_medida: (d) => `GPU measured: ${d.jpeg ? "it decodes the cameras" : "cameras stay on the CPU (not worth it)"}; ${d.h264 ? "it decodes bridge mode" : "bridge mode stays on the CPU"}`,
@@ -1648,6 +1654,7 @@ function aplicarIdioma() {
   document.documentElement.lang = lang;
   document.querySelectorAll("[data-t]").forEach((el) => { el.textContent = t(el.dataset.t); });
   document.querySelectorAll(".idioma button").forEach((b) => b.classList.toggle("activo", b.dataset.lang === lang));
+  pintarGrabaciones.forzar = true;      // la lista de sesiones se rehace en el idioma nuevo
   tarjetas.forEach((c) => { c.raiz.remove(); c.raizCfg.remove(); }); tarjetas.clear();
   if (ultimo) pintar(ultimo);
   cargarWifi(false);
@@ -2251,7 +2258,7 @@ async function pintarUsb(ses) {
     const pct = copia.total_bytes ? Math.round(copia.bytes / copia.total_bytes * 100) : 0;
     hijos.push(rel("div", { class: "meta", text: t("usb_copiando")(copia.sesion || "", pct) }), rel("progress", { max: 100, value: pct }));
     setTimeout(() => pintarUsb(ses), 1500);
-  } else if (copia.hechas && copia.hechas.length && !copia.error && copia.reciente) hijos.push(rel("div", { class: "mensaje ok", text: t("usb_hecho")(copia.hechas.length) }));
+  } else if (copia.hechas && !copia.error) hijos.push(rel("div", { class: "mensaje ok", text: t("usb_hecho")(copia.hechas) }));
   if (copia.error) hijos.push(rel("div", { class: "mensaje mal", text: copia.error }));
   const nuevo = rel("div", { class: "usb" }, ...hijos);
   if (rtFirma(nuevo.innerHTML) !== rtFirma(c.innerHTML)) c.replaceChildren(...nuevo.childNodes);
