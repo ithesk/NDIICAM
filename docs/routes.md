@@ -82,7 +82,7 @@ When the video comes from an ATEM or OBS, it is **copied as is, without re-encod
 | **OBS · TV · phone** | Makes it available on the network for anyone to read (see below). |
 | **SRT** | The same, over SRT, for less reliable links. |
 | **RTMP (YouTube…)** | Streams it to YouTube, Twitch, Facebook… with the service's URL and key. |
-| **Record** | 10-minute MP4 or MKV files on the device, downloaded from *Monitor › Recordings*. When the disk fills up, it deletes the oldest. |
+| **Record** | Records the program on the device, in **sessions** (see below): whenever the route is on, by hand with the **Record** button, or between two times. |
 
 Addresses to read a route, where `<path>` is the route's name in lowercase with no spaces (the
 output's gear shows it):
@@ -162,6 +162,30 @@ meter, camera and sent fps, Mbit/s, NDI receivers, who is reading the program, l
 tally, each output's state and its errors. Paused routes collapse to one line.
 
 ![Monitor with the routes engine: three routes running](screenshots/routes-monitor-en.png)
+
+## Recordings
+
+Every time recording starts (switching the route on, pressing **Record** or entering the
+schedule) a **session** opens, named after the route and the time: `Service_2026-10-25_11-00-00`.
+Inside it is 10-minute parts (if the power goes, what was recorded so far is fine); outside, in
+*Monitor › Recordings*, it is a single row with its thumbnail, duration, size and:
+
+- **Play** (MP4) without downloading, seeking anywhere.
+- **Download whole**: a single file. If the session has several parts, **Prepare download**
+  joins them first without re-encoding (a few seconds per hour of video).
+- **Parts**: the 10-minute files, one by one.
+- **Markers**: while recording, the **Marker** button (or the `M` key) notes the time; they
+  download as a YouTube chapter list (`00:12:34 Sermon`).
+- **Protect**: automatic cleanup leaves it alone. Unprotected, the oldest sessions go first when
+  the disk fills up; the panel warns when space runs low.
+- **Cut off**: the session was never closed (power cut, ATEM dropped); what was recorded is fine.
+
+Video is recorded as it arrives, without re-encoding. Pick **MP4** to play in the browser, **MKV**
+if you prefer the more robust format for editing.
+
+**USB drive**: plug a stick or a disk into the device and it appears under *Recordings*:
+**Mount**, **Copy sessions** (or joined, one file each) and **Eject**. Over the network you can
+also pull them with `scp` from `/var/lib/ndiicam/grabaciones/`.
 
 ## Syncing audio from another input
 

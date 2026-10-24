@@ -178,6 +178,28 @@
   .rt-barra { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 8px; }
   .rt-barra .esp { margin-left: auto; }
   .rt-dos { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 12px; }
+  .sesion { display: grid; grid-template-columns: 112px minmax(0, 1fr); gap: 12px; padding: 12px 0; border-top: 1px solid var(--borde); }
+  .sesion:first-child { border-top: 0; }
+  .sesion .mini { width: 112px; aspect-ratio: 16 / 9; border-radius: 8px; background: var(--pista); object-fit: cover; display: flex; align-items: center; justify-content: center; color: var(--suave); font-size: 11px; }
+  .sesion .titulo { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .sesion .titulo b { font-size: 15px; }
+  .sesion .meta { color: var(--suave); font-size: 12.5px; margin-top: 2px; }
+  .sesion .acciones { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+  .sesion .trozos { margin-top: 8px; font-size: 12.5px; color: var(--suave); display: none; }
+  .sesion.abierta .trozos { display: block; }
+  .sesion .trozos a { margin-left: 6px; }
+  .sesion .marcas { margin-top: 6px; font-size: 12.5px; }
+  .etq.rec { background: var(--mal-f, #fde7e7); color: var(--mal); }
+  .etq.rec::before { content: "●"; margin-right: 4px; animation: parpadeo 1.2s infinite; }
+  @keyframes parpadeo { 50% { opacity: .25; } }
+  .grab-player { border: 0; border-radius: 14px; padding: 12px; max-width: min(960px, 96vw); background: var(--tarjeta); color: var(--texto); }
+  .grab-player::backdrop { background: rgba(0,0,0,.6); }
+  .grab-player-cab { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 8px; }
+  .grab-player video { width: 100%; max-height: 72vh; background: #000; border-radius: 8px; }
+  .usb { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--borde); }
+  .usb .disco { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 6px 0; }
+  .usb progress { width: 100%; height: 8px; }
+  @media (max-width: 600px) { .sesion { grid-template-columns: 1fr; } .sesion .mini { width: 100%; } }
   .rt-tarjeta { margin-top: 12px; }
   .rt-tarjeta .fuente-cuerpo { grid-template-columns: minmax(0, 1fr) minmax(0, 1.3fr); align-items: start; }
   .rt-tarjeta.pausada { opacity: .75; }
@@ -570,9 +592,15 @@
 
   <section class="tarjeta seccion oculto" id="secGrab" data-tab="monitor">
     <div class="fuente-cab"><div><h3 data-t="rec_title"></h3><div class="sub" id="grabSub"></div></div></div>
+    <div class="mensaje oculto" id="grabAviso"></div>
+    <div id="grabSesiones"></div>
     <ul class="lista" id="grabLista"></ul>
+    <div id="grabUsb"></div>
     <div class="mensaje oculto" id="msgGrab"></div>
   </section>
+  <dialog id="grabPlayer" class="grab-player"><div class="grab-player-cab"><b id="grabPlayerTitulo"></b>
+    <button type="button" class="boton" id="grabPlayerCerrar" data-t="cerrar"></button></div>
+    <video id="grabVideo" controls playsinline></video></dialog>
 
 
   <div class="rejilla">
@@ -1085,6 +1113,14 @@ const T = {
     st_esperando_atem: "Esperando señal",
     rec_title: "Grabaciones", rec_free: (g) => `${g} libres en el disco`, rec_none: "Aún no hay grabaciones.",
     rec_download: "Descargar", rec_delete: "Borrar", rec_confirm: (n) => `¿Borrar ${n}?`,
+    ses_grabando: "Grabando", ses_cortada: "Cortada", ses_protegida: "Protegida", ses_trozos: (n) => n === 1 ? "1 trozo" : `${n} trozos`,
+    ses_ver: "Reproducir", ses_descargar: "Descargar entera", ses_preparar: "Preparar descarga", ses_preparando: "Preparando…", ses_error_union: "No se pudo unir",
+    ses_trozos_btn: "Trozos", ses_marcas: "Marcas", ses_marcas_txt: "Capítulos (txt)", ses_proteger: "Proteger", ses_desproteger: "Quitar protección",
+    ses_borrar_confirm: (n) => `¿Borrar la sesión ${n} entera?`, ses_sueltos: "Ficheros sueltos (de antes)", ses_vacio: "Aún no hay grabaciones.",
+    ses_nota_mkv: "MKV: el navegador no lo reproduce; descárgalo o graba en MP4.", ses_aviso_disco: (g) => `Quedan ${g} en el disco: la limpieza automática borrará pronto lo más viejo que no esté protegido.`,
+    usb_titulo: "Memoria USB", usb_ninguna: "Enchufa una memoria USB para copiar las grabaciones.", usb_montar: "Montar", usb_expulsar: "Expulsar",
+    usb_copiar: "Copiar las sesiones", usb_copiar_unidas: "Copiar las sesiones (unidas)", usb_copiando: (s, p) => `Copiando ${s}… ${p}%`, usb_hecho: (n) => `Copia terminada: ${n} sesiones.`,
+    usb_libre: (g) => `${g} libres`, usb_sin_montar: "sin montar",
     restart_stream: "Reiniciar", saved_ok: "Guardado. La fuente se reinicia con los nuevos ajustes.",
     saved_restart: "Guardado. El servicio se está reiniciando: el panel vuelve en unos segundos.",
     saved_simple: "Guardado.", restarting_stream: "Reiniciando la fuente…",
@@ -1449,6 +1485,14 @@ const T = {
     st_esperando_atem: "Waiting for signal",
     rec_title: "Recordings", rec_free: (g) => `${g} free on disk`, rec_none: "No recordings yet.",
     rec_download: "Download", rec_delete: "Delete", rec_confirm: (n) => `Delete ${n}?`,
+    ses_grabando: "Recording", ses_cortada: "Cut off", ses_protegida: "Protected", ses_trozos: (n) => n === 1 ? "1 part" : `${n} parts`,
+    ses_ver: "Play", ses_descargar: "Download whole", ses_preparar: "Prepare download", ses_preparando: "Preparing…", ses_error_union: "Could not join",
+    ses_trozos_btn: "Parts", ses_marcas: "Markers", ses_marcas_txt: "Chapters (txt)", ses_proteger: "Protect", ses_desproteger: "Unprotect",
+    ses_borrar_confirm: (n) => `Delete the whole session ${n}?`, ses_sueltos: "Loose files (older)", ses_vacio: "No recordings yet.",
+    ses_nota_mkv: "MKV: the browser cannot play it; download it or record as MP4.", ses_aviso_disco: (g) => `${g} left on disk: automatic cleanup will soon delete the oldest unprotected recordings.`,
+    usb_titulo: "USB drive", usb_ninguna: "Plug in a USB drive to copy the recordings.", usb_montar: "Mount", usb_expulsar: "Eject",
+    usb_copiar: "Copy sessions", usb_copiar_unidas: "Copy sessions (joined)", usb_copiando: (s, p) => `Copying ${s}… ${p}%`, usb_hecho: (n) => `Copy finished: ${n} sessions.`,
+    usb_libre: (g) => `${g} free`, usb_sin_montar: "not mounted",
     restart_stream: "Restart", saved_ok: "Saved. The source restarts with the new settings.",
     saved_restart: "Saved. The service is restarting: the panel will be back in a few seconds.",
     saved_simple: "Saved.", restarting_stream: "Restarting the source…",
@@ -2112,29 +2156,105 @@ function pintarGpu(c, f, e, k) {
 // ------------------------------------------------------------ grabaciones
 let grabUltima = 0;
 async function pintarGrabaciones(e) {
-  const graba = (e.fuentes || []).some((f) => f.ajustes.gpu_salida === "grabar");
+  const graba = (e.fuentes || []).some((f) => f.ajustes.gpu_salida === "grabar")
+    || ((RB && RB.rutas) || []).some((r) => r.salidas.some((s) => s.tipo === "grabar"));
   if (Date.now() - grabUltima < 10000 && !pintarGrabaciones.forzar) return;
   pintarGrabaciones.forzar = false;
   grabUltima = Date.now();
   let g;
   try { g = await api("/api/grabaciones"); } catch (_) { return; }
-  $("secGrab").classList.toggle("oculto", !graba && !g.lista.length);
+  const ses = g.sesiones || [], sueltos = g.sueltos || g.lista || [];
+  $("secGrab").classList.toggle("oculto", !graba && !ses.length && !sueltos.length);
   poner($("grabSub"), g.libre != null ? T[lang].rec_free(tamano(g.libre)) : "");
+  const av = $("grabAviso");
+  av.classList.toggle("oculto", !g.aviso_disco);
+  if (g.aviso_disco) { av.className = "mensaje aviso"; av.textContent = t("ses_aviso_disco")(tamano(g.libre)); }
+  const dur = (seg) => { seg = Math.max(0, Math.round(seg || 0)); const h = Math.floor(seg / 3600), m = Math.floor(seg % 3600 / 60), s2 = seg % 60;
+    return (h ? h + ":" : "") + String(m).padStart(h ? 2 : 1, "0") + ":" + String(s2).padStart(2, "0"); };
+  const llamar = async (ruta, datos) => { try { await api(ruta, datos); } catch (err) { mensaje("msgGrab", err.message, "mal"); } pintarGrabaciones.forzar = true; pintarGrabaciones(ultimo); };
+  // sesiones: se comparan con lo pintado y solo se rehacen si cambian (ver rtFirma)
+  const cont = $("grabSesiones");
+  const lista = rel("div", null, ...ses.map((x) => {
+    const abierta = cont.querySelector(`[data-id="${CSS.escape(x.nombre)}"]`)?.classList.contains("abierta");
+    const mini = x.miniatura ? rel("img", { class: "mini rt-vista", alt: "", src: `/grabaciones/${encodeURIComponent(x.nombre)}/miniatura.jpg?t=${x.bytes}` })
+      : rel("div", { class: "mini", text: x.formato.toUpperCase() });
+    const fecha = new Date(x.inicio * 1000);
+    const etqs = [x.grabando ? rel("span", { class: "etq rec", text: t("ses_grabando") }) : null,
+      x.cortada ? rel("span", { class: "etq aviso", text: t("ses_cortada") }) : null,
+      x.protegida ? rel("span", { class: "etq ok", text: t("ses_protegida") }) : null];
+    const meta = `${fecha.toLocaleDateString(lang)} ${fecha.toLocaleTimeString(lang, { hour: "2-digit", minute: "2-digit" })} · ${dur(x.duracion)} · ${tamano(x.bytes)} · ${x.formato.toUpperCase()} · ${t("ses_trozos")(x.trozos.length)}` + (x.marcas.length ? ` · ${x.marcas.length} ${t("ses_marcas").toLowerCase()}` : "");
+    const acciones = [];
+    const puedeVer = x.formato === "mp4" && x.trozos.length;
+    if (puedeVer) acciones.push(rel("button", { class: "boton", type: "button", text: t("ses_ver"), onclick: () => {
+      const src = x.completa.estado === "lista" ? `/grabaciones/${encodeURIComponent(x.nombre)}/${x.completa.fichero}` : `/grabaciones/${encodeURIComponent(x.nombre)}/${x.trozos[0].fichero}`;
+      $("grabPlayerTitulo").textContent = x.ruta_nombre + " · " + meta; $("grabVideo").src = src; $("grabPlayer").showModal(); $("grabVideo").play().catch(() => {}); } }));
+    if (x.trozos.length === 1 && !x.grabando) acciones.push(rel("a", { class: "boton principal", href: `/grabaciones/${encodeURIComponent(x.nombre)}/${x.trozos[0].fichero}`, download: `${x.nombre}.${x.formato}`, text: t("rec_download") }));
+    else if (x.completa.estado === "lista") acciones.push(rel("a", { class: "boton principal", href: `/grabaciones/${encodeURIComponent(x.nombre)}/${x.completa.fichero}`, download: `${x.nombre}.${x.formato}`, text: t("ses_descargar") }));
+    else if (x.completa.estado === "preparando") acciones.push(rel("span", { class: "etq aviso", text: t("ses_preparando") }));
+    else if (!x.grabando) acciones.push(rel("button", { class: "boton principal", type: "button", text: (x.completa.estado === "error" ? t("ses_error_union") + " · " : "") + t("ses_preparar"), onclick: () => llamar("/api/grabaciones/unir", { nombre: x.nombre }) }));
+    if (x.trozos.length > 1) acciones.push(rel("button", { class: "boton", type: "button", text: t("ses_trozos_btn"), onclick: (ev) => ev.target.closest(".sesion").classList.toggle("abierta") }));
+    if (x.marcas.length) acciones.push(rel("a", { class: "boton", href: `/grabaciones/${encodeURIComponent(x.nombre)}/marcas.txt`, download: `${x.nombre}-marcas.txt`, text: t("ses_marcas_txt") }));
+    acciones.push(rel("button", { class: "boton", type: "button", text: x.protegida ? t("ses_desproteger") : t("ses_proteger"), onclick: () => llamar("/api/grabaciones/proteger", { nombre: x.nombre, si: !x.protegida }) }));
+    if (!x.grabando) acciones.push(rel("button", { class: "boton peligro", type: "button", text: t("rec_delete"), onclick: () => { if (confirm(t("ses_borrar_confirm")(x.nombre))) llamar("/api/grabaciones/borrar", { nombre: x.nombre }); } }));
+    const trozos = rel("div", { class: "trozos" }, ...x.trozos.map((tz) => rel("div", null,
+      `${tz.fichero} · ${dur(tz.duracion)} · ${tamano(tz.bytes || 0)}${tz.grabando ? " · " + t("ses_grabando") : ""}`,
+      rel("a", { href: `/grabaciones/${encodeURIComponent(x.nombre)}/${tz.fichero}`, download: `${x.nombre}-${tz.fichero}`, text: t("rec_download") }))));
+    const marcas = x.marcas.length ? rel("div", { class: "marcas" }, x.marcas.map((m) => `${m.hora}${m.texto ? " " + m.texto : ""}`).join(" · ")) : null;
+    return rel("div", { class: "sesion" + (abierta ? " abierta" : ""), "data-id": x.nombre }, mini,
+      rel("div", null, rel("div", { class: "titulo" }, rel("b", { text: x.ruta_nombre || x.nombre }), ...etqs), rel("div", { class: "meta", text: meta }),
+        x.formato === "mkv" && !x.grabando ? rel("div", { class: "nota", text: t("ses_nota_mkv") }) : null,
+        marcas, rel("div", { class: "acciones" }, ...acciones), trozos));
+  }));
+  if (rtFirma(lista.innerHTML) !== rtFirma(cont.innerHTML)) cont.replaceChildren(...lista.childNodes); else rtRefrescarVivo(cont, lista);
+  // sueltos (ficheros de antes, en la raíz)
   const ul = $("grabLista");
   ul.replaceChildren();
-  if (!g.lista.length) return vacio(ul, t("rec_none"));
-  g.lista.forEach((x) => {
-    const borrar = el("button", { class: "boton", text: t("rec_delete"), onclick: async () => {
-      if (!confirm(T[lang].rec_confirm(x.nombre))) return;
-      await api("/api/grabaciones/borrar", { nombre: x.nombre }).catch((err) => mensaje("msgGrab", err.message, "mal"));
-      pintarGrabaciones.forzar = true; pintarGrabaciones(ultimo);
-    } });
-    ul.append(el("li", null,
-      el("div", { class: "nombre" }, el("div", { text: x.nombre }),
-        el("div", { class: "meta", text: `${new Date(x.fecha * 1000).toLocaleString(lang)} · ${tamano(x.bytes)}` })),
-      el("a", { class: "boton", href: "/grabaciones/" + encodeURIComponent(x.nombre), download: x.nombre, text: t("rec_download") }),
-      borrar));
-  });
+  if (!ses.length && !sueltos.length) vacio(ul, t("ses_vacio"));
+  else if (sueltos.length) {
+    ul.append(el("li", null, el("div", { class: "nombre meta", text: t("ses_sueltos") })));
+    sueltos.forEach((x) => {
+      const borrar = el("button", { class: "boton", text: t("rec_delete"), onclick: async () => {
+        if (!confirm(T[lang].rec_confirm(x.nombre))) return;
+        await llamar("/api/grabaciones/borrar", { nombre: x.nombre });
+      } });
+      ul.append(el("li", null,
+        el("div", { class: "nombre" }, el("div", { text: x.nombre }),
+          el("div", { class: "meta", text: `${new Date(x.fecha * 1000).toLocaleString(lang)} · ${tamano(x.bytes)}` })),
+        el("a", { class: "boton", href: "/grabaciones/" + encodeURIComponent(x.nombre), download: x.nombre, text: t("rec_download") }),
+        borrar));
+    });
+  }
+  pintarUsb(ses);
+}
+async function pintarUsb(ses) {
+  let u;
+  try { u = await api("/api/usb"); } catch (_) { return; }
+  const c = $("grabUsb"), copia = u.copia || {};
+  const discos = u.discos || [];
+  const hijos = [rel("h3", { text: t("usb_titulo"), style: "font-size:14px" })];
+  if (!discos.length) hijos.push(rel("div", { class: "nota", text: t("usb_ninguna") }));
+  for (const d of discos) {
+    const fila = rel("div", { class: "disco" }, rel("b", { text: d.etiqueta || d.dev }), rel("span", { class: "meta", text: `${tamano(d.tamano)} · ${d.fs || "?"} · ${d.montado ? t("usb_libre")(tamano(d.libre || 0)) : t("usb_sin_montar")}` }));
+    const llamar = async (ruta, datos) => { try { await api(ruta, datos); } catch (err) { mensaje("msgGrab", err.message, "mal"); } pintarUsb(ses); };
+    if (!d.montado) fila.append(rel("button", { class: "boton", type: "button", text: t("usb_montar"), onclick: () => llamar("/api/usb/montar", { dev: d.dev }) }));
+    else {
+      const nuevas = ses.filter((x) => !x.grabando).map((x) => x.nombre);
+      if (!copia.en_curso) {
+        fila.append(rel("button", { class: "boton principal", type: "button", text: t("usb_copiar"), disabled: !nuevas.length, onclick: () => llamar("/api/usb/copiar", { dev: d.dev, sesiones: nuevas }) }),
+          rel("button", { class: "boton", type: "button", text: t("usb_copiar_unidas"), disabled: !nuevas.length, onclick: () => llamar("/api/usb/copiar", { dev: d.dev, sesiones: nuevas, unidas: true }) }));
+      }
+      fila.append(rel("button", { class: "boton", type: "button", text: t("usb_expulsar"), disabled: !!copia.en_curso, onclick: () => llamar("/api/usb/expulsar", { dev: d.dev }) }));
+    }
+    hijos.push(fila);
+  }
+  if (copia.en_curso) {
+    const pct = copia.total_bytes ? Math.round(copia.bytes / copia.total_bytes * 100) : 0;
+    hijos.push(rel("div", { class: "meta", text: t("usb_copiando")(copia.sesion || "", pct) }), rel("progress", { max: 100, value: pct }));
+    setTimeout(() => pintarUsb(ses), 1500);
+  } else if (copia.hechas && copia.hechas.length && !copia.error && copia.reciente) hijos.push(rel("div", { class: "mensaje ok", text: t("usb_hecho")(copia.hechas.length) }));
+  if (copia.error) hijos.push(rel("div", { class: "mensaje mal", text: copia.error }));
+  const nuevo = rel("div", { class: "usb" }, ...hijos);
+  if (rtFirma(nuevo.innerHTML) !== rtFirma(c.innerHTML)) c.replaceChildren(...nuevo.childNodes);
 }
 // ----------------------------------------------------------- medidor audio
 function vumetro() {
@@ -2651,6 +2771,8 @@ function pintar(e) {
 let refrescarT = 0, refrescando = false;
 let panelHuella = null;
 $("btRecargar").addEventListener("click", () => location.reload());
+$("grabPlayerCerrar").addEventListener("click", () => { $("grabVideo").pause(); $("grabVideo").removeAttribute("src"); $("grabPlayer").close(); });
+$("grabPlayer").addEventListener("close", () => { $("grabVideo").pause(); $("grabVideo").removeAttribute("src"); });
 async function refrescar() {
   clearTimeout(refrescarT);
   if (refrescando) { refrescarT = setTimeout(refrescar, 200); return; }
@@ -3067,7 +3189,9 @@ const RT = {
       fuente_sin_imagen: "La fuente está en la red pero no manda imagen. En OBS, comprueba que esa fuente esté activa y dando imagen.", ndi_repetido: "Otra ruta usa ese nombre NDI.",
       hdmi_ocupado: "Ese monitor lo tiene otra ruta.", pantalla_no_esta: "Ese monitor no está conectado.",
       sin_monitor: "No hay ningún monitor conectado.", url_rtmp_invalida: "La URL RTMP no es válida.",
-      ruta_invalida: "Esa ruta ya no existe.",
+      ruta_invalida: "Esa ruta ya no existe.", sesion_grabando: "Esa sesión se está grabando: para antes la ruta.",
+      union_fallida: "No se pudo preparar la descarga.", sin_grabacion: "Esa ruta no tiene salida de grabación.", sin_sesion: "No hay ninguna grabación en marcha.",
+      usb_invalido: "Esa memoria USB ya no está.", copia_en_curso: "Ya hay una copia en marcha.", usb_fallo: "No se pudo con la memoria USB (¿formato?).",
       sin_gpu: "Este equipo no puede codificar H.264 para esta salida (sin GPU útil).",
       camara_ocupada: "Esa cámara ya la usa otra ruta: una cámara solo puede ir en una.",
       audio_ocupado: "Ese audio ya lo usa otra ruta.", audio_red_no_soportado: "El audio de otra fuente de red aún no se admite: usa el de la misma entrada o un audio USB.",
@@ -3089,9 +3213,11 @@ const RT = {
     elige_ruta: "Elige primero una ruta (o crea una) para añadirle salidas.",
     fuente_red: "Fuente de la red", buscando: "Buscando fuentes NDI…", elige_fuente: "— elige una fuente —",
     receptores_ndi: "receptores NDI", leyendo: "leyendo", latencia_corta: "latencia", descartes: "descartadas",
+    grabar_cuando: "Cuándo graba", g_siempre: "Siempre que la ruta esté encendida", g_manual: "A mano (botón Grabar)", g_horario: "Entre dos horas",
+    g_desde: "Desde", g_hasta: "Hasta", grabar_btn: "● Grabar", parar_btn: "■ Parar", marca_btn: "Marca", marca_puesta: (h) => `Marca a los ${h}.`, rec: "REC",
     seleccion: "Selección", seleccionados: (n) => `${n} bloques seleccionados`, seleccion_nota: "Se mueven juntos arrastrando cualquiera. Mayús + clic añade o quita; Esc deselecciona.",
     borrar_seleccion: "Borrar los seleccionados", confirmar_borrar_varios: (n) => `Hay rutas en marcha entre los ${n} bloques. ¿Borrarlos?`, borrados: (n) => `${n} bloques borrados`,
-    atajos: "Atajos: N nueva ruta · Supr borra lo seleccionado · Mayús+clic selección múltiple · Ctrl+S aplicar · Ctrl+Z deshacer · Esc cerrar · 1/2/3 pestañas",
+    atajos: "Atajos: N nueva ruta · M marca en la grabación · Supr borra lo seleccionado · Mayús+clic selección múltiple · Ctrl+S aplicar · Ctrl+Z deshacer · Esc cerrar · 1/2/3 pestañas",
     cam_res: "Resolución", cam_fps: "Imágenes por segundo", cam_fmt: "Formato", cam_lat: "Latencia",
     fmt_auto: "Automático", fmt_mjpeg: "MJPEG (comprimido)", fmt_crudo: "Sin comprimir", lat_normal: "Normal", lat_baja: "Baja", lat_minima: "Mínima (sin audio)",
     cam_nota: "Se aplican al momento: la cámara se reinicia un instante.", cam_aplicado: "Ajuste de la cámara aplicado.",
@@ -3136,7 +3262,9 @@ const RT = {
       fuente_sin_imagen: "The source is on the network but sends no picture. In OBS, check that the source is active and showing something.", ndi_repetido: "Another route uses that NDI name.",
       hdmi_ocupado: "Another route has that monitor.", pantalla_no_esta: "That monitor is not connected.",
       sin_monitor: "No monitor is connected.", url_rtmp_invalida: "The RTMP URL is not valid.",
-      ruta_invalida: "That route no longer exists.",
+      ruta_invalida: "That route no longer exists.", sesion_grabando: "That session is being recorded: stop the route first.",
+      union_fallida: "Could not prepare the download.", sin_grabacion: "That route has no recording output.", sin_sesion: "No recording is running.",
+      usb_invalido: "That USB drive is gone.", copia_en_curso: "A copy is already running.", usb_fallo: "The USB drive failed (format?).",
       sin_gpu: "This device cannot encode H.264 for this output (no usable GPU).",
       camara_ocupada: "Another route already uses that camera: a camera can only be in one.",
       audio_ocupado: "Another route already uses that audio.", audio_red_no_soportado: "Audio from another network source is not supported yet: use the same input's audio or a USB audio.",
@@ -3158,9 +3286,11 @@ const RT = {
     elige_ruta: "Pick a route first (or create one) to add outputs to it.",
     fuente_red: "Network source", buscando: "Looking for NDI sources…", elige_fuente: "— pick a source —",
     receptores_ndi: "NDI receivers", leyendo: "reading", latencia_corta: "latency", descartes: "dropped",
+    grabar_cuando: "When it records", g_siempre: "Whenever the route is on", g_manual: "By hand (Record button)", g_horario: "Between two times",
+    g_desde: "From", g_hasta: "Until", grabar_btn: "● Record", parar_btn: "■ Stop", marca_btn: "Marker", marca_puesta: (h) => `Marker at ${h}.`, rec: "REC",
     seleccion: "Selection", seleccionados: (n) => `${n} blocks selected`, seleccion_nota: "They move together when you drag any of them. Shift + click adds or removes; Esc deselects.",
     borrar_seleccion: "Delete selected", confirmar_borrar_varios: (n) => `Some of the ${n} blocks are running routes. Delete them?`, borrados: (n) => `${n} blocks deleted`,
-    atajos: "Shortcuts: N new route · Del deletes the selection · Shift+click multi-select · Ctrl+S apply · Ctrl+Z undo · Esc close · 1/2/3 tabs",
+    atajos: "Shortcuts: N new route · M marker in the recording · Del deletes the selection · Shift+click multi-select · Ctrl+S apply · Ctrl+Z undo · Esc close · 1/2/3 tabs",
     cam_res: "Resolution", cam_fps: "Frames per second", cam_fmt: "Format", cam_lat: "Latency",
     fmt_auto: "Automatic", fmt_mjpeg: "MJPEG (compressed)", fmt_crudo: "Uncompressed", lat_normal: "Normal", lat_baja: "Low", lat_minima: "Minimal (no audio)",
     cam_nota: "They apply at once: the camera restarts for a moment.", cam_aplicado: "Camera setting applied.",
@@ -3344,6 +3474,15 @@ function rtPintarGuardado() {
     rel("button", { class: "boton principal", type: "button", id: "rtAplicar", text: rt("aplicar_cambios"), onclick: rtGuardar }),
     rel("button", { class: "boton", type: "button", text: rt("descartar"), onclick: rtDescartar }));
 }
+// Grabar / Parar y marcas: van al momento (no esperan a Aplicar)
+async function rtGrabar(r, si) {
+  try { await api("/api/rutas/grabar", { ruta: r.id, grabando: si }); rtAviso(si ? rt("grabar_btn") : rt("parar_btn")); setTimeout(rtCargar, 2500); }
+  catch (err) { rtAviso(err.message, true); }
+}
+async function rtMarca(r) {
+  try { const d = await api("/api/rutas/marca", { ruta: r ? r.id : "" }); rtAviso(rt("marca_puesta")(d.marca.hora)); pintarGrabaciones.forzar = true; }
+  catch (err) { rtAviso(err.message, true); }
+}
 function rtDescartar() {
   RB = rtBorradorDe(RD); rtSel = null; rtCableSel = null; rtPintarGuardado(); rtPintar();
 }
@@ -3519,6 +3658,7 @@ function rtCrearNodo(n) {
     cuerpo.append(etqs, rtPuerto(n.id, "p", rt("programa"), "sal", titulo));
   } else {
     cuerpo.append(rtPuerto(n.id, "p", "«" + n.r.nombre + "»", "ent", titulo), rel("small", { text: rtTextoSalida(n.r, n.s) }));
+    if (n.s.tipo === "grabar" && est === "ok") cuerpo.append(rel("span", { class: "etq rec", text: rt("rec") }));
   }
   caja.append(cab, cuerpo);
   caja.addEventListener("dblclick", (ev) => { if (!ev.target.closest(".rt-enchufe")) rtSeleccionar(n.id); });
@@ -3819,8 +3959,21 @@ function rtAjustesSalida(r, s) {
       const oculto = url.type === "password"; url.type = oculto ? "text" : "password"; ver.textContent = rt(oculto ? "ocultar" : "mostrar"); ver.setAttribute("aria-pressed", String(oculto)); } });
     t.push(rtCampo("rtUrl", rt("url_rtmp"), rel("div", { class: "rt-desliza" }, url, ver)));
   }
-  if (s.tipo === "grabar") t.push(rtCampo("rtFmt", rt("formato"), rel("select", { id: "rtFmt", onchange: (ev) => { s.formato = ev.target.value; rtCambio(); } },
-    ...["mp4", "mkv"].map((f) => rel("option", { value: f, text: f.toUpperCase(), selected: (s.formato || "mp4") === f })))), rel("div", { class: "nota", text: rt("grabar_nota") }));
+  if (s.tipo === "grabar") {
+    const e = rtEstado(r.id);
+    t.push(rtCampo("rtFmt", rt("formato"), rel("select", { id: "rtFmt", onchange: (ev) => { s.formato = ev.target.value; rtCambio(); } },
+      ...["mp4", "mkv"].map((f) => rel("option", { value: f, text: f.toUpperCase(), selected: (s.formato || "mp4") === f })))));
+    t.push(rtCampo("rtCuando", rt("grabar_cuando"), rel("select", { id: "rtCuando", onchange: (ev) => { s.cuando = ev.target.value; rtCambio(); rtPintar(); } },
+      ...[["siempre", rt("g_siempre")], ["manual", rt("g_manual")], ["horario", rt("g_horario")]].map(([v, txt]) => rel("option", { value: v, text: txt, selected: (s.cuando || "siempre") === v })))));
+    if (s.cuando === "horario") t.push(rel("div", { class: "rt-dos" },
+      rtCampo("rtDesde", rt("g_desde"), rel("input", { type: "time", id: "rtDesde", value: s.desde || "09:00", onchange: (ev) => { s.desde = ev.target.value; rtCambio(); } })),
+      rtCampo("rtHasta", rt("g_hasta"), rel("input", { type: "time", id: "rtHasta", value: s.hasta || "18:00", onchange: (ev) => { s.hasta = ev.target.value; rtCambio(); } }))));
+    if (s.cuando === "manual" || e.grabando) t.push(rel("div", { class: "botones" },
+      rel("button", { class: "boton " + (e.grabando ? "peligro" : "principal"), type: "button", text: e.grabando ? rt("parar_btn") : rt("grabar_btn"), onclick: () => rtGrabar(r, !e.grabando) }),
+      e.grabando ? rel("button", { class: "boton", type: "button", text: rt("marca_btn"), onclick: () => rtMarca(r) }) : null));
+    if (e.grabando && e.sesion) t.push(rel("div", { class: "nota", text: rt("ses_grabando") + ": " + e.sesion }));
+    t.push(rel("div", { class: "nota", text: rt("grabar_nota") }));
+  }
   if (s.tipo === "hdmi") {
     const pants = (RD || {}).pantallas || [];
     const actual = s.pantalla && s.pantalla !== "auto" ? s.pantalla : "auto";
@@ -4006,8 +4159,16 @@ function rtPintarMonitor() {
       if (e.descartes) cifras.push(cifra(String(e.descartes), rt("descartes")));
     }
     const vu = r.audio ? rel("div", { class: "rt-vu" }, rel("i")) : null; if (vu) rtVu(vu.firstChild, e);
-    const salidas = rel("div", { class: "rt-chips" }, ...r.salidas.map((s) => rel("span", { class: "etq " + ({ ok: "ok", error: "mal", esperando: "aviso" }[(e.salidas || {})[s.id]] || ""),
+    const salidas = rel("div", { class: "rt-chips" }, ...r.salidas.map((s) => rel("span", { class: "etq " + (s.tipo === "grabar" && (e.salidas || {})[s.id] === "ok" ? "rec" : ({ ok: "ok", error: "mal", esperando: "aviso" }[(e.salidas || {})[s.id]] || "")),
       text: rt("salidas")[s.tipo] + (s.tipo === "hdmi" ? " " + rtTextoSalida(r, s).replace(/ ·.*$/, "") : "") })));
+    // grabar / parar y marcas, desde el Monitor
+    const g = r.salidas.find((x) => x.tipo === "grabar");
+    const botones = [];
+    if (g && e.estado === "en_marcha") {
+      botones.push(rel("button", { class: "boton " + (e.grabando ? "peligro" : "principal"), type: "button", text: e.grabando ? rt("parar_btn") : rt("grabar_btn"),
+        onclick: () => rtGrabar(r, !e.grabando) }));
+      if (e.grabando) botones.push(rel("button", { class: "boton", type: "button", text: rt("marca_btn"), onclick: () => rtMarca(r) }));
+    }
     const errs = rtErrores(r.id).map((c) => rel("div", { class: "rt-err", text: rt("errores")[c] || c }));
     return rel("section", { class: "tarjeta fuente rt-tarjeta" + (enPausa ? " pausada" : ""), "data-id": r.id },
       rel("div", { class: "fuente-cab" }, rel("div", null, rel("h3", { text: r.nombre }), rel("div", { class: "sub", text: `${rt("imagen")}: ${v ? v.nombre : "—"}` })),
@@ -4015,7 +4176,8 @@ function rtPintarMonitor() {
         rel("span", { class: "etq " + ({ en_marcha: "ok", error: "mal", esperando: "aviso" }[e.estado] || ""), text: rt("est")[e.estado] || "—" }),
         rel("button", { class: "boton", type: "button", text: rt("ajustes"), onclick: () => { pestana = "rutas"; aplicarPestana(); rtSeleccionar("r:" + r.id); } })),
       rel("div", { class: "fuente-cuerpo" }, vista,
-        rel("div", null, vu, cifras.length ? rel("div", { class: "rt-cifras" }, ...cifras) : null, salidas, ...errs)));
+        rel("div", null, vu, cifras.length ? rel("div", { class: "rt-cifras" }, ...cifras) : null, salidas, ...errs,
+          botones.length ? rel("div", { class: "botones", style: "margin-top:10px" }, ...botones) : null)));
   });
   const nuevo = rel("div", null, rel("div", { class: "fuente-cab" }, rel("div", null, rel("h3", { text: rt("monitor_t") })),
     rel("button", { class: "boton", type: "button", text: rt("ver_rutas"), onclick: () => { pestana = "rutas"; aplicarPestana(); rtPintar(); } })),
@@ -4068,6 +4230,7 @@ function rtIniciar() {
     if (ev.key === "Escape") { if (rtTocado) { rtTocado = null; rtMarcarTocado(); } else rtCerrarHoja(); return; }
     if (escribiendo) return;
     if (ev.key.toLowerCase() === "n") { ev.preventDefault(); rtNuevaRuta(); return; }
+    if (ev.key.toLowerCase() === "m") { ev.preventDefault(); rtMarca(rtSel && rtSel.startsWith("r:") ? rtRuta(rtSel.slice(2)) : null); return; }
     if (ev.key === "?") { rtAviso(rt("atajos")); return; }
     // solo Suprimir: Retroceso es demasiado fácil de pulsar sin querer
     if (ev.key === "Delete") {

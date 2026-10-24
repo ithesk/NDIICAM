@@ -485,12 +485,13 @@ class Auxiliar:
         self.c = {}
         self.prev = None
         self.parado = None          # desde cuándo está activo sin sacar nada
+        self.sesion = None          # sesión de grabación abierta (relevo en modo grabar)
         self.stats = {"fps": 0, "mbps": 0, "audio_activo": False}
 
     def arrancar(self, obj):
         self.obj = obj
         self.estado, self.error = "conectando", ""
-        self.c, self.prev, self.parado = {}, None, None
+        self.c, self.prev, self.parado, self.sesion = {}, None, None, None
         self.stats = {"fps": 0, "mbps": 0, "audio_activo": False}
         self.proc = lanzar(self.script, obj, env=entorno_va())
         threading.Thread(target=self._leer, args=(self.proc,), daemon=True).start()
@@ -515,6 +516,8 @@ class Auxiliar:
                 break
             if "error" in d:
                 self._fallo(d["error"])
+            elif "sesion" in d:
+                self.sesion = d["sesion"]       # la grabación que acaba de abrir (relevo)
             else:
                 self.c = d
         proc.wait()
@@ -621,7 +624,7 @@ class MotorRutas:
         """Entradas y rutas → plan, sin tocar ningún proceso."""
         self.entradas = self.entradas_actuales(cams, cfg)
         limpias, err = rutas_mod.validar(cfg.get("rutas") or [], self.entradas)
-        pl = rutas_mod.plan(limpias, self.entradas, simultaneo(cfg), err, pantallas)
+        pl = rutas_mod.plan(limpias, self.entradas, simultaneo(cfg), err, pantallas, time.strftime("%H:%M"))
         self.ultimo, self.limpias, self._err = pl, limpias, err
         return pl
 
@@ -693,6 +696,19 @@ class MotorRutas:
                 self.lanzado[pr["clave"]] = obj
         # los errores, de una vez: el panel los lee desde otro hilo
         self.errores = {k: sorted(set(v)) for k, v in self._err.items() if v}
+
+    def sesiones_vivas(self):
+        """Nombres de las sesiones de grabación abiertas ahora mismo."""
+        return {p.sesion for c, p in list(self.procs.items())
+                if c.startswith("relevo:") and p.proc is not None and getattr(p, "sesion", None)}
+
+    def sesion_de(self, ruta_id):
+        """La sesión que graba esa ruta, o la primera que haya si no se dice cuál."""
+        for c, p in list(self.procs.items()):
+            if c.startswith("relevo:") and p.proc is not None and getattr(p, "sesion", None) \
+                    and (not ruta_id or c.split(":")[1] == ruta_id):
+                return p.sesion
+        return None
 
     def nuevo(self, pr, cams):
         if pr["clase"] == "camara":
@@ -803,7 +819,7 @@ class MotorRutas:
             info = PUENTE.ruta_info(pr["desde"])
             if not corriendo and not info.get("publicando"):
                 return None             # aún no hay nada que reenviar o grabar
-            obj = {"nombre": pr["nombre_ruta"], "desde": f"{local}/{pr['desde']}", "modo": pr["modo"],
+            obj = {"nombre": pr["nombre_ruta"], "ruta": pr["ruta"], "desde": f"{local}/{pr['desde']}", "modo": pr["modo"],
                    "con_audio": p.obj.get("con_audio", True) if corriendo else trae_audio(info)}
             if pr["modo"] == "rtmp":
                 obj["url"] = pr["url"]
@@ -882,7 +898,10 @@ class MotorRutas:
                     salidas[s["id"]] = "pausada"
                 elif s["tipo"] in ("rtmp", "grabar"):     # su propio relevo
                     p = self.procs.get(f"relevo:{rid}:{s['id']}")
-                    salidas[s["id"]] = estado_proceso(p) if p else "esperando"
+                    if p is None and s["tipo"] == "grabar" and not rutas_mod.grabar_ahora(s):
+                        salidas[s["id"]] = "parada"       # no le toca grabar (a mano u horario)
+                    else:
+                        salidas[s["id"]] = estado_proceso(p) if p else "esperando"
                 elif s["tipo"] in ("obs", "srt"):         # lo sirve MediaMTX
                     salidas[s["id"]] = "ok" if info.get("publicando") else "esperando"
                 elif s["tipo"] == "hdmi" and "hdmi_fallido" in err:
@@ -890,7 +909,10 @@ class MotorRutas:
                 else:                                    # NDI y HDMI: los de la ruta
                     salidas[s["id"]] = "ok" if est == "en_marcha" else "esperando"
             crudo = getattr(principal, "c", None) or {}
+            grabando = [p for c, p in por_ruta.get(rid, []) if c.startswith("relevo:") and (p.obj or {}).get("modo") == "grabar"
+                        and p.proc is not None and getattr(p, "sesion", None)]
             res[rid] = {"estado": est, "errores": err, "salidas": salidas,
+                        "grabando": bool(grabando), "sesion": grabando[0].sesion if grabando else None,
                         "lectores": info.get("lectores", 0),
                         "fps": st.get("fps_enviados", st.get("fps", 0)),
                         "fps_camara": st.get("fps_camara"), "mbps": st.get("mbps_camara", st.get("mbps")),

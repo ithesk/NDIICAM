@@ -325,9 +325,9 @@ class Pantallas(unittest.TestCase):
 
 class Grabaciones(unittest.TestCase):
     def test_lista_ordenada_y_filtrada(self):
-        original = estado.GRABACIONES
+        original = estado.grab_mod.DIR
         with tempfile.TemporaryDirectory() as d:
-            estado.GRABACIONES = d
+            estado.grab_mod.DIR = d
             for n, t in (("a_2026-01-01_10-00-00.mp4", 100), ("b_2026-01-01_11-00-00.mp4", 200)):
                 with open(os.path.join(d, n), "wb") as fh:
                     fh.write(b"x" * 10)
@@ -336,7 +336,7 @@ class Grabaciones(unittest.TestCase):
             g = estado.grabaciones()
             self.assertEqual([x["nombre"] for x in g["lista"]], ["b_2026-01-01_11-00-00.mp4", "a_2026-01-01_10-00-00.mp4"])
             self.assertIsNotNone(g["libre"])
-        estado.GRABACIONES = original
+        estado.grab_mod.DIR = original
         self.assertEqual(estado.grabaciones.__name__, "grabaciones")
 
 

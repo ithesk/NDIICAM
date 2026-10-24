@@ -14,6 +14,7 @@ de bus interno: cada ruta con salidas de red publica UN programa en live/<camino
 y de ahí lo leen OBS, la TV y SRT; un relevo (relevo.py) lo graba o lo reenvía
 hacia YouTube. Así, si se cae una salida de red, las demás siguen."""
 import re
+import time
 import unicodedata
 
 TIPOS_ENTRADA = ("usb_cam", "usb_audio", "ndi", "ingesta")
@@ -146,6 +147,12 @@ def validar(rutas, entradas):
                 ns["pantalla"] = pant if re.fullmatch(r"[\w-]+", pant) else "auto"
             elif tipo == "grabar":
                 ns["formato"] = "mkv" if str(s.get("formato") or "").lower() == "mkv" else "mp4"
+                # cuándo graba: siempre que la ruta esté encendida, a mano (botón
+                # Grabar) o entre dos horas del día
+                ns["cuando"] = s.get("cuando") if s.get("cuando") in ("manual", "siempre", "horario") else "siempre"
+                ns["desde"] = hora_valida(s.get("desde"), "09:00")
+                ns["hasta"] = hora_valida(s.get("hasta"), "18:00")
+                ns["grabando"] = bool(s.get("grabando"))      # el estado del botón Grabar
             elif tipo == "rtmp":
                 ns["url"] = str(s.get("url") or "").strip()
                 if not URL_RTMP.match(ns["url"]):
@@ -159,6 +166,25 @@ def validar(rutas, entradas):
         if err:
             errores[rid] = sorted(set(err))
     return limpias, errores
+
+
+def hora_valida(h, defecto):
+    h = str(h or "").strip()
+    return h if re.fullmatch(r"([01]\d|2[0-3]):[0-5]\d", h) else defecto
+
+
+def grabar_ahora(s, hora=None):
+    """Si una salida de grabación tiene que estar grabando en este momento."""
+    cuando = s.get("cuando", "siempre")
+    if cuando == "siempre":
+        return True
+    if cuando == "manual":
+        return bool(s.get("grabando"))
+    hora = hora or time.strftime("%H:%M")
+    desde, hasta = s.get("desde", "09:00"), s.get("hasta", "18:00")
+    if desde <= hasta:
+        return desde <= hora < hasta
+    return hora >= desde or hora < hasta        # de noche: cruza la medianoche
 
 
 def asignar_pantalla(pedida, conectadas, usadas, err):
@@ -189,7 +215,7 @@ def asignar_pantalla(pedida, conectadas, usadas, err):
     return False
 
 
-def plan(rutas, entradas, potente, errores=None, pantallas=None):
+def plan(rutas, entradas, potente, errores=None, pantallas=None, hora=None):
     """Qué procesos tienen que correr para estas rutas y qué sirve MediaMTX.
 
     entradas: las detectadas (USB) y las de la red, con id, tipo y lo suyo (dev,
@@ -280,7 +306,9 @@ def plan(rutas, entradas, potente, errores=None, pantallas=None):
             if s["tipo"] == "rtmp" and URL_RTMP.match(s.get("url", "")):
                 procesos.append({**base, "clave": f"relevo:{r['id']}:{s['id']}", "clase": "relevo",
                                  "desde": publicar, "modo": "rtmp", "url": s["url"]})
-            elif s["tipo"] == "grabar":
+            elif s["tipo"] == "grabar" and grabar_ahora(s, hora):
+                # el proceso existe solo mientras toca grabar: arrancarlo empieza una
+                # sesión y pararlo la cierra (el fichero queda completo)
                 procesos.append({**base, "clave": f"relevo:{r['id']}:{s['id']}", "clase": "relevo",
                                  "desde": publicar, "modo": "grabar", "prefijo": r["camino"],
                                  "formato": s.get("formato", "mp4")})

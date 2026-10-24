@@ -15,6 +15,7 @@ from camaras import camaras as camaras_conectadas, modo_consola_activo, pantalla
 from gpu import (capacidad_gpu, capacidad_vpp, decodificador_h264, energia_rapl,
     edicion, simultaneo, tiempos_cpu, tiempos_gpu, uso_gpu, vatios)
 from puente import PUENTE
+import grabaciones as grab_mod
 from supervisor import ocultar_clave_rtmp
 import rutas as rutas_mod
 import sistema
@@ -64,19 +65,13 @@ def estado_receptor():
             "gpu": bool(rx.obj and rx.obj.get("gpu_h264"))}
 
 def grabaciones():
-    try:
-        nombres = [n for n in os.listdir(GRABACIONES) if NOMBRE_GRABACION.match(n)]
-    except OSError:
-        return {"lista": [], "libre": None}
-    lista = []
-    for n in nombres:
-        try:
-            st = os.stat(os.path.join(GRABACIONES, n))
-        except OSError:
-            continue
-        lista.append({"nombre": n, "bytes": st.st_size, "fecha": st.st_mtime})
-    lista.sort(key=lambda x: x["fecha"], reverse=True)
-    return {"lista": lista, "libre": shutil.disk_usage(GRABACIONES).free}
+    """Las sesiones de grabación (y los ficheros sueltos de antes), con las que
+    están grabando ahora marcadas como vivas."""
+    vivas = nucleo.FUENTES.motor.sesiones_vivas() if nucleo.FUENTES else set()
+    d = grab_mod.listar(vivas)
+    # compatibilidad con el panel de los modos: "lista" son los sueltos
+    d["lista"] = d.get("sueltos", [])
+    return d
 
 def estado_rutas():
     """Todo lo que necesita el panel de rutas: entradas (con lo que llega por la red),

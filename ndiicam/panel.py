@@ -30,6 +30,7 @@ from supervisor import ocultar_clave_rtmp
 from camaras import camaras as camaras_conectadas
 from estado import estado_rutas
 import rutas as rutas_mod
+import grabaciones as grab_mod
 from actualizador import (cambiar_nombre_equipo, reiniciar_servicio, respaldo, restaurar,
     valores_fabrica)
 from estado import grabaciones
@@ -387,6 +388,8 @@ class Panel(BaseHTTPRequestHandler):
             self._error("usar_post", 405)
         elif url.path.startswith("/grabaciones/"):
             self._descargar(url.path[len("/grabaciones/"):])
+        elif url.path == "/api/usb":
+            self._json({"discos": grab_mod.usb_discos(), "copia": grab_mod.estado_copia()})
         elif url.path == "/api/wifi/redes":
             buscar = parse_qs(url.query).get("buscar") == ["1"]
             self._json({"redes": nucleo.RED.redes(buscar), "guardadas": nucleo.RED.guardadas()})
@@ -422,23 +425,70 @@ class Panel(BaseHTTPRequestHandler):
         nucleo.INTENTOS.fallo(cliente_ip(self))
         return False
 
-    def _descargar(self, nombre):
-        if not NOMBRE_GRABACION.match(nombre):
+    def _descargar(self, camino):
+        """Un fichero de grabaciones: suelto (nombre.ext), de una sesión
+        (sesion/trozo-01.mkv, sesion/completa.mp4, sesion/miniatura.jpg) o las
+        marcas de una sesión (sesion/marcas.txt, que se generan al vuelo). Admite
+        Range: las descargas grandes se reanudan y el reproductor puede saltar."""
+        partes = camino.split("/")
+        if len(partes) == 2 and grab_mod.SESION_RE.match(partes[0]) and partes[1] == "marcas.txt":
+            cuerpo = grab_mod.marcas_txt(partes[0]).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "text/plain; charset=utf-8")
+            self.send_header("Content-Disposition", f'attachment; filename="{partes[0]}-marcas.txt"')
+            self.send_header("Content-Length", str(len(cuerpo)))
+            self.end_headers()
+            self.wfile.write(cuerpo)
+            return
+        if len(partes) == 2 and grab_mod.SESION_RE.match(partes[0]) and grab_mod.TROZO_RE.match(partes[1]):
+            ruta, nombre = os.path.join(GRABACIONES, partes[0], partes[1]), f"{partes[0]}-{partes[1]}"
+            en_linea = partes[1].endswith(".jpg") or self.headers.get("Range") is not None
+        elif len(partes) == 1 and NOMBRE_GRABACION.match(camino):
+            ruta, nombre, en_linea = os.path.join(GRABACIONES, camino), camino, self.headers.get("Range") is not None
+        else:
             return self._error("no_encontrado", 404)
-        ruta = os.path.join(GRABACIONES, nombre)
         try:
             f = open(ruta, "rb")
         except OSError:
             return self._error("no_encontrado", 404)
         with f:
+            total = os.fstat(f.fileno()).st_size
+            inicio, fin = 0, total - 1
+            rango = self.headers.get("Range", "")
+            m = re.fullmatch(r"bytes=(\d*)-(\d*)", rango.strip()) if rango else None
+            if m and (m.group(1) or m.group(2)):
+                if m.group(1):
+                    inicio = int(m.group(1))
+                    fin = min(int(m.group(2)), total - 1) if m.group(2) else total - 1
+                else:                       # bytes=-N: los últimos N
+                    inicio = max(0, total - int(m.group(2)))
+                if inicio >= total or inicio > fin:
+                    self.send_response(416)
+                    self.send_header("Content-Range", f"bytes */{total}")
+                    self.send_header("Content-Length", "0")
+                    self.end_headers()
+                    return
             self.connection.settimeout(60)     # por WiFi floja un trozo puede tardar
-            self.send_response(200)
-            self.send_header("Content-Type", "video/x-matroska" if nombre.endswith(".mkv") else "video/mp4")
-            self.send_header("Content-Disposition", f'attachment; filename="{nombre}"')
-            self.send_header("Content-Length", str(os.fstat(f.fileno()).st_size))
+            self.send_response(206 if m else 200)
+            tipo = ("video/x-matroska" if ruta.endswith(".mkv") else "image/jpeg" if ruta.endswith(".jpg")
+                    else "text/plain" if ruta.endswith(".txt") else "video/mp4")
+            self.send_header("Content-Type", tipo)
+            self.send_header("Accept-Ranges", "bytes")
+            if not en_linea:
+                self.send_header("Content-Disposition", f'attachment; filename="{nombre}"')
+            if m:
+                self.send_header("Content-Range", f"bytes {inicio}-{fin}/{total}")
+            self.send_header("Content-Length", str(fin - inicio + 1))
             self.end_headers()
             try:
-                shutil.copyfileobj(f, self.wfile, 1024 * 1024)
+                f.seek(inicio)
+                falta = fin - inicio + 1
+                while falta > 0:
+                    trozo = f.read(min(1024 * 1024, falta))
+                    if not trozo:
+                        break
+                    self.wfile.write(trozo)
+                    falta -= len(trozo)
             except (BrokenPipeError, ConnectionResetError):
                 pass
 
@@ -503,14 +553,68 @@ class Panel(BaseHTTPRequestHandler):
             return self._fuente(d)
         if ruta == "/api/grabaciones/borrar":
             nombre = str(d.get("nombre", ""))
-            if not NOMBRE_GRABACION.match(nombre):
-                return self._error("no_encontrado", 404)
-            try:
-                os.remove(os.path.join(GRABACIONES, nombre))
-            except OSError:
+            if grab_mod.SESION_RE.match(nombre) and os.path.isdir(os.path.join(GRABACIONES, nombre)):
+                if nombre in nucleo.FUENTES.motor.sesiones_vivas():
+                    return self._error("sesion_grabando")
+                grab_mod.borrar(nombre)
+            elif NOMBRE_GRABACION.match(nombre):
+                try:
+                    os.remove(os.path.join(GRABACIONES, nombre))
+                except OSError:
+                    return self._error("no_encontrado", 404)
+            else:
                 return self._error("no_encontrado", 404)
             evento("grabacion_borrada", nombre=nombre)
             return self._json({"ok": True})
+        if ruta in ("/api/grabaciones/proteger", "/api/grabaciones/unir"):
+            nombre = str(d.get("nombre", ""))
+            if not grab_mod.SESION_RE.match(nombre) or not os.path.isdir(os.path.join(GRABACIONES, nombre)):
+                return self._error("no_encontrado", 404)
+            if ruta.endswith("proteger"):
+                grab_mod.proteger(nombre, bool(d.get("si", True)))
+            elif not grab_mod.unir(nombre):
+                return self._error("union_fallida")
+            return self._json({"ok": True})
+        if ruta == "/api/rutas/grabar":
+            # el botón Grabar / Parar de una ruta: la salida pasa a modo manual con ese
+            # estado; el supervisor arranca o cierra la sesión en la siguiente vuelta
+            cfg = nucleo.CONF.get()
+            rutas = [dict(r) for r in cfg.get("rutas") or []]
+            r = next((x for x in rutas if x.get("id") == str(d.get("ruta", ""))), None)
+            if r is None:
+                return self._error("ruta_invalida")
+            sal = [dict(s) for s in r.get("salidas") or []]
+            g = next((s for s in sal if s.get("tipo") == "grabar" and (not d.get("salida") or s.get("id") == d.get("salida"))), None)
+            if g is None:
+                return self._error("sin_grabacion")
+            g["cuando"], g["grabando"] = "manual", bool(d.get("grabando"))
+            r["salidas"] = sal
+            nucleo.CONF.actualizar({"rutas": rutas})
+            evento("grabacion_manual", fuente=r.get("nombre", ""), grabar=g["grabando"])
+            return self._json({"ok": True})
+        if ruta == "/api/rutas/marca":
+            sesion = nucleo.FUENTES.motor.sesion_de(str(d.get("ruta", "")))
+            if not sesion:
+                return self._error("sin_sesion")
+            m = grab_mod.marca(sesion, str(d.get("texto", ""))[:80])
+            return self._json({"ok": True, "sesion": sesion, "marca": m})
+        if ruta in ("/api/usb/montar", "/api/usb/expulsar", "/api/usb/copiar"):
+            dev = str(d.get("dev", ""))
+            if dev not in {x["dev"] for x in grab_mod.usb_discos()}:
+                return self._error("usb_invalido")
+            try:
+                if ruta.endswith("montar"):
+                    return self._json({"ok": True, "montado": grab_mod.usb_montar(dev)})
+                if ruta.endswith("expulsar"):
+                    grab_mod.usb_expulsar(dev)
+                    return self._json({"ok": True})
+                sesiones = [str(x) for x in (d.get("sesiones") or []) if grab_mod.SESION_RE.match(str(x))]
+                if grab_mod.estado_copia().get("en_curso"):
+                    return self._error("copia_en_curso")
+                grab_mod.copiar_a_usb(dev, sesiones, bool(d.get("unidas")))
+                return self._json({"ok": True})
+            except (OSError, RuntimeError) as ex:
+                return self._error("usb_fallo")
         if ruta == "/api/reiniciar":
             nucleo.FUENTES.reiniciar_todo()
             evento("reinicio_manual", modo=nucleo.CONF.get()["modo"])

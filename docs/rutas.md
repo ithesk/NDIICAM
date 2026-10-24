@@ -83,7 +83,7 @@ etiqueta *copia* lo indica. No gasta GPU y no pierde calidad.
 | **OBS · TV · móvil** | Lo deja disponible en la red, para que lo lea quien quiera (ver abajo). |
 | **SRT** | Lo mismo, por SRT, para enlaces menos fiables. |
 | **RTMP (YouTube…)** | Lo emite a YouTube, Twitch, Facebook… con la URL y la clave del servicio. |
-| **Grabar** | Archivos MP4 o MKV de 10 minutos en el equipo, que se descargan desde *Monitor › Grabaciones*. Si el disco se llena, borra lo más viejo. |
+| **Grabar** | Graba el programa en el equipo, por **sesiones** (ver abajo): siempre que la ruta esté encendida, a mano con el botón **Grabar**, o entre dos horas. |
 
 Las direcciones para leer una ruta, con `<camino>` el nombre de la ruta en minúsculas y sin
 espacios (lo muestra el engranaje de la salida):
@@ -165,6 +165,30 @@ latencia, descartes, tally, el estado de cada salida y sus errores. Las rutas en
 una línea.
 
 ![Monitor con el motor de rutas: tres rutas en marcha](screenshots/routes-monitor-es.png)
+
+## Grabaciones
+
+Cada vez que empieza a grabar (al encender la ruta, al pulsar **Grabar** o al entrar en el
+horario) se abre una **sesión** con el nombre de la ruta y la hora: `Culto_2026-10-25_11-00-00`.
+Por dentro son trozos de 10 minutos (si se va la luz, lo grabado hasta entonces queda bien);
+por fuera, en *Monitor › Grabaciones*, es una sola fila con su miniatura, duración, tamaño y:
+
+- **Reproducir** (MP4) sin descargar, saltando a cualquier punto.
+- **Descargar entera**: un solo fichero. Si la sesión tiene varios trozos, primero **Preparar
+  descarga** los une sin recodificar (tarda unos segundos por hora de vídeo).
+- **Trozos**: los ficheros de 10 minutos, uno a uno.
+- **Marcas**: durante la grabación, el botón **Marca** (o la tecla `M`) apunta la hora; se
+  descargan como lista de capítulos para YouTube (`00:12:34 Sermón`).
+- **Proteger**: la limpieza automática no la toca. Sin proteger, cuando el disco se llena se
+  borran primero las sesiones más viejas; el panel avisa cuando queda poco sitio.
+- **Cortada**: la sesión se quedó sin cerrar (se fue la luz, se cayó el ATEM); lo grabado vale.
+
+El vídeo se graba tal como llega, sin recodificar. Elige **MP4** si quieres reproducir en el
+navegador, **MKV** si prefieres el formato más robusto para editar.
+
+**Memoria USB**: enchufa un pendrive o un disco al equipo y aparece en *Grabaciones*: **Montar**,
+**Copiar las sesiones** (o unidas, en un fichero cada una) y **Expulsar**. Por cable también
+puedes sacarlas con `scp` desde `/var/lib/ndiicam/grabaciones/`.
 
 ## Sincronizar el audio de otra entrada
 

@@ -700,3 +700,36 @@ class Mirillas(BaseMotor):
         supervisor.nucleo.PANEL_VISTO = supervisor.time.time() - 60
         self.assertEqual(self.paso2([]), {})
         self.assertTrue(mir.terminado)
+
+
+class CuandoGraba(unittest.TestCase):
+    """La salida de grabación: siempre, a mano o entre dos horas."""
+
+    def test_modos(self):
+        self.assertTrue(rutas.grabar_ahora({"cuando": "siempre"}))
+        self.assertFalse(rutas.grabar_ahora({"cuando": "manual"}))
+        self.assertTrue(rutas.grabar_ahora({"cuando": "manual", "grabando": True}))
+        h = {"cuando": "horario", "desde": "09:00", "hasta": "18:00"}
+        self.assertTrue(rutas.grabar_ahora(h, "09:00")); self.assertTrue(rutas.grabar_ahora(h, "17:59"))
+        self.assertFalse(rutas.grabar_ahora(h, "18:00")); self.assertFalse(rutas.grabar_ahora(h, "03:00"))
+        noche = {"cuando": "horario", "desde": "22:00", "hasta": "02:00"}
+        self.assertTrue(rutas.grabar_ahora(noche, "23:30")); self.assertTrue(rutas.grabar_ahora(noche, "01:00"))
+        self.assertFalse(rutas.grabar_ahora(noche, "12:00"))
+
+    def test_validar_normaliza(self):
+        limpias, _ = rutas.validar([ruta(salidas=[{"tipo": "grabar", "cuando": "horario", "desde": "7:00", "hasta": "23:30", "grabando": 1}])], ENT)
+        s = limpias[0]["salidas"][0]
+        self.assertEqual((s["cuando"], s["desde"], s["hasta"], s["grabando"]), ("horario", "09:00", "23:30", True))
+        limpias, _ = rutas.validar([ruta(salidas=[{"tipo": "grabar", "cuando": "raro"}])], ENT)
+        self.assertEqual(limpias[0]["salidas"][0]["cuando"], "siempre")
+
+    def test_el_relevo_solo_existe_cuando_toca(self):
+        r = ruta(audio="", salidas=[{"tipo": "obs"}, {"tipo": "grabar", "cuando": "manual"}])
+        limpias, err = rutas.validar([r], ENT)
+        claves = lambda hora: [p["clave"] for p in rutas.plan(limpias, ENT, True, err, None, hora)["procesos"]]
+        self.assertNotIn("relevo:r1:r1-grabar", claves("12:00"))
+        limpias[0]["salidas"][1]["grabando"] = True
+        self.assertIn("relevo:r1:r1-grabar", claves("12:00"))
+        limpias[0]["salidas"][1].update(cuando="horario", desde="10:00", hasta="11:00", grabando=False)
+        self.assertIn("relevo:r1:r1-grabar", claves("10:30"))
+        self.assertNotIn("relevo:r1:r1-grabar", claves("11:30"))
