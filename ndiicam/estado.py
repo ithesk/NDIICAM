@@ -110,12 +110,11 @@ def estado_rutas():
             if sal.get("tipo") == "rtmp" and sal.get("url"):
                 sal["url"] = ocultar_clave_rtmp(sal["url"])
     # las pantallas con monitor y qué ruta tiene cada una
-    de_ruta = {pr["hdmi"]: pr["nombre_ruta"] for pr in (mot.ultimo.get("procesos") or [])
-               if isinstance(pr.get("hdmi"), str)}
-    de_ruta_id = {pr["hdmi"]: pr["ruta"] for pr in (mot.ultimo.get("procesos") or [])
-                  if isinstance(pr.get("hdmi"), str)}
+    # qué ruta tiene cada pantalla de verdad (no la que la tiene asignada pero aún
+    # no puede arrancar: ahí está la pantalla de ayuda)
+    tiene = getattr(mot, "pantalla_ruta", {})
     pants = [{"conector": p["conector"], "id": p["id"], "modo": p["modo"],
-              "ruta": de_ruta_id.get(p["conector"]), "ruta_nombre": de_ruta.get(p["conector"])}
+              "ruta": tiene.get(p["conector"], (None, None))[0], "ruta_nombre": tiene.get(p["conector"], (None, None))[1]}
              for p in pantallas() if p["conectado"] and p["id"]]
     return {"motor": cfg.get("motor", "modos"), "entradas": ents, "rutas": limpias, "pantallas": pants,
             "errores": errores, "estado": est, "activas": activas, "pausadas": pausadas,

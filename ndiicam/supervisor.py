@@ -595,6 +595,7 @@ class MotorRutas:
         self.limpias = []
         self.entradas = []
         self.pantallas_usadas = set()   # conectores que usan (o van a usar) las rutas
+        self.pantalla_ruta = {}         # conector -> (ruta, nombre) de la que de verdad lo tiene
         self._usadas = set()
         self.soltar_hdmi = None  # lo pone Fuentes: para la ayuda de esa pantalla antes de arrancar
 
@@ -644,7 +645,12 @@ class MotorRutas:
             obj = self.objeto(pr, cfg, cams, monitores)
             if obj is not None:
                 deseados[pr["clave"]] = (pr, obj)
-        self.pantallas_usadas = set(self._usadas)
+        # las pantallas que de verdad van a tener un proceso (no las de rutas que
+        # todavía no pueden arrancar): en las demás sale la ayuda
+        self.pantallas_usadas = {m["conector"] for m in monitores.values()
+                                 for _, obj in deseados.values() if obj.get("hdmi") == m["id"]}
+        self.pantalla_ruta = {m["conector"]: (pr["ruta"], pr["nombre_ruta"]) for m in monitores.values()
+                              for pr, obj in deseados.values() if obj.get("hdmi") == m["id"]}
         # cámaras que ninguna ruta usa: mientras alguien mira el panel, una mirilla
         # por cámara (vista previa sin encender ninguna ruta). Se va sola cuando una
         # ruta necesita la cámara (se para antes de arrancarla) o nadie mira
@@ -756,8 +762,6 @@ class MotorRutas:
             monitor = (monitores.get(pr["hdmi"]) if isinstance(pr["hdmi"], str)
                        else next(iter(monitores.values()), None))
         hdmi = monitor["id"] if monitor else None
-        if monitor:
-            self._usadas.add(monitor["conector"])
         p = self.procs.get(pr["clave"])
         corriendo = p is not None and p.proc is not None
         if pr["clase"] == "camara":
@@ -776,7 +780,6 @@ class MotorRutas:
                 dev = None
             if hdmi and f.hdmi_fallido:
                 self._err.setdefault(pr["ruta"], []).append("hdmi_fallido")
-                self._usadas.discard(monitor["conector"])
                 hdmi = None
             obj.update(nombre=pr["ndi"] or cams[pr["cam"]]["nombre"], ndi=bool(pr["ndi"]),
                        audio=dev, hdmi=hdmi, solo_monitor=False, preview=ruta_preview(pr["cam"]), **vivos)
@@ -802,6 +805,12 @@ class MotorRutas:
                         "gpu_h264": capacidad_vpp()["h264"], "ndi_nombre": pr["ndi"],
                         "ndi_audio": True, "audio": audio_hdmi() if hdmi else None}
             if not hdmi:
+                return None
+            if not corriendo and nucleo.BUSCADOR is not None and \
+                    pr["fuente"] not in {x["nombre"] for x in nucleo.BUSCADOR.lista()}:
+                # la fuente NDI no está en la red: no se le da el monitor (se queda la
+                # pantalla de ayuda) ni se arranca un receptor que va a fallar
+                self._err.setdefault(pr["ruta"], []).append("fuente_no_esta")
                 return None
             return {"nombre": pr["fuente"], "hdmi": hdmi, "equipo": f"NDIICAM {socket.gethostname()}",
                     "pantalla": tamano_pantalla(monitor), "plano": True, "audio": audio_hdmi()}

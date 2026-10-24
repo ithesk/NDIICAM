@@ -45,7 +45,9 @@ def alquiler(cfg):
     """kmssink sobre la pantalla que alquila el servicio (ver pantallas.py), con
     skip-vsync: el cambio de página no se deja en un alquiler, y el plano ya
     espera al refresco por su cuenta. Sin alquiler, kmssink abre la tarjeta."""
-    return f" fd={cfg['drm_fd']} skip-vsync=true" if cfg.get("drm_fd") else ""
+    # restore-crtc=false: al soltar la pantalla no se vuelve a lo que había antes
+    # (la consola de Linux); se queda la última imagen hasta que otro pinte
+    return f" fd={cfg['drm_fd']} skip-vsync=true restore-crtc=false" if cfg.get("drm_fd") else ""
 
 
 RESERVA_MINIMA = 2 * 1024 ** 3      # lo que tiene que quedar libre, como poco

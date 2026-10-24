@@ -2171,7 +2171,8 @@ async function pintarGrabaciones(e) {
   let g;
   try { g = await api("/api/grabaciones"); } catch (_) { return; }
   const ses = g.sesiones || [], sueltos = g.sueltos || g.lista || [];
-  $("secGrab").classList.toggle("oculto", !graba && !ses.length && !sueltos.length);
+  const conRutas = ((ultimo || {}).config || {}).motor === "rutas";
+  $("secGrab").classList.toggle("oculto", !conRutas && !graba && !ses.length && !sueltos.length);
   poner($("grabSub"), g.libre != null ? T[lang].rec_free(tamano(g.libre)) : "");
   const av = $("grabAviso");
   av.classList.toggle("oculto", !g.aviso_disco);
@@ -3196,6 +3197,7 @@ const RT = {
       fuente_sin_imagen: "La fuente está en la red pero no manda imagen. En OBS, comprueba que esa fuente esté activa y dando imagen.", ndi_repetido: "Otra ruta usa ese nombre NDI.",
       hdmi_ocupado: "Ese monitor lo tiene otra ruta.", pantalla_no_esta: "Ese monitor no está conectado.",
       sin_monitor: "No hay ningún monitor conectado.", url_rtmp_invalida: "La URL RTMP no es válida.",
+      fuente_no_esta: "Esa fuente NDI no está en la red ahora mismo.",
       ruta_invalida: "Esa ruta ya no existe.", sesion_grabando: "Esa sesión se está grabando: para antes la ruta.",
       union_fallida: "No se pudo preparar la descarga.", sin_grabacion: "Esa ruta no tiene salida de grabación.", sin_sesion: "No hay ninguna grabación en marcha.",
       usb_invalido: "Esa memoria USB ya no está.", copia_en_curso: "Ya hay una copia en marcha.", usb_fallo: "No se pudo con la memoria USB (¿formato?).",
@@ -3269,6 +3271,7 @@ const RT = {
       fuente_sin_imagen: "The source is on the network but sends no picture. In OBS, check that the source is active and showing something.", ndi_repetido: "Another route uses that NDI name.",
       hdmi_ocupado: "Another route has that monitor.", pantalla_no_esta: "That monitor is not connected.",
       sin_monitor: "No monitor is connected.", url_rtmp_invalida: "The RTMP URL is not valid.",
+      fuente_no_esta: "That NDI source is not on the network right now.",
       ruta_invalida: "That route no longer exists.", sesion_grabando: "That session is being recorded: stop the route first.",
       union_fallida: "Could not prepare the download.", sin_grabacion: "That route has no recording output.", sin_sesion: "No recording is running.",
       usb_invalido: "That USB drive is gone.", copia_en_curso: "A copy is already running.", usb_fallo: "The USB drive failed (format?).",
