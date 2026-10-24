@@ -29,7 +29,8 @@ import gi
 gi.require_version("Gst", "1.0")
 from gi.repository import GLib, Gst  # noqa: E402
 
-from fuente import informar, leer_cfg, liberar_disco, nivel_audio  # noqa: E402
+import grabaciones  # noqa: E402
+from fuente import informar, leer_cfg, nivel_audio  # noqa: E402
 from nucleo import RETRASO_MAX_MS  # noqa: E402
 
 CONTADORES = {"rx": 0, "aud": 0, "out": 0, "bytes": 0}
@@ -144,13 +145,18 @@ def main():
     p.get_by_name("out").set_property("location", cfg["salida"])
     if cfg.get("audio"):
         p.get_by_name("asrc").set_property("device", cfg["audio"])
+    sesion = None
     if cfg.get("grabar"):
-        d = cfg["grabar"]["dir"]
-        os.makedirs(d, exist_ok=True)
+        # una sesión de grabación (ver grabaciones.py), como en relevo.py
+        sesion = grabaciones.abrir_sesion(cfg.get("nombre") or "programa", cfg.get("ruta"), "mkv")
+        informar({"sesion": sesion})
 
         def nombre(_mux, _frag):
-            liberar_disco(d)        # sin tasa conocida: es una copia de lo que llega
-            return os.path.join(d, f"programa_{time.strftime('%Y-%m-%d_%H-%M-%S')}.mkv")
+            grabaciones.liberar_disco(vivas=(sesion,))
+            fichero = grabaciones.nuevo_trozo(sesion)
+            if len(grabaciones._leer(sesion)["trozos"]) == 1:
+                GLib.timeout_add_seconds(5, lambda: (grabaciones.miniatura(sesion), False)[1])
+            return fichero
         p.get_by_name("rec").connect("format-location", nombre)
     vol = p.get_by_name("vol")
 
@@ -249,6 +255,8 @@ def main():
     p.send_event(Gst.Event.new_eos())
     p.get_bus().timed_pop_filtered(3 * Gst.SECOND, Gst.MessageType.EOS | Gst.MessageType.ERROR)
     p.set_state(Gst.State.NULL)
+    if sesion:
+        grabaciones.cerrar_sesion(sesion)
     sys.exit(salida[0])
 
 

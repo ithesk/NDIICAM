@@ -6,8 +6,10 @@
     relevo.py  (una línea JSON por la entrada estándar; ver leer_cfg en fuente.py)
                          {"desde": "rtmp://127.0.0.1:1935/live/culto",
                           "modo": "rtmp", "url": "rtmp://a.rtmp.youtube.com/live2/<clave>"}
-                         {"desde": ..., "modo": "grabar", "dir": "/var/lib/ndiicam/grabaciones",
-                          "prefijo": "culto", "formato": "mp4" | "mkv"}
+                         {"desde": ..., "modo": "grabar", "formato": "mp4" | "mkv",
+                          "nombre": "Culto" (nombre de la ruta), "ruta": "<id de la ruta>"}
+                         (grabar abre una sesión en grabaciones.py: una carpeta con
+                         sus trozos; se informa {"sesion": nombre} nada más abrirla)
                          y con_audio: si el programa trae pista de audio (lo que
                          publica NDIICAM la trae siempre; se mira por si acaso)
 
@@ -25,7 +27,8 @@ import gi
 gi.require_version("Gst", "1.0")
 from gi.repository import GLib, Gst  # noqa: E402
 
-from fuente import informar, leer_cfg, liberar_disco  # noqa: E402
+import grabaciones  # noqa: E402
+from fuente import informar, leer_cfg  # noqa: E402
 
 CONTADORES = {"out": 0, "bytes": 0, "aud": 0}
 SEGMENTO = 10 * 60          # duración de cada fichero, en segundos
@@ -62,13 +65,23 @@ def main():
     p.get_by_name("src").set_property("location", cfg["desde"])
     if cfg["modo"] == "rtmp":
         p.get_by_name("out").set_property("location", cfg["url"])
-    else:
-        d, ext = cfg["dir"], "mkv" if cfg.get("formato") == "mkv" else "mp4"
-        os.makedirs(d, exist_ok=True)
+    sesion = None
+    if cfg["modo"] != "rtmp":
+        # una sesión por cada vez que se graba: carpeta con sus trozos y su json
+        formato = "mkv" if cfg.get("formato") == "mkv" else "mp4"
+        sesion = grabaciones.abrir_sesion(cfg.get("nombre") or cfg.get("prefijo") or "ruta",
+                                          cfg.get("ruta"), formato)
+        informar({"sesion": sesion})
 
         def nombre(_mux, _frag):
-            liberar_disco(d)        # sin tasa conocida: es una copia de lo que llega
-            return os.path.join(d, f"{cfg.get('prefijo') or 'ruta'}_{time.strftime('%Y-%m-%d_%H-%M-%S')}.{ext}")
+            # sin tasa conocida: es una copia de lo que llega. Nunca se borra el
+            # trozo abierto de esta sesión
+            grabaciones.liberar_disco(vivas=(sesion,))
+            fichero = grabaciones.nuevo_trozo(sesion)
+            if len(grabaciones._leer(sesion)["trozos"]) == 1:
+                # la miniatura, cuando el primer trozo lleve unos segundos escritos
+                GLib.timeout_add_seconds(5, lambda: (grabaciones.miniatura(sesion), False)[1])
+            return fichero
         p.get_by_name("rec").connect("format-location", nombre)
 
     def contar(clave, con_bytes=False):
@@ -109,6 +122,8 @@ def main():
     p.send_event(Gst.Event.new_eos())
     p.get_bus().timed_pop_filtered(3 * Gst.SECOND, Gst.MessageType.EOS | Gst.MessageType.ERROR)
     p.set_state(Gst.State.NULL)
+    if sesion:
+        grabaciones.cerrar_sesion(sesion)
     sys.exit(salida[0])
 
 

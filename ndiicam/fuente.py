@@ -63,21 +63,25 @@ def leer_cfg():
 
 
 def liberar_disco(d, reserva=None, kbps=None):
-    """Como un grabador continuo: si el disco se llena, fuera lo más viejo (MP4 y
-    MKV, lo que haya grabado cualquier proceso). La reserva: dos ficheros a la tasa
-    que se graba, y nunca menos de 2 GB; sin tasa conocida, 4 GB. Se comprueba al
-    abrir cada fichero, así que tiene que caber el siguiente entero."""
-    if reserva is None:
-        reserva = (max(RESERVA_MINIMA, 2 * SEGMENTO_S * int(kbps) * 1000 // 8)
-                   if kbps else RESERVA_SIN_TASA)
+    """Como un grabador continuo: si el disco se llena, fuera lo más viejo. Lo hace
+    grabaciones.py (sesiones y ficheros sueltos, respetando lo protegido y el trozo
+    que se está escribiendo); aquí queda la firma de siempre para los procesos. Si
+    d no es la carpeta de grabaciones (una prueba), se limpia esa carpeta a lo viejo."""
+    import grabaciones
+    if os.path.realpath(d) == os.path.realpath(grabaciones.DIR):
+        return grabaciones.liberar_disco(reserva, kbps)
+    reserva = grabaciones.reserva_disco(reserva, kbps)
     os.makedirs(d, exist_ok=True)
     viejos = sorted(glob.glob(os.path.join(d, "*.mp4")) + glob.glob(os.path.join(d, "*.mkv")),
                     key=os.path.getmtime)
+    borrados = []
     while viejos and shutil.disk_usage(d).free < reserva:
         try:
-            os.remove(viejos.pop(0))
+            os.remove(viejos[0])
+            borrados.append(viejos.pop(0))
         except OSError:
-            pass
+            viejos.pop(0)
+    return borrados
 
 
 def fijar_retraso(flujo, ms):
