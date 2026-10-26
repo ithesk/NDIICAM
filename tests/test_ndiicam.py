@@ -376,6 +376,60 @@ class JpegDeLaCamara(unittest.TestCase):
         self.assertIsNone(fuente.muestreo_jpeg(b"no es un jpeg"))
         self.assertIsNone(fuente.muestreo_jpeg(b""))
 
+    def test_tamano_de_la_cabecera(self):
+        self.assertEqual(fuente.cabecera_jpeg(self.jpeg()), ("YCbCr-4:2:0", 1920, 1080))
+        self.assertIsNone(fuente.cabecera_jpeg(self.jpeg()[2:]))   # sin el inicio FFD8: a medias
+
+    def test_hdmi_gpu_aguanta_los_primeros_fotogramas_rotos(self):
+        """Al cambiar de modo la Pocket manda algún fotograma a medias: la GPU no se da
+        por fallida con el primero, solo si siguen llegando rotos."""
+        flujo = types.SimpleNamespace(OK="ok", ERROR="error", EOS="eos")
+        mapa = types.SimpleNamespace(READ=1)
+        empujados = []
+
+        class Buf:
+            def __init__(self, datos):
+                self.datos = datos
+
+            def map(self, _):
+                return True, types.SimpleNamespace(data=self.datos)
+
+            def unmap(self, _):
+                pass
+
+        class Sink:
+            def __init__(self, datos):
+                self.datos = datos
+
+            def emit(self, _):
+                return types.SimpleNamespace(get_buffer=lambda: Buf(self.datos))
+
+        caps = types.SimpleNamespace(from_string=lambda txt: txt)
+        originales = {k: getattr(fuente.Gst, k, None) for k in ("FlowReturn", "MapFlags", "Caps")}
+        fuente.Gst.FlowReturn, fuente.Gst.MapFlags, fuente.Gst.Caps = flujo, mapa, caps
+        originales_inf, fuente.informar = fuente.informar, lambda d: None
+        try:
+            h = fuente.HdmiGPU.__new__(fuente.HdmiGPU)
+            h.cfg, h.caps, h.sin_cabecera = {"ancho": 3840, "alto": 2160, "fps": 30}, None, 0
+            h.entrada = types.SimpleNamespace(set_property=lambda k, v: None,
+                                              emit=lambda _, buf: empujados.append(buf) or "ok")
+            self.assertEqual(h._capturado(Sink(b"\x00\x01roto")), "ok")      # se descarta
+            self.assertEqual(empujados, [])
+            self.assertEqual(h._capturado(Sink(self.jpeg())), "ok")            # el bueno sigue
+            self.assertIn("width=1920,height=1080", h.caps)                    # tamaño del JPEG
+            self.assertEqual(len(empujados), 1)
+            h.caps, h.sin_cabecera = None, 0
+            for _ in range(fuente.HdmiGPU.DESCARTES_INICIO - 1):
+                self.assertEqual(h._capturado(Sink(b"roto")), "ok")
+            self.assertEqual(h._capturado(Sink(b"roto")), "error")             # ya no es un tropiezo
+        finally:
+            for k, v in originales.items():
+                if v is None:
+                    delattr(fuente.Gst, k)
+                else:
+                    setattr(fuente.Gst, k, v)
+            fuente.informar = originales_inf
+
 
 class NivelDeAudio(unittest.TestCase):
     """nivel_audio lee los mensajes de 'level' aunque GValueArray no pase a Python."""

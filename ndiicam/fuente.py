@@ -503,8 +503,13 @@ class HdmiGPU(Reparto):
     Los fallos se etiquetan hdmi_gpu para reintentar con CPU y conservar HDMI.
     """
 
+    # justo después de cambiar de modo, la cámara puede mandar algún fotograma a
+    # medias (la DJI Pocket 3 al pasar de 4K a 1080p): se descartan unos cuantos
+    # antes de dar la GPU por fallida y pasar a la CPU
+    DESCARTES_INICIO = 30
+
     def __init__(self, cfg):
-        self.cfg, self.n, self.caps = cfg, 1, None
+        self.cfg, self.n, self.caps, self.sin_cabecera = cfg, 1, None, 0
         self.captura = Gst.parse_launch(
             f"{tramo_camara(cfg)} ! appsink name=cap sync=false emit-signals=true"
             " max-buffers=2 drop=true")
@@ -528,15 +533,18 @@ class HdmiGPU(Reparto):
         if self.caps is None:
             ok, mapa = buf.map(Gst.MapFlags.READ)
             try:
-                muestreo = muestreo_jpeg(bytes(mapa.data)) if ok else None
+                cab = cabecera_jpeg(bytes(mapa.data)) if ok else None
             finally:
                 if ok:
                     buf.unmap(mapa)
-            if muestreo is None:
-                return Gst.FlowReturn.ERROR
+            if cab is None:
+                self.sin_cabecera += 1
+                return Gst.FlowReturn.OK if self.sin_cabecera < self.DESCARTES_INICIO else Gst.FlowReturn.ERROR
+            # el tamaño, el del JPEG que llega de verdad
+            muestreo, ancho, alto = cab
             c = self.cfg
             self.caps = Gst.Caps.from_string(
-                f"image/jpeg,parsed=true,width={c['ancho']},height={c['alto']},"
+                f"image/jpeg,parsed=true,width={ancho},height={alto},"
                 f"framerate={c['fps']}/1,sof-marker=0,colorspace=sYUV,"
                 f"sampling={muestreo},interlace-mode=progressive")
             self.entrada.set_property("caps", self.caps)
@@ -677,6 +685,14 @@ def muestreo_jpeg(datos):
     """Submuestreo de color de un JPEG baseline, leído de su cabecera SOF0.
     vajpegdec lo exige en las caps y jpegparse 1.24 no lo pone. None si el JPEG
     no es baseline (la GPU solo decodifica baseline) o no se entiende."""
+    cab = cabecera_jpeg(datos)
+    return cab[0] if cab else None
+
+
+def cabecera_jpeg(datos):
+    """(submuestreo, ancho, alto) de la cabecera SOF0 de un JPEG baseline, o None."""
+    if datos[:2] != b"\xff\xd8":
+        return None
     i = 2
     while i + 4 <= len(datos):
         if datos[i] != 0xFF:
@@ -689,11 +705,14 @@ def muestreo_jpeg(datos):
         if marca == 0xC0:
             if i + 12 > len(datos):
                 return None
+            alto = int.from_bytes(datos[i + 5:i + 7], "big")
+            ancho = int.from_bytes(datos[i + 7:i + 9], "big")
             if datos[i + 9] == 1:
-                return "GRAYSCALE"
+                return "GRAYSCALE", ancho, alto
             h, v = datos[i + 11] >> 4, datos[i + 11] & 15     # factores de la luma
-            return {(2, 2): "YCbCr-4:2:0", (2, 1): "YCbCr-4:2:2",
-                    (1, 1): "YCbCr-4:4:4"}.get((h, v))
+            muestreo = {(2, 2): "YCbCr-4:2:0", (2, 1): "YCbCr-4:2:2",
+                        (1, 1): "YCbCr-4:4:4"}.get((h, v))
+            return (muestreo, ancho, alto) if muestreo and ancho and alto else None
         if 0xC1 <= marca <= 0xCF and marca not in (0xC4, 0xC8, 0xCC) or marca == 0xDA:
             return None                 # progresivo, aritmético... o ya empiezan los datos
         i += 2 + largo
