@@ -303,7 +303,8 @@ def tramo_salida(cfg):
     # compensa al pasar del I420 de jpegdec a UYVY; reordenar YUY2 a UYVY (o no
     # tocar el UYVY que ya da la GPU) va limitado por la memoria, y los hilos solo
     # añaden sincronización: medido, 3,2 ms por fotograma con 4 frente a 1,0 con 1
-    hilos = 1 if cfg.get("fmt") != "MJPG" or cfg.get("decodificadores") == "gpu" else (os.cpu_count() or 2)
+    hilos = 1 if cfg.get("fmt") not in ("MJPG", "H264") or cfg.get("decodificadores") == "gpu" \
+        else (os.cpu_count() or 2)
     video = (f"queue name=q2 {Q} ! videoconvert n-threads={hilos}"
              f" ! video/x-raw,format=UYVY ! queue name=q3 {Q}")
     if not ndi:
@@ -352,8 +353,14 @@ def tramo_camara(cfg):
     if cfg["fmt"] == "MJPG":
         return (f"v4l2src name=src ! image/jpeg,width={cfg['ancho']},height={cfg['alto']},"
                 f"framerate={cfg['fps']}/1 ! queue name=q1 {Q}")
-    tramo = (f"v4l2src name=src ! video/x-raw,format=YUY2,width={cfg['ancho']},"
-             f"height={cfg['alto']},framerate={cfg['fps']}/1 ! queue name=q1 {Q}")
+    if cfg["fmt"] == "H264":
+        # lo comprime la propia cámara (la DJI Pocket 3): aquí se decodifica para el
+        # NDI y el HDMI; sale en I420, como el JPEG, y sigue igual que con MJPEG
+        tramo = (f"v4l2src name=src ! video/x-h264,width={cfg['ancho']},height={cfg['alto']},"
+                 f"framerate={cfg['fps']}/1 ! queue name=q1 {Q} ! h264parse ! avdec_h264 name=deco")
+    else:
+        tramo = (f"v4l2src name=src ! video/x-raw,format=YUY2,width={cfg['ancho']},"
+                 f"height={cfg['alto']},framerate={cfg['fps']}/1 ! queue name=q1 {Q}")
     if cfg.get("preview"):
         # sin JPEG que copiar: la vista previa sale de un fotograma reducido cada
         # 2 s (escalar y comprimir uno de cada 60 cuesta poco)
@@ -365,8 +372,10 @@ def tramo_preview(cfg):
     """Rama de vista previa para el vídeo sin comprimir (va al final de la descripción)."""
     if cfg["fmt"] == "MJPG" or not cfg.get("preview"):
         return ""
+    # en vertical (1080x1920) la miniatura también va de pie
+    tam = "width=360,height=640" if cfg["alto"] > cfg["ancho"] else "width=640,height=360"
     return (" tp. ! queue max-size-buffers=1 leaky=downstream ! videorate drop-only=true"
-            " ! video/x-raw,framerate=1/2 ! videoscale ! video/x-raw,width=640,height=360"
+            f" ! video/x-raw,framerate=1/2 ! videoscale ! video/x-raw,{tam}"
             f" ! jpegenc quality=75 ! multifilesink location={cfg['preview']} max-files=1"
             " async=false sync=false")
 
@@ -459,6 +468,80 @@ class Reparto:
     def parar(self):
         for p in self.pipelines:
             p.set_state(Gst.State.NULL)
+
+
+def hdmi_gpu_disponible(cfg):
+    """La ruta directa no descarga vídeo para NDI ni reemplaza su decodificador.
+
+    El sumidero privado importa DMA-BUF con modificadores; kmssink 1.24 no
+    negocia DMA_DRM. Si no está instalado, se conserva la ruta CPU existente.
+    """
+    if (cfg.get("fmt") != "MJPG" or not cfg.get("hdmi") or con_ndi(cfg)
+            or cfg.get("audio") or cfg.get("hdmi_gpu_cpu")):
+        return False
+    try:
+        if not all(Gst.ElementFactory.find(n) for n in ("vajpegdec", "vapostproc")):
+            return False
+        # Cargar siempre la copia instalada, no una entrada de la caché que
+        # podría apuntar a un directorio de pruebas ya borrado o de otro usuario.
+        ruta = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                            "gst", "libgstndihdmikms.so")
+        if not os.path.isfile(ruta):
+            return False
+        Gst.Plugin.load_file(ruta)
+        return bool(Gst.ElementFactory.find("ndihdmisink"))
+    except GLib.Error:
+        return False
+
+
+class HdmiGPU(Reparto):
+    """MJPEG -> VA -> YUYV DMA-BUF -> KMS, sin mapear fotogramas crudos.
+
+    Solo el JPEG comprimido cruza appsink/appsrc. El primer JPEG determina
+    el submuestreo real; no se presupone el de una miniatura ni otra cámara.
+    Se comparte reloj como en Reparto, con colas acotadas para baja latencia.
+    Los fallos se etiquetan hdmi_gpu para reintentar con CPU y conservar HDMI.
+    """
+
+    def __init__(self, cfg):
+        self.cfg, self.n, self.caps = cfg, 1, None
+        self.captura = Gst.parse_launch(
+            f"{tramo_camara(cfg)} ! appsink name=cap sync=false emit-signals=true"
+            " max-buffers=2 drop=true")
+        self.salida = Gst.parse_launch(
+            "appsrc name=ent format=time is-live=true max-bytes=0 max-buffers=2"
+            " leaky-type=downstream ! vajpegdec name=deco_hdmi"
+            " ! vapostproc name=vpp_hdmi"
+            " ! video/x-raw(memory:DMABuf),format=DMA_DRM,"
+            "drm-format=YUYV:0x0100000000000002,colorimetry=bt709"
+            f" ! queue name=q2 {Q} ! queue name=q3 {Q}"
+            f" ! ndihdmisink name=sink sync=false connector-id={cfg['hdmi']}{alquiler(cfg)}")
+        self.entrada = self.salida.get_by_name("ent")
+        self.pipelines = [self.salida, self.captura]
+        self.captura.get_by_name("cap").connect("new-sample", self._capturado)
+
+    def _capturado(self, sink):
+        muestra = sink.emit("pull-sample")
+        if muestra is None:
+            return Gst.FlowReturn.EOS
+        buf = muestra.get_buffer()
+        if self.caps is None:
+            ok, mapa = buf.map(Gst.MapFlags.READ)
+            try:
+                muestreo = muestreo_jpeg(bytes(mapa.data)) if ok else None
+            finally:
+                if ok:
+                    buf.unmap(mapa)
+            if muestreo is None:
+                return Gst.FlowReturn.ERROR
+            c = self.cfg
+            self.caps = Gst.Caps.from_string(
+                f"image/jpeg,parsed=true,width={c['ancho']},height={c['alto']},"
+                f"framerate={c['fps']}/1,sof-marker=0,colorspace=sYUV,"
+                f"sampling={muestreo},interlace-mode=progressive")
+            self.entrada.set_property("caps", self.caps)
+            informar({"hdmi_gpu_estado": "activa", "muestreo": muestreo})
+        return self.entrada.emit("push-buffer", buf)
 
 
 class DecoGPU(Reparto):
@@ -844,7 +927,14 @@ def main():
     cfg = leer_cfg()
     Gst.init(None)
     deco = cfg.get("decodificadores") or 1
-    if cfg["fmt"] == "MJPG" and deco == "gpu":
+    if hdmi_gpu_disponible(cfg):
+        informar({"hdmi_gpu_estado": "iniciando"})
+        try:
+            flujo = HdmiGPU(cfg)
+        except GLib.Error as ex:
+            informar({"aviso": "hdmi_gpu_fallida", "detalle": str(ex)})
+            flujo = Directo(cfg)
+    elif cfg["fmt"] == "MJPG" and deco == "gpu":
         flujo = DecoGPU(cfg)
     elif cfg["fmt"] == "MJPG" and int(deco) > 1:
         flujo = Reparto(cfg, int(deco))
@@ -927,7 +1017,8 @@ def main():
     def mensaje(bus, msg):
         if msg.type == Gst.MessageType.ERROR:
             err, _ = msg.parse_error()
-            informar({"error": err.message, "elemento": msg.src.get_name()})
+            informar({"error": err.message,
+                      "elemento": "hdmi_gpu" if isinstance(flujo, HdmiGPU) else msg.src.get_name()})
             salida[0] = 1
             bucle.quit()
         elif msg.type == Gst.MessageType.EOS:
@@ -959,6 +1050,8 @@ def main():
         if retardo["n"]:
             extra["lat_ms"] = round(retardo["suma"] / retardo["n"], 1)
             retardo["suma"], retardo["n"] = 0.0, 0
+        if isinstance(flujo, HdmiGPU):
+            extra["hdmi_gpu"] = True
         informar({**CONTADORES, **NIVEL, **extra, "t": time.monotonic(),
                   "hilos": ("gpu" if flujo.modo == "gpu" else 1) if isinstance(flujo, DecoGPU)
                   else flujo.n if isinstance(flujo, Reparto) else 1})
@@ -1011,7 +1104,8 @@ def main():
     GLib.unix_signal_add(GLib.PRIORITY_HIGH, signal.SIGINT, parar)
 
     if not flujo.arrancar():
-        informar({"error": "arranque", "elemento": "pipeline"})
+        informar({"error": "arranque",
+                  "elemento": "hdmi_gpu" if isinstance(flujo, HdmiGPU) else "pipeline"})
         sys.exit(1)
     bucle.run()
     for s in salidas:

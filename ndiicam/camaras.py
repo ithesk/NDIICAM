@@ -14,7 +14,8 @@ from nucleo import GRUB_NDIICAM, MODOS_CONSOLA, leer, ruta_usb, sh
 _cache_modos = {}
 
 def modos_captura(dev):
-    """Modos (ancho, alto, fps, formato) en MJPG y YUYV, cacheados por nodo."""
+    """Modos (ancho, alto, fps, formato) en MJPG, YUYV y H264 (el que comprime la
+    propia cámara), cacheados por nodo."""
     try:
         st = os.stat(dev)
     except OSError:
@@ -32,7 +33,7 @@ def modos_captura(dev):
                 tam = (int(m.group(1)), int(m.group(2)))
                 continue
             m = re.search(r"\(([\d.]+) fps\)", linea)
-            if m and fmt in ("MJPG", "YUYV") and tam:
+            if m and fmt in ("MJPG", "YUYV", "H264") and tam:
                 modos.add((tam[0], tam[1], round(float(m.group(1))), fmt))
         if not modos:
             # sin modos todavía (una cámara que tarda en arrancar): no se guarda, que

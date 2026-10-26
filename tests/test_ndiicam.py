@@ -232,6 +232,102 @@ class ModoDeCamara(unittest.TestCase):
         self.assertIsNone(supervisor.Fuentes.salida_gpu(aj, "MJPG"))
 
 
+class CamaraConH264y4K(unittest.TestCase):
+    """Cámaras como la DJI Pocket 3: además de MJPEG dan H.264 comprimido por ellas
+    mismas, 4K y tamaños en vertical. El panel ofrece lo que anuncian."""
+    POCKET = [(1280, 720, 30, "MJPG"), (1920, 1080, 30, "MJPG"), (3840, 2160, 30, "MJPG"),
+              (1080, 1920, 30, "MJPG"), (1920, 1080, 30, "H264"), (3840, 2160, 30, "H264"),
+              (3840, 2160, 60, "H264"), (1080, 1920, 30, "H264")]
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.original = nucleo.CONFIG
+        nucleo.CONFIG = os.path.join(self.tmp.name, "config.json")
+        self.conf = nucleo.Config()
+        self.sup = supervisor.Fuentes(self.conf)
+        self.sup.audio = []
+
+    def tearDown(self):
+        nucleo.CONFIG = self.original
+        self.tmp.cleanup()
+
+    def objetivo(self, modos=None, **aj):
+        if aj:
+            self.conf.actualizar_fuente("cam", aj)
+        f = supervisor.Fuente({"id": "cam", "nombre": "Pocket", "dev": "/dev/video9", "usb": "1-2",
+                               "modos": modos or self.POCKET})
+        o = self.sup.objetivo(f)
+        return (o["ancho"], o["alto"], o["fps"], o["fmt"])
+
+    def test_en_automatico_no_usa_el_h264(self):
+        self.assertEqual(self.objetivo(), (1920, 1080, 30, "MJPG"))
+
+    def test_h264_cuando_se_pide(self):
+        self.assertEqual(self.objetivo(formato="h264"), (1920, 1080, 30, "H264"))
+
+    def test_4k_a_60_solo_existe_en_h264(self):
+        self.assertEqual(self.objetivo(resolucion="3840x2160", fps=60, formato="h264"), (3840, 2160, 60, "H264"))
+        # en MJPEG la cámara no pasa de 30 a 4K
+        self.assertEqual(self.objetivo(resolucion="3840x2160", fps=60, formato="mjpeg"), (3840, 2160, 30, "MJPG"))
+
+    def test_vertical(self):
+        self.assertEqual(self.objetivo(resolucion="1080x1920"), (1080, 1920, 30, "MJPG"))
+
+    def test_con_salida_por_gpu_vuelve_al_jpeg(self):
+        # la GPU parte del JPEG: si la ruta graba o publica, MJPEG aunque se pida H.264
+        self.assertEqual(self.objetivo(formato="h264", gpu_salida="grabar")[3], "MJPG")
+
+    def test_camara_que_solo_da_h264(self):
+        self.assertEqual(self.objetivo(modos=[(1920, 1080, 30, "H264")])[3], "H264")
+
+    def test_la_vista_previa_no_usa_el_h264(self):
+        cam = {"id": "cam", "nombre": "Pocket", "dev": "/dev/video9", "modos": self.POCKET}
+        self.assertEqual(self.sup.motor.objeto_mirilla(cam)["fmt"], "MJPG")
+        self.assertIsNone(self.sup.motor.objeto_mirilla({**cam, "modos": [(1920, 1080, 30, "H264")]}))
+
+    def test_resoluciones_que_ofrece_el_panel(self):
+        lista = estado.resoluciones_camara(self.POCKET)
+        self.assertEqual([x["valor"] for x in lista], ["3840x2160", "1080p", "720p", "1080x1920"])
+        cuatro_k = lista[0]
+        self.assertEqual(cuatro_k["fps"], [30, 60])
+        self.assertEqual(cuatro_k["formatos"], ["H264", "MJPG"])
+
+    def test_validar_resolucion(self):
+        import validar
+        self.assertEqual(validar.validar_fuente({"resolucion": "3840x2160"}, {})[0], {"resolucion": "3840x2160"})
+        self.assertEqual(validar.validar_fuente({"resolucion": "1080p"}, {})[0], {"resolucion": "1080p"})
+        for malo in ("99999x1", "4k", "1920x", ""):
+            self.assertIn("resolucion", validar.validar_fuente({"resolucion": malo}, {})[1])
+        self.assertEqual(validar.validar_fuente({"formato": "h264"}, {})[0], {"formato": "h264"})
+
+    def test_pipeline_h264(self):
+        cfg = {"fmt": "H264", "ancho": 1920, "alto": 1080, "fps": 30, "preview": "/tmp/p.jpg"}
+        tramo = fuente.tramo_camara(cfg)
+        self.assertIn("video/x-h264,width=1920,height=1080,framerate=30/1", tramo)
+        self.assertIn("h264parse ! avdec_h264", tramo)
+        self.assertTrue(tramo.endswith("tee name=tp"))      # la miniatura sale de lo decodificado
+        self.assertIn("width=640,height=360", fuente.tramo_preview(cfg))
+        self.assertIn("width=360,height=640", fuente.tramo_preview({**cfg, "ancho": 1080, "alto": 1920}))
+
+    def test_lee_los_modos_h264(self):
+        salida = """ioctl: VIDIOC_ENUM_FMT
+	Type: Video Capture
+
+	[0]: 'MJPG' (Motion-JPEG, compressed)
+		Size: Discrete 1920x1080
+			Interval: Discrete 0.033s (30.000 fps)
+	[1]: 'H264' (H.264, compressed)
+		Size: Discrete 3840x2160
+			Interval: Discrete 0.017s (60.000 fps)
+"""
+        original, camaras.sh = camaras.sh, lambda orden: salida
+        try:
+            with tempfile.NamedTemporaryFile() as dev:
+                self.assertEqual(camaras.modos_captura(dev.name),
+                                 [(1920, 1080, 30, "MJPG"), (3840, 2160, 60, "H264")])
+        finally:
+            camaras.sh = original
+
 class Puente(unittest.TestCase):
     def test_xml_para_atem(self):
         xml = puente.xml_atem("192.168.1.50", "clave123")
@@ -601,6 +697,38 @@ class AccesoAlPanel(unittest.TestCase):
         self.assertFalse(nucleo.SESIONES.valida(otra))      # las demás sesiones, fuera
         r, _ = self.pedir("GET", "/api/grabaciones", cookie=cookie)
         self.assertEqual(r.status, 200)                     # la de quien la cambió sigue
+
+
+class HdmiGpuDirecto(unittest.TestCase):
+    def test_no_usa_plugin_de_cache_si_falta_el_instalado(self):
+        from unittest.mock import patch
+        factory = types.SimpleNamespace(find=lambda _: True)
+        with patch.object(fuente.Gst, "ElementFactory", factory, create=True), \
+                patch.object(fuente.os.path, "isfile", return_value=False):
+            self.assertFalse(fuente.hdmi_gpu_disponible(
+                {"fmt": "MJPG", "hdmi": 42, "ndi": False}))
+
+    def test_no_intercepta_ndi_audio_ni_reintento_cpu(self):
+        # Estos casos deben seguir funcionando incluso sin GStreamer/VA.
+        base = {"fmt": "MJPG", "hdmi": 42, "ndi": False}
+        for cambio in ({"ndi": True}, {"audio": "hw:1"}, {"hdmi_gpu_cpu": True},
+                       {"hdmi": None}, {"fmt": "H264"}):
+            with self.subTest(cambio=cambio):
+                self.assertFalse(fuente.hdmi_gpu_disponible({**base, **cambio}))
+
+    def test_fallo_gpu_reintenta_con_cpu_y_conserva_la_pantalla(self):
+        from unittest.mock import patch
+        for error, elemento in (("not-negotiated", "hdmi_gpu"), ("proceso", ""),
+                                ("sin_imagen", "")):
+            with self.subTest(error=error):
+                f = supervisor.Fuente({"id": "cam", "nombre": "Cam"})
+                f.proc, f.obj = object(), {"hdmi": 42}
+                f.hdmi_gpu_activa = True
+                with patch.object(f, "detener"), patch.object(supervisor, "evento"):
+                    f._fallo(error, elemento)
+                self.assertTrue(f.hdmi_gpu_fallida)
+                self.assertFalse(f.hdmi_fallido)
+                self.assertEqual(f.obj["hdmi"], 42)
 
 
 class GpuParaDecodificar(unittest.TestCase):

@@ -63,7 +63,27 @@ ESPERA_AP = 60          # segundos sin red antes de levantar la WiFi de configur
 CICLO_EXCLUSIVO = 180   # en modo exclusivo, cada cuánto se suelta el AP para buscar redes
 PAUSA_EXCLUSIVO = 45    # y cuánto tiempo se deja a NetworkManager para conectar
 RESOLUCIONES = {"720p": (1280, 720), "1080p": (1920, 1080)}
-FPS_VALIDOS = (15, 24, 25, 30, 50, 60)
+FPS_VALIDOS = (15, 24, 25, 30, 48, 50, 60)
+# además de 720p y 1080p, cualquier tamaño que dé la cámara ("3840x2160",
+# "1080x1920" en vertical...): el panel solo ofrece los que anuncia
+RESOLUCION_LIBRE = re.compile(r"(\d{3,4})x(\d{3,4})")
+
+
+def tamano_resolucion(valor):
+    """(ancho, alto) de un ajuste de resolución ("1080p" o "3840x2160"); None si
+    no es válido."""
+    if valor in RESOLUCIONES:
+        return RESOLUCIONES[valor]
+    m = RESOLUCION_LIBRE.fullmatch(str(valor))
+    if not m:
+        return None
+    ancho, alto = int(m.group(1)), int(m.group(2))
+    return (ancho, alto) if 160 <= ancho <= 4096 and 120 <= alto <= 4096 else None
+
+
+def nombre_resolucion(ancho, alto):
+    """El ajuste que corresponde a un tamaño: los de siempre con su nombre corto."""
+    return next((k for k, v in RESOLUCIONES.items() if v == (ancho, alto)), f"{ancho}x{alto}")
 
 # valores para las cámaras sin ajustes propios; 'fuentes' guarda los de cada una
 POR_DEFECTO = {"ndi_nombre": "NDIICAM", "resolucion": "1080p", "fps": 30, "audio": "auto",
@@ -108,9 +128,10 @@ CLAVES_FUENTE = ("activa", "ndi_nombre", "resolucion", "fps", "audio",
 # J3355 con una Cam Link 4K a 30 fps: normal ~100 ms, sin audio ~33 ms
 LATENCIAS = ("normal", "baja", "minima")
 # formato que se pide a la cámara: auto (sin comprimir si el puerto es USB 3.0 y
-# no hace falta el JPEG), mjpeg o crudo (YUYV). Medido con una Cam Link 4K en un
-# Celeron J3355, a 1080p30: MJPEG 50 % de un núcleo, sin comprimir 13 %
-FORMATOS = ("auto", "mjpeg", "crudo")
+# no hace falta el JPEG), mjpeg, crudo (YUYV) o h264 (el que comprime la propia
+# cámara, como la DJI Pocket 3). Medido con una Cam Link 4K en un Celeron J3355,
+# a 1080p30: MJPEG 50 % de un núcleo, sin comprimir 13 %
+FORMATOS = ("auto", "mjpeg", "crudo", "h264")
 # cuándo graba la salida GPU: siempre, solo mientras haya receptores NDI, en un
 # horario, o a mano con el botón Grabar del panel (grabar_manual)
 GRABAR_CUANDO = ("siempre", "receptores", "horario", "manual")

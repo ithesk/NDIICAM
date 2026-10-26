@@ -10,7 +10,10 @@
 Sale con 0 si acabó bien y con 1 si no; lo que escribía a medias se borra."""
 import glob
 import os
+import shutil
+import subprocess
 import sys
+import tempfile
 
 import gi
 
@@ -51,6 +54,41 @@ def unir(carpeta, ext):
         return False
     salida = os.path.join(carpeta, f"completa.{ext}")
     tmp = salida + ".tmp"
+    bien = _unir_ffmpeg(trozos, ext, tmp) if shutil.which("ffmpeg") else _unir_gst(carpeta, ext, tmp)
+    if bien and os.path.exists(tmp):
+        os.replace(tmp, salida)
+        return True
+    try:
+        os.remove(tmp)
+    except OSError:
+        pass
+    return False
+
+
+def _unir_ffmpeg(trozos, ext, tmp):
+    """Con ffmpeg y su lista de concatenación: copia los paquetes y recoloca los
+    tiempos de cada trozo detrás del anterior. Un culto de una hora (7 GB) tarda
+    unos 20 s, lo que dé el disco."""
+    with tempfile.NamedTemporaryFile("w", suffix=".txt", delete=False) as lista:
+        for t in trozos:
+            lista.write("file '" + t.replace("'", "'\\''") + "'\n")
+    formato = ["-f", "matroska"] if ext == "mkv" else ["-movflags", "+faststart", "-f", "mp4"]
+    try:
+        r = subprocess.run(["ffmpeg", "-nostdin", "-loglevel", "error", "-y", "-f", "concat", "-safe", "0",
+                            "-i", lista.name, "-map", "0", "-c", "copy"] + formato + [tmp],
+                           timeout=TIEMPO_MAX, stderr=subprocess.PIPE, text=True)
+        if r.returncode != 0:
+            sys.stderr.write(r.stderr[-2000:])
+        return r.returncode == 0
+    except subprocess.TimeoutExpired:
+        return False
+    finally:
+        os.remove(lista.name)
+
+
+def _unir_gst(carpeta, ext, tmp):
+    """Sin ffmpeg: splitmuxsrc. Ojo: con trozos MP4 largos se ha visto colgarse al
+    pasar del primero al segundo; el tope de tiempo lo corta y no queda nada a medias."""
     mux = "matroskamux" if ext == "mkv" else "mp4mux faststart=true"
     # dos cadenas sueltas: splitmuxsrc crea sus pads al arrancar y aquí se enlazan
     # al multiplexor según aparecen (vídeo y audio)
@@ -67,15 +105,7 @@ def unir(carpeta, ext):
         if destino is None or pad.link(destino) != Gst.PadLinkReturn.OK:
             sys.stderr.write(f"no se enlaza {nombre}\n")
     p.get_by_name("src").connect("pad-added", pad_nuevo)
-    bien = _correr(p, TIEMPO_MAX)
-    if bien and os.path.exists(tmp):
-        os.replace(tmp, salida)
-        return True
-    try:
-        os.remove(tmp)
-    except OSError:
-        pass
-    return False
+    return _correr(p, TIEMPO_MAX)
 
 
 def miniatura(fichero, jpg):

@@ -147,6 +147,14 @@ you apply, only the processes for what changed restart; everything else keeps st
 **Gain, delay and mute apply at once**, with no waiting: you fine-tune them by ear while
 streaming. A camera's settings (resolution, fps, format, latency), in its input's gear, also apply
 at once and restart only that camera.
+The panel offers the sizes the camera itself announces, including 4K and portrait, with the
+fps of each. If the camera compresses in **H.264** (like the DJI Pocket 3), you can pick that
+format: it uses less USB bandwidth and, in 4K, it is the only way to reach 60 fps. The device
+decodes it for NDI and HDMI; if the route records or publishes, the camera goes back to MJPEG.
+
+On Celeron J3355 machines (Intel HD Graphics 500), a route that only sends an MJPEG camera to
+HDMI, with no NDI or audio, is decoded by the GPU and taken to the screen without going through
+the CPU (see [hdmi-gpu-j3355.md](hdmi-gpu-j3355.md), in Spanish).
 
 If a route is missing something, it stays stopped and its card says why, for example:
 - it has no video;

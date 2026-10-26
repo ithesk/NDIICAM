@@ -14,7 +14,7 @@ from nucleo import (AP_IF, AP_IP, FUENTE_PY, GRABACIONES, MAX_DECODIFICADORES, P
     MIRILLA_PY, MIRILLA_TRAS, NOMBRE_NDI_PUENTE, PROGRAMA_PY, PUERTO_RTMP_LOCAL, RECEPTOR_PY,
     REEMISION_PY, RELEVO_PY,
     REPOSO_PY, RESOLUCIONES, RUTA_PROGRAMA, SALIDAS_EXTRA, VERSION, conexiones_por_pid,
-    dispositivo_por_defecto, evento, ip_de, ips_propias, leer)
+    dispositivo_por_defecto, evento, ip_de, ips_propias, leer, tamano_resolucion)
 from camaras import audio_dispositivos, audio_hdmi, camaras, pantallas, resolucion_pantalla
 from gpu import capacidad_gpu, capacidad_vpp, decodificador_h264, edicion, entorno_va, simultaneo
 import rutas as rutas_mod
@@ -107,6 +107,8 @@ class Fuente:
         self.calibracion = None     # última medida del desfase audio/imagen (palmadas)
         self.retrasos = 0           # mediciones seguidas con la emisión por detrás de la cámara
         self.hdmi_fallido = False   # el HDMI hizo caer el pipeline: seguir sin él
+        self.hdmi_gpu_fallida = False  # reintentar HDMI con CPU si falla DMA-BUF
+        self.hdmi_gpu_activa = False
         self.gpu = {"estado": None, "error": ""}   # salida H.264: activa | error
         self.gpu_extra = {}         # salidas H.264 adicionales (equipo potente): modo -> estado
         self.tally = None           # {"programa": bool, "previo": bool} si el plugin lo da
@@ -118,6 +120,7 @@ class Fuente:
 
     def arrancar(self, obj):
         self.obj = obj
+        self.hdmi_gpu_activa = False
         self.estado, self.error, self.sin_flujo = "iniciando", "", None
         self.tally = None
         self.c = {}
@@ -168,12 +171,19 @@ class Fuente:
                     evento("gpu_activa", fuente=self.cam["nombre"], modo=modo)
                 self.gpu_extra[modo] = {"estado": "error" if d.get("error") else d.get("estado"),
                                         "error": d.get("error", "")}
+            elif "hdmi_gpu_estado" in d:
+                self.hdmi_gpu_activa = d["hdmi_gpu_estado"] in ("iniciando", "activa")
+                evento("hdmi_gpu", fuente=self.cam["nombre"], estado=d["hdmi_gpu_estado"])
             elif "error" in d:
                 self._fallo(d["error"], d.get("elemento", ""))
             elif "calibracion" in d:
                 self.calibracion = {**d["calibracion"], "estado": "hecha", "t": time.time()}
                 evento("calibracion", fuente=self.cam["nombre"], **d["calibracion"])
             elif "aviso" in d:
+                if d["aviso"] == "hdmi_gpu_fallida":
+                    self.hdmi_gpu_fallida = True
+                    self.hdmi_gpu_activa = False
+                    evento("hdmi_gpu_cpu", fuente=self.cam["nombre"], detalle=d.get("detalle"))
                 if d["aviso"] == "deco_gpu_fallida" and not self.deco_gpu_fallida:
                     # fuente.py ya siguió por CPU. Si falló la GPU, los próximos arranques
                     # también; si fue el JPEG (fotogramas raros), se vuelve a probar
@@ -193,7 +203,13 @@ class Fuente:
     def _fallo(self, error, elemento, espera=3):
         if self.proc is None:
             return
-        if self.obj and self.obj.get("hdmi") and error not in ("sin_imagen", "proceso") and (
+        if elemento == "hdmi_gpu" or (self.hdmi_gpu_activa and error in ("sin_imagen", "proceso")):
+            # El decodificador/VPP/importación falló: no quitar la pantalla.
+            # El siguiente objetivo usa CPU hasta reiniciar el servicio.
+            self.hdmi_gpu_fallida = True
+            evento("hdmi_gpu_cpu", fuente=self.cam["nombre"], detalle=error)
+            espera = 1
+        elif self.obj and self.obj.get("hdmi") and error not in ("sin_imagen", "proceso") and (
                 self.estado == "iniciando" or elemento in ("hdmi", "qh", "t")
                 or "kms" in error.lower()):
             # con HDMI, un fallo de arranque se achaca al HDMI aunque lo reporte
@@ -734,6 +750,10 @@ class MotorRutas:
         modos = cam.get("modos") or []
         if not modos:
             return None
+        # sin el H.264 de la cámara: habría que decodificarlo para sacar el JPEG
+        modos = [m for m in modos if m[3] != "H264"]
+        if not modos:
+            return None
         mjpg = [m for m in modos if m[3] == "MJPG"] or modos
         grandes = [m for m in mjpg if m[0] >= 640] or mjpg
         ancho, alto = min((m[0] * m[1], m[0], m[1]) for m in grandes)[1:]
@@ -855,6 +875,7 @@ class MotorRutas:
                     continue
                 p.forzar_reinicio, p.audio_fallido, p.hdmi_fallido = True, None, False
                 p.deco_gpu_fallida, p.reintento = False, 0.0
+                p.hdmi_gpu_fallida = False
             elif ident is None:
                 p.detener()
                 p.fallos, p.reintento = 0, 0.0
@@ -974,12 +995,12 @@ class Fuentes:
     def objetivo(self, f, aj=None):
         aj = aj or self.config.fuente(f.cam["id"])
         modos = f.cam["modos"]
-        ancho, alto = RESOLUCIONES.get(aj["resolucion"], RESOLUCIONES["1080p"])
+        ancho, alto = tamano_resolucion(aj["resolucion"]) or RESOLUCIONES["1080p"]
         if not any(m[0] == ancho and m[1] == alto for m in modos):
             # la cámara no tiene ese modo: el mayor apaisado hasta 1080p
             cands = [m for m in modos if m[1] <= 1080 and m[0] >= m[1]] or modos
             ancho, alto = max(cands, key=lambda m: (m[0] * m[1], m[2]))[:2]
-        mismos = [m for m in modos if m[0] == ancho and m[1] == alto]
+        mismos = self.modos_del_formato(aj, [m for m in modos if m[0] == ancho and m[1] == alto])
         fps = max(m[2] for m in ([m for m in mismos if m[2] <= aj["fps"]] or mismos))
         fmt = self.formato(f, aj, [m[3] for m in mismos if m[2] == fps])
         latencia = aj.get("latencia", "normal")
@@ -998,6 +1019,7 @@ class Fuentes:
                 "retraso_audio": int(aj.get("retraso_audio") or 0) if audio else 0,
                 "baja_latencia": latencia == "baja" and audio is not None,
                 "decodificadores": self.decodificadores(f, fmt),
+                "hdmi_gpu_cpu": f.hdmi_gpu_fallida,
                 "hdmi": self.hdmi_conector if f.cam["id"] == self.hdmi_para
                 and not f.hdmi_fallido else None,
                 "gpu": None if aj.get("solo_monitor") else self.salida_gpu(aj, fmt),
@@ -1006,12 +1028,28 @@ class Fuentes:
                 "preview": ruta_preview(f.cam["id"])}
 
     @staticmethod
+    def modos_del_formato(aj, mismos):
+        """Los modos de una resolución que valen para el formato pedido. El H.264 de la
+        cámara solo se usa si se pide (en automático, si no hay otro): la salida por
+        GPU parte del JPEG, así que con ella se queda en MJPEG aunque se pida H.264."""
+        pedido = {"mjpeg": "MJPG", "crudo": "YUYV", "h264": "H264"}.get(aj.get("formato"))
+        con_gpu = aj.get("gpu_salida", "no") != "no"
+        if pedido == "H264" and con_gpu and any(m[3] == "MJPG" for m in mismos):
+            pedido = "MJPG"
+        if pedido and any(m[3] == pedido for m in mismos):
+            return [m for m in mismos if m[3] == pedido]
+        sin_h264 = [m for m in mismos if m[3] != "H264"]
+        return sin_h264 or mismos
+
+    @staticmethod
     def formato(f, aj, disponibles):
         """MJPG o YUYV para el modo ya elegido. Sin comprimir se ahorra descomprimir
         el JPEG, que es lo que más CPU gasta, pero solo cabe por USB 3.0 (por USB 2.0,
         YUYV a 1080p no pasa de ~5 fps). La salida por GPU parte del JPEG: con ella
         activa, en automático se queda en MJPEG."""
         hay_mjpg, hay_crudo = "MJPG" in disponibles, "YUYV" in disponibles
+        if not hay_mjpg and not hay_crudo:
+            return "H264"           # ya elegido en modos_del_formato
         if not hay_mjpg:
             return "YUYV"
         if not hay_crudo:

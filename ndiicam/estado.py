@@ -10,7 +10,7 @@ import time
 import nucleo
 from nucleo import (ESTADO, FPS_VALIDOS, GRABACIONES, LIMITE_ENTRADAS, LIMITE_RUTAS, NOMBRE_GRABACION,
     PUERTO_HLS, PUERTO_RTMP, PUERTO_SRT, RESOLUCIONES, RUTA_PROGRAMA, VERSION, bytes_red,
-    conexiones_por_pid, evento, ip_de, latido, leer, nombre_de)
+    conexiones_por_pid, evento, ip_de, latido, leer, nombre_de, nombre_resolucion)
 from camaras import camaras as camaras_conectadas, modo_consola_activo, pantallas
 from gpu import (capacidad_gpu, capacidad_vpp, decodificador_h264, energia_rapl,
     edicion, simultaneo, tiempos_cpu, tiempos_gpu, uso_gpu, vatios)
@@ -73,6 +73,20 @@ def grabaciones():
     d["lista"] = d.get("sueltos", [])
     return d
 
+def resoluciones_camara(modos):
+    """Los tamaños que da una cámara, de mayor a menor (las apaisadas primero), con
+    sus fps y formatos: lo que el panel ofrece para elegir."""
+    tams = {}
+    for ancho, alto, fps, fmt in modos:
+        t = tams.setdefault((ancho, alto), {"fps": set(), "formatos": set()})
+        if fps in FPS_VALIDOS:
+            t["fps"].add(fps)
+        t["formatos"].add(fmt)
+    orden = sorted(tams, key=lambda t: (t[0] < t[1], -t[0] * t[1]))
+    return [{"valor": nombre_resolucion(*t), "ancho": t[0], "alto": t[1],
+             "fps": sorted(tams[t]["fps"]), "formatos": sorted(tams[t]["formatos"])} for t in orden]
+
+
 def estado_rutas():
     """Todo lo que necesita el panel de rutas: entradas (con lo que llega por la red),
     rutas guardadas, sus errores y cómo va cada una y cada salida."""
@@ -101,7 +115,9 @@ def estado_rutas():
             e["admite"] = {"720p": any((m[0], m[1]) == (1280, 720) for m in modos),
                            "1080p": any((m[0], m[1]) == (1920, 1080) for m in modos),
                            "fps": sorted({m[2] for m in modos if m[2] in FPS_VALIDOS}),
-                           "mjpeg": any(m[3] == "MJPG" for m in modos), "crudo": any(m[3] == "YUYV" for m in modos)}
+                           "mjpeg": any(m[3] == "MJPG" for m in modos), "crudo": any(m[3] == "YUYV" for m in modos),
+                           "h264": any(m[3] == "H264" for m in modos),
+                           "resoluciones": resoluciones_camara(modos)}
         ents.append(e)
     # la clave de YouTube no sale del equipo: el panel la ve tapada (y al
     # devolverla tapada, se conserva la guardada)

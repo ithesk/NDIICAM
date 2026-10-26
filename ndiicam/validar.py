@@ -11,8 +11,8 @@ cambio pide la contraseña actual) lo comprueba el panel después.
 import re
 
 from nucleo import (AP_CLAVE_ANTIGUA, CLAVE_PUENTE, FORMATOS, FPS_VALIDOS, GRABAR_CUANDO, HORA,
-    IDIOMAS, LATENCIAS, MODOS, MODOS_CONSOLA, RESOLUCIONES, RETRASO_MAX_MS, SALIDAS_EXTRA,
-    SALIDAS_GPU, URL_RTMP, NOMBRE_NDI)
+    IDIOMAS, LATENCIAS, MODOS, MODOS_CONSOLA, RETRASO_MAX_MS, SALIDAS_EXTRA,
+    SALIDAS_GPU, URL_RTMP, NOMBRE_NDI, tamano_resolucion)
 from cortafuegos import puertos_extra
 
 RESUMEN_CLAVE = re.compile(r"^pbkdf2\$[0-9a-f]{16}\$[0-9a-f]{64}$")
@@ -82,7 +82,8 @@ REGLAS_CONFIG = (
 REGLAS_FUENTE = (
     ("activa", lambda v: bool(v), ""),
     ("ndi_nombre", lambda v: str(v).strip() if NOMBRE_NDI.match(str(v).strip()) else None, "nombre_ndi_invalido"),
-    ("resolucion", lambda v: v if v in RESOLUCIONES else None, "resolucion_invalida"),
+    # 720p, 1080p o el tamaño exacto de un modo de la cámara ("3840x2160")
+    ("resolucion", lambda v: str(v) if tamano_resolucion(v) else None, "resolucion_invalida"),
     ("fps", lambda v: v if v in FPS_VALIDOS else None, "fps_invalido"),
     ("audio", lambda v: str(v), ""),                    # que exista lo mira el panel
     ("gpu_salida", lambda v: str(v) if str(v) in SALIDAS_GPU else None, "salida_gpu_invalida"),

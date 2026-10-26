@@ -149,6 +149,14 @@ solo se reinician los procesos de lo que ha cambiado; el resto sigue emitiendo.
 **Ganancia, retraso y silencio se aplican al momento**, sin esperar: se afinan de oído mientras
 se emite. Los ajustes de una cámara (resolución, fps, formato, latencia), que están en el engranaje
 de su entrada, también van al momento y reinician solo esa cámara.
+El panel ofrece los tamaños que anuncia la propia cámara, también 4K y en vertical, con los
+fps de cada uno. Si la cámara comprime en **H.264** (como la DJI Pocket 3), se puede elegir ese
+formato: pasa menos por el USB y, en 4K, es la única forma de llegar a 60 fps. El equipo lo
+decodifica para NDI y HDMI; si la ruta graba o publica, la cámara vuelve a MJPEG.
+
+En equipos con Celeron J3355 (Intel HD Graphics 500), una ruta que solo saca una cámara MJPEG por
+HDMI, sin NDI ni audio, la decodifica la GPU y la lleva a la pantalla sin pasar por la CPU (ver
+[hdmi-gpu-j3355.md](hdmi-gpu-j3355.md)).
 
 Si a una ruta le falta algo, se queda parada y la tarjeta dice por qué, por ejemplo:
 - no tiene imagen;

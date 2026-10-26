@@ -762,7 +762,10 @@ class Panel(BaseHTTPRequestHandler):
             nucleo.CONF.actualizar_fuente(ident, cambios)
             if cambios.keys() != {"retraso_audio"}:     # el retraso se ajusta en marcha
                 nucleo.FUENTES.reiniciar(ident)
-            evento("ajustes_fuente", fuente=fuente.cam["nombre"], campos=sorted(cambios))
+            # con rutas la cámara no tiene Fuente propia: el nombre, de la conectada
+            nombre = fuente.cam["nombre"] if fuente else next(
+                (c["nombre"] for c in camaras_conectadas() if c["id"] == ident), ident)
+            evento("ajustes_fuente", fuente=nombre, campos=sorted(cambios))
         self._json({"ok": True})
 
     def _guardar_rutas(self, d):

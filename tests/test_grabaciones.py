@@ -268,5 +268,41 @@ class Usb(Base):
             g.copiar_a_usb("/dev/sdb1", ["no"])
 
 
+@unittest.skipUnless(shutil.which("ffmpeg") and shutil.which("ffprobe"), "sin ffmpeg")
+class UnirConFfmpeg(unittest.TestCase):
+    """Los trozos de una sesión, unidos de verdad: cada uno empieza en 0 (como los
+    que deja splitmuxsink) y la completa debe durar la suma, con sus dos pistas."""
+
+    def test_une_trozos_que_empiezan_en_cero(self):
+        import subprocess
+        import unir
+        d = tempfile.mkdtemp()
+        try:
+            for n in (1, 2, 3):
+                subprocess.run(["ffmpeg", "-nostdin", "-loglevel", "error", "-f", "lavfi", "-i",
+                                "testsrc=size=160x90:rate=24:duration=2", "-f", "lavfi", "-i",
+                                "sine=frequency=440:duration=2", "-c:v", "libx264", "-c:a", "aac",
+                                "-shortest", os.path.join(d, f"trozo-0{n}.mp4")], check=True)
+            self.assertTrue(unir.unir(d, "mp4"))
+            completa = os.path.join(d, "completa.mp4")
+            self.assertFalse(os.path.exists(completa + ".tmp"))
+            r = subprocess.run(["ffprobe", "-v", "error", "-show_entries", "format=duration:stream=codec_type",
+                                "-of", "json", completa], capture_output=True, text=True, check=True)
+            info = json.loads(r.stdout)
+            self.assertAlmostEqual(float(info["format"]["duration"]), 6.0, delta=0.3)
+            self.assertEqual(sorted(x["codec_type"] for x in info["streams"]), ["audio", "video"])
+        finally:
+            shutil.rmtree(d, ignore_errors=True)
+
+    def test_sin_trozos_no_deja_nada(self):
+        import unir
+        d = tempfile.mkdtemp()
+        try:
+            self.assertFalse(unir.unir(d, "mp4"))
+            self.assertEqual(os.listdir(d), [])
+        finally:
+            shutil.rmtree(d, ignore_errors=True)
+
+
 if __name__ == "__main__":
     unittest.main()

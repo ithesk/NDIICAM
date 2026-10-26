@@ -3229,6 +3229,8 @@ const RT = {
     atajos: "Atajos: N nueva ruta · M marca en la grabación · Supr borra lo seleccionado · Mayús+clic selección múltiple · Ctrl+S aplicar · Ctrl+Z deshacer · Esc cerrar · 1/2/3 pestañas",
     cam_res: "Resolución", cam_fps: "Imágenes por segundo", cam_fmt: "Formato", cam_lat: "Latencia",
     fmt_auto: "Automático", fmt_mjpeg: "MJPEG (comprimido)", fmt_crudo: "Sin comprimir", lat_normal: "Normal", lat_baja: "Baja", lat_minima: "Mínima (sin audio)",
+    fmt_h264: "H.264 (de la cámara)", vertical: "vertical",
+    cam_h264_nota: "La cámara comprime ella misma: menos USB y, en 4K, la única forma de llegar a 60 fps. Para NDI y HDMI el equipo lo decodifica; si la ruta graba o publica, la cámara pasa a MJPEG.",
     cam_nota: "Se aplican al momento: la cámara se reinicia un instante.", cam_aplicado: "Ajuste de la cámara aplicado.",
     pendientes: (n) => n === 1 ? "1 cambio sin aplicar" : `${n} cambios sin aplicar`, aplicar_cambios: "Aplicar", al_dia: "Al día",
     aplicando: "Aplicando…", vivo_nota: "Ganancia, retraso y silencio se aplican al momento; lo demás, al pulsar Aplicar.",
@@ -3303,6 +3305,8 @@ const RT = {
     atajos: "Shortcuts: N new route · M marker in the recording · Del deletes the selection · Shift+click multi-select · Ctrl+S apply · Ctrl+Z undo · Esc close · 1/2/3 tabs",
     cam_res: "Resolution", cam_fps: "Frames per second", cam_fmt: "Format", cam_lat: "Latency",
     fmt_auto: "Automatic", fmt_mjpeg: "MJPEG (compressed)", fmt_crudo: "Uncompressed", lat_normal: "Normal", lat_baja: "Low", lat_minima: "Minimal (no audio)",
+    fmt_h264: "H.264 (from the camera)", vertical: "portrait",
+    cam_h264_nota: "The camera compresses by itself: less USB and, in 4K, the only way to reach 60 fps. For NDI and HDMI the device decodes it; if the route records or publishes, the camera switches to MJPEG.",
     cam_nota: "They apply at once: the camera restarts for a moment.", cam_aplicado: "Camera setting applied.",
     pendientes: (n) => n === 1 ? "1 change not applied" : `${n} changes not applied`, aplicar_cambios: "Apply", al_dia: "Up to date",
     aplicando: "Applying…", vivo_nota: "Gain, delay and mute apply at once; everything else when you press Apply.",
@@ -3930,14 +3934,21 @@ function rtAjustesEntrada(e) {
     };
     const sel = (id, etq, opciones, actual, campo) => rtCampo(id, etq, rel("select", { id, onchange: (ev) => cambiar(campo, ev.target.value) },
       ...opciones.map(([v, txt]) => rel("option", { value: v, text: txt, selected: String(v) === String(actual) }))));
-    const res = [["720p", "1280×720"], ["1080p", "1920×1080"]].filter(([v]) => ad[v] !== false);
-    const fps = (ad.fps && ad.fps.length ? ad.fps : [15, 24, 25, 30, 50, 60]).map((f) => [f, `${f} fps`]);
-    const fmt = [["auto", rt("fmt_auto")], ad.mjpeg !== false ? ["mjpeg", rt("fmt_mjpeg")] : null, ad.crudo !== false ? ["crudo", rt("fmt_crudo")] : null].filter(Boolean);
+    // los tamaños que anuncia la cámara (4K, vertical...), con los fps de cada uno
+    const tams = ad.resoluciones || [];
+    const res = tams.length
+      ? tams.map((x) => [x.valor, `${x.ancho}×${x.alto}` + (x.alto > x.ancho ? ` · ${rt("vertical")}` : x.ancho >= 3840 ? " · 4K" : "")])
+      : [["720p", "1280×720"], ["1080p", "1920×1080"]].filter(([v]) => ad[v] !== false);
+    const tam = tams.find((x) => x.valor === aj.resolucion);
+    const fps = ((tam && tam.fps.length ? tam.fps : ad.fps) || [15, 24, 25, 30, 50, 60]).map((f) => [f, `${f} fps`]);
+    const fmt = [["auto", rt("fmt_auto")], ad.mjpeg !== false ? ["mjpeg", rt("fmt_mjpeg")] : null, ad.crudo !== false ? ["crudo", rt("fmt_crudo")] : null,
+      ad.h264 ? ["h264", rt("fmt_h264")] : null].filter(Boolean);
     const lat = [["normal", rt("lat_normal")], ["baja", rt("lat_baja")], ["minima", rt("lat_minima")]];
     t.push(rel("div", { class: "rt-dos" },
       sel("rtCamRes", rt("cam_res"), res, aj.resolucion, "resolucion"), sel("rtCamFps", rt("cam_fps"), fps, aj.fps, "fps"),
       sel("rtCamFmt", rt("cam_fmt"), fmt, aj.formato, "formato"), sel("rtCamLat", rt("cam_lat"), lat, aj.latencia, "latencia")),
-      rel("div", { class: "nota", text: rt("cam_nota") }));
+      rel("div", { class: "nota", text: rt("cam_nota") }),
+      aj.formato === "h264" ? rel("div", { class: "nota", text: rt("cam_h264_nota") }) : null);
   }
   const usos = RB.rutas.filter((r) => r.video === e.id || r.audio === e.id).map((r) => r.nombre);
   t.push(rel("div", { class: "nota", text: rt("se_usa")(usos) }));

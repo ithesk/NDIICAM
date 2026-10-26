@@ -72,7 +72,7 @@ apt-get update -qq
 apt-get install -y -qq --no-install-recommends \
   python3 python3-gi python3-yaml gir1.2-gstreamer-1.0 gir1.2-gst-plugins-base-1.0 \
   gstreamer1.0-tools gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-alsa \
-  gstreamer1.0-plugins-bad gstreamer1.0-libav \
+  gstreamer1.0-plugins-bad gstreamer1.0-libav ffmpeg \
   python3-pil python3-segno fonts-dejavu-core \
   v4l-utils network-manager dnsmasq-base hostapd iw avahi-daemon avahi-utils \
   iproute2 curl ca-certificates nftables openssl >/dev/null
@@ -214,6 +214,18 @@ done
 install -d -m 755 /opt/ndiicam /opt/ndiicam/web
 # el servicio son varios módulos (ver la cabecera de ndiicam.py): van todos
 install -m 755 "$ORIGEN"/ndiicam/*.py /opt/ndiicam/
+# Sumidero privado: soporte DMA_DRM/modificadores sin sustituir kmssink del SO.
+# Si no se puede construir (p. ej. GStreamer anterior a 1.24), fuente.py usa CPU.
+if [ -f "$ORIGEN/plugin/hdmi/build.sh" ]; then
+  paso "HDMI GPU DMA-BUF / salida HDMI directa por GPU"
+  if apt-get install -y -qq --no-install-recommends build-essential pkg-config \
+      libgstreamer-plugins-base1.0-dev libdrm-dev >/dev/null \
+      && sh "$ORIGEN/plugin/hdmi/build.sh" /opt/ndiicam/gst/libgstndihdmikms.so; then
+    :
+  else
+    aviso "HDMI GPU plugin unavailable; using CPU / HDMI por CPU"
+  fi
+fi
 install -m 755 "$ORIGEN/system/ndiicam-watchdog.sh" /opt/ndiicam/
 install -m 644 "$ORIGEN/ndiicam/web/index.html" /opt/ndiicam/web/
 install -m 644 "$ORIGEN/system/ndiicam.service" /etc/systemd/system/ndiicam.service
