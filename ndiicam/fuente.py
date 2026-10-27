@@ -476,12 +476,18 @@ def hdmi_gpu_disponible(cfg):
     El sumidero privado importa DMA-BUF con modificadores; kmssink 1.24 no
     negocia DMA_DRM. Si no está instalado, se conserva la ruta CPU existente.
     """
-    if (cfg.get("fmt") != "MJPG" or not cfg.get("hdmi") or con_ndi(cfg)
+    if (cfg.get("fmt") != "MJPG" or not cfg.get("hdmi")
             or cfg.get("audio") or cfg.get("hdmi_gpu_cpu")):
         return False
     try:
         if not all(Gst.ElementFactory.find(n) for n in ("vajpegdec", "vapostproc")):
             return False
+        if con_ndi(cfg):
+            # Sin el parche de conexiones no se puede dormir el decodificador:
+            # conservar entonces el camino convencional, que siempre emite.
+            ndi = Gst.ElementFactory.make("ndisink")
+            if ndi is None or ndi.find_property("connections") is None:
+                return False
         # Cargar siempre la copia instalada, no una entrada de la caché que
         # podría apuntar a un directorio de pruebas ya borrado o de otro usuario.
         ruta = os.path.join(os.path.dirname(os.path.abspath(__file__)),
@@ -492,6 +498,95 @@ def hdmi_gpu_disponible(cfg):
         return bool(Gst.ElementFactory.find("ndihdmisink"))
     except GLib.Error:
         return False
+
+
+def tramo_ndi_jpeg(formato="I420"):
+    """NDI acepta el I420 nativo de jpegdec; no forzar UYVY sin medirlo."""
+    if formato not in ("I420", "NV12", "UYVY"):
+        raise ValueError("Formato NDI no admitido")
+    conversion = "" if formato == "I420" else " ! videoconvert n-threads=2"
+    return f"jpegdec name=ndi_deco{conversion} ! video/x-raw,format={formato}"
+
+
+class NdiDemanda:
+    """Emisor anunciado aun sin vídeo; solo decodifica si hay receptores.
+
+    Solo recibe JPEG comprimido. appsrc y la cola no bloquean al hilo de la
+    cámara/HDMI. Un error se recupera en este pipeline, sin tocar la pantalla.
+    """
+
+    def __init__(self, cfg):
+        self.formato = cfg.get("ndi_formato", "I420")
+        self.p = Gst.parse_launch(
+            "appsrc name=ndi_ent format=time is-live=true max-bytes=0"
+            " max-buffers=2 leaky-type=downstream"
+            f" ! queue name=ndi_q {Q} ! {tramo_ndi_jpeg(self.formato)}"
+            " ! ndisink name=ndi_sink sync=false async=false enable-last-sample=false")
+        self.entrada = self.p.get_by_name("ndi_ent")
+        self.sink = self.p.get_by_name("ndi_sink")
+        self.sink.set_property("ndi-name", cfg["nombre"])
+        self.conexiones, self.enviados, self.descartes = 0, 0, 0
+        self.error, self.reintento, self.timer = "", 0.0, None
+        self.cerrada = False
+        self.p.get_by_name("ndi_q").connect("overrun", self._descarte)
+        self.sink.get_static_pad("sink").add_probe(Gst.PadProbeType.BUFFER, self._enviado)
+        bus = self.p.get_bus()
+        bus.add_signal_watch()
+        bus.connect("message::error", self._error)
+
+    def _descarte(self, *_):
+        self.descartes += 1
+
+    def _enviado(self, *_):
+        self.enviados += 1
+        return Gst.PadProbeReturn.OK
+
+    def _fallo(self, detalle):
+        self.error, self.conexiones = detalle, 0
+        self.reintento = time.monotonic() + 3
+        self.p.set_state(Gst.State.NULL)
+        informar({"aviso": "ndi_rama_fallida", "detalle": detalle})
+
+    def _error(self, bus, msg):
+        if not self.cerrada:
+            self._fallo(msg.parse_error()[0].message)
+
+    def actualizar(self):
+        if self.cerrada:
+            return False
+        if self.reintento:
+            if time.monotonic() < self.reintento:
+                return True
+            self.reintento, self.error = 0.0, ""
+            if self.p.set_state(Gst.State.PLAYING) == Gst.StateChangeReturn.FAILURE:
+                self._fallo("arranque")
+                return True
+        self.conexiones = int(self.sink.get_property("connections"))
+        return True
+
+    def arrancar(self, origen):
+        self.p.use_clock(origen.get_clock() or Gst.SystemClock.obtain())
+        self.p.set_start_time(Gst.CLOCK_TIME_NONE)
+        self.p.set_base_time(origen.get_base_time())
+        if self.p.set_state(Gst.State.PLAYING) == Gst.StateChangeReturn.FAILURE:
+            self._fallo("arranque")
+        self.timer = GLib.timeout_add(250, self.actualizar)
+
+    def poner_caps(self, caps):
+        self.entrada.set_property("caps", caps)
+
+    def jpeg(self, buf):
+        if self.conexiones > 0 and not self.error and not self.cerrada:
+            # No esperar al decodificador ni al envío de red.
+            self.entrada.emit("push-buffer", buf)
+
+    def parar(self):
+        self.cerrada = True
+        if self.timer is not None:
+            GLib.source_remove(self.timer)
+            self.timer = None
+        self.p.set_state(Gst.State.NULL)
+        self.p.get_bus().remove_signal_watch()
 
 
 class HdmiGPU(Reparto):
@@ -522,6 +617,7 @@ class HdmiGPU(Reparto):
             f" ! queue name=q2 {Q} ! queue name=q3 {Q}"
             f" ! ndihdmisink name=sink sync=false connector-id={cfg['hdmi']}{alquiler(cfg)}")
         self.entrada = self.salida.get_by_name("ent")
+        self.ndi = NdiDemanda(cfg) if con_ndi(cfg) else None
         self.pipelines = [self.salida, self.captura]
         self.captura.get_by_name("cap").connect("new-sample", self._capturado)
 
@@ -548,8 +644,28 @@ class HdmiGPU(Reparto):
                 f"framerate={c['fps']}/1,sof-marker=0,colorspace=sYUV,"
                 f"sampling={muestreo},interlace-mode=progressive")
             self.entrada.set_property("caps", self.caps)
+            if self.ndi is not None:
+                self.ndi.poner_caps(self.caps)
             informar({"hdmi_gpu_estado": "activa", "muestreo": muestreo})
+        if self.ndi is not None:
+            self.ndi.jpeg(buf)
         return self.entrada.emit("push-buffer", buf)
+
+    def elemento(self, nombre):
+        if nombre == "ndi_sink" and self.ndi is not None:
+            return self.ndi.sink
+        return super().elemento(nombre)
+
+    def arrancar(self):
+        ok = super().arrancar()
+        if ok and self.ndi is not None:
+            self.ndi.arrancar(self.captura)
+        return ok
+
+    def parar(self):
+        if self.ndi is not None:
+            self.ndi.parar()
+        super().parar()
 
 
 class DecoGPU(Reparto):
@@ -961,7 +1077,8 @@ def main():
         flujo = Directo(cfg)
     flujo.elemento("src").set_property("device", cfg["dev"])
     if con_ndi(cfg):
-        flujo.elemento("sink").set_property("ndi-name", cfg["nombre"])
+        ndi_sink = flujo.elemento("ndi_sink") or flujo.elemento("sink")
+        ndi_sink.set_property("ndi-name", cfg["nombre"])
     combinador = flujo.elemento("c")
     if cfg.get("baja_latencia") and combinador is not None:
         # la imagen sale sin esperar al audio de su intervalo (plugin parcheado:
@@ -1036,8 +1153,12 @@ def main():
     def mensaje(bus, msg):
         if msg.type == Gst.MessageType.ERROR:
             err, _ = msg.parse_error()
+            origen = msg.src.get_name()
+            # que la cámara deje de dar imagen (desenchufada, -71…) no es culpa de
+            # la GPU: si se etiquetara hdmi_gpu, quedaría vetada hasta reiniciar
             informar({"error": err.message,
-                      "elemento": "hdmi_gpu" if isinstance(flujo, HdmiGPU) else msg.src.get_name()})
+                      "elemento": "hdmi_gpu" if isinstance(flujo, HdmiGPU) and origen != "src"
+                      else origen})
             salida[0] = 1
             bucle.quit()
         elif msg.type == Gst.MessageType.EOS:
@@ -1056,7 +1177,7 @@ def main():
 
     # tally: lo da el plugin NDI parcheado de NDIICAM (plugin/ndisink-tally.patch);
     # con el plugin de serie no existe la propiedad y no se informa
-    sink = flujo.elemento("sink")
+    sink = flujo.elemento("ndi_sink") or flujo.elemento("sink")
     con_tally = any(p.name == "tally-program" for p in sink.list_properties())
 
     def tic():
@@ -1071,6 +1192,10 @@ def main():
             retardo["suma"], retardo["n"] = 0.0, 0
         if isinstance(flujo, HdmiGPU):
             extra["hdmi_gpu"] = True
+            if flujo.ndi is not None:
+                extra.update(ndi_out=flujo.ndi.enviados, ndi_desc=flujo.ndi.descartes,
+                             ndi_activo=flujo.ndi.conexiones > 0,
+                             ndi_formato=flujo.ndi.formato, ndi_error=flujo.ndi.error)
         informar({**CONTADORES, **NIVEL, **extra, "t": time.monotonic(),
                   "hilos": ("gpu" if flujo.modo == "gpu" else 1) if isinstance(flujo, DecoGPU)
                   else flujo.n if isinstance(flujo, Reparto) else 1})

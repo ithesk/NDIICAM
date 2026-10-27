@@ -180,6 +180,8 @@ class Fuente:
                 self.calibracion = {**d["calibracion"], "estado": "hecha", "t": time.time()}
                 evento("calibracion", fuente=self.cam["nombre"], **d["calibracion"])
             elif "aviso" in d:
+                if d["aviso"] == "ndi_rama_fallida":
+                    evento("ndi_rama_fallida", fuente=self.cam["nombre"], detalle=d.get("detalle"))
                 if d["aviso"] == "hdmi_gpu_fallida":
                     self.hdmi_gpu_fallida = True
                     self.hdmi_gpu_activa = False

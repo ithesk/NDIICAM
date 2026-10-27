@@ -410,6 +410,7 @@ class JpegDeLaCamara(unittest.TestCase):
         originales_inf, fuente.informar = fuente.informar, lambda d: None
         try:
             h = fuente.HdmiGPU.__new__(fuente.HdmiGPU)
+            h.ndi = None
             h.cfg, h.caps, h.sin_cabecera = {"ancho": 3840, "alto": 2160, "fps": 30}, None, 0
             h.entrada = types.SimpleNamespace(set_property=lambda k, v: None,
                                               emit=lambda _, buf: empujados.append(buf) or "ok")
@@ -762,13 +763,58 @@ class HdmiGpuDirecto(unittest.TestCase):
             self.assertFalse(fuente.hdmi_gpu_disponible(
                 {"fmt": "MJPG", "hdmi": 42, "ndi": False}))
 
-    def test_no_intercepta_ndi_audio_ni_reintento_cpu(self):
+    def test_no_intercepta_audio_ni_reintento_cpu(self):
         # Estos casos deben seguir funcionando incluso sin GStreamer/VA.
         base = {"fmt": "MJPG", "hdmi": 42, "ndi": False}
-        for cambio in ({"ndi": True}, {"audio": "hw:1"}, {"hdmi_gpu_cpu": True},
+        for cambio in ({"audio": "hw:1"}, {"hdmi_gpu_cpu": True},
                        {"hdmi": None}, {"fmt": "H264"}):
             with self.subTest(cambio=cambio):
                 self.assertFalse(fuente.hdmi_gpu_disponible({**base, **cambio}))
+
+    def test_ndi_sin_receptores_no_decodifica_y_reanuda(self):
+        recibidos = []
+        n = fuente.NdiDemanda.__new__(fuente.NdiDemanda)
+        n.conexiones, n.error, n.cerrada = 0, "", False
+        n.entrada = types.SimpleNamespace(emit=lambda *args: recibidos.append(args))
+        n.jpeg("JPEG sin clientes")
+        self.assertEqual(recibidos, [])
+        n.conexiones = 1
+        n.jpeg("JPEG con cliente")
+        self.assertEqual(recibidos, [("push-buffer", "JPEG con cliente")])
+        n.conexiones = 0
+        n.jpeg("JPEG al desconectar")
+        self.assertEqual(len(recibidos), 1)
+        n.conexiones, n.error = 1, "not-negotiated"
+        n.jpeg("JPEG durante recuperacion")
+        self.assertEqual(len(recibidos), 1)
+
+    def test_ndi_dual_exige_plugin_con_conexiones(self):
+        from unittest.mock import patch
+        ndi = types.SimpleNamespace(find_property=lambda _: None)
+        factory = types.SimpleNamespace(find=lambda _: True, make=lambda _: ndi)
+        with patch.object(fuente.Gst, "ElementFactory", factory, create=True):
+            self.assertFalse(fuente.hdmi_gpu_disponible(
+                {"fmt": "MJPG", "hdmi": 42, "ndi": True}))
+
+    def test_fallo_ndi_reintenta_solo_su_pipeline(self):
+        from unittest.mock import patch
+        estados = []
+        n = fuente.NdiDemanda.__new__(fuente.NdiDemanda)
+        n.p = types.SimpleNamespace(set_state=lambda v: estados.append(v) or "ok")
+        n.sink = types.SimpleNamespace(get_property=lambda _: 1)
+        n.conexiones, n.cerrada = 2, False
+        with patch.object(fuente.Gst, "State", types.SimpleNamespace(NULL="null", PLAYING="play"), create=True), \
+                patch.object(fuente.Gst, "StateChangeReturn", types.SimpleNamespace(FAILURE="fail"), create=True), \
+                patch.object(fuente, "informar"), patch.object(fuente.time, "monotonic", return_value=100):
+            n._fallo("error de red")
+            self.assertEqual(estados, ["null"])
+            self.assertEqual(n.conexiones, 0)
+            self.assertTrue(n.actualizar())
+            self.assertEqual(estados, ["null"])   # espera antes de reintentar
+            n.reintento = 99
+            self.assertTrue(n.actualizar())
+            self.assertEqual(estados, ["null", "play"])
+            self.assertEqual((n.error, n.conexiones), ("", 1))
 
     def test_fallo_gpu_reintenta_con_cpu_y_conserva_la_pantalla(self):
         from unittest.mock import patch

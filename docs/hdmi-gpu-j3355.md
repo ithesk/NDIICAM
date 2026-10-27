@@ -38,8 +38,11 @@ Fuentes, licencia y compilación: [plugin/hdmi/README.md](../plugin/hdmi/README.
 
 ## Cuándo se activa y cómo recupera
 
-`fuente.hdmi_gpu_disponible()` exige MJPEG, HDMI, ausencia de salida NDI y de
-audio en ese proceso, los elementos VA y el módulo instalado junto a la app.
+`fuente.hdmi_gpu_disponible()` exige MJPEG, HDMI, ausencia de audio en ese
+proceso, los elementos VA y el módulo instalado junto a la app. La versión
+actual también permite NDI simultáneo si su plugin expone `connections`:
+usa una rama CPU independiente, que duerme sin receptores. Véase
+[NDI y HDMI simultáneos](ndi-hdmi-demanda.md).
 El archivo local se carga explícitamente; no se usa una copia de una caché
 que apunte a directorios de pruebas.
 
@@ -48,8 +51,9 @@ que apunte a directorios de pruebas.
   reintenta con CPU, conservando la asignación HDMI.
 - El veto de GPU para esta fuente dura hasta reiniciar el servicio o usar el
   botón Reiniciar del panel. No se reintenta la GPU sin límite.
-- Al añadir NDI o audio, se vuelve a la ruta existente. No se cambiaron rutas,
-  resolución, configuración de red ni preferencias del usuario.
+- Con NDI simultáneo se mantiene HDMI en GPU y se activa la rama NDI bajo
+  demanda. Con audio o sin el plugin NDI compatible se usa la ruta existente.
+  No se cambiaron rutas, resolución, red ni preferencias del usuario.
 
 La lista `GPU_SIN_VPP` de `gpu.py` sigue protegiendo la ruta que descarga UYVY
 para NDI: esa ruta fue más lenta. El indicador global `gpu: false` de la
