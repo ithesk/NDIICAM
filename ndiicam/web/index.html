@@ -3256,6 +3256,8 @@ const RT = {
     audio_otro: "El audio viene de otra entrada y suele llegar antes que la imagen: el retraso lo iguala.",
     audio_otro_red: "El audio viene de otra entrada. Hacia la derecha se retrasa el audio (si llega antes que la imagen); hacia la izquierda, la imagen (si el audio llega después, por ejemplo porque pasa antes por otro equipo).",
     ret_audio: (x) => `audio +${x} ms`, ret_imagen: (x) => `imagen +${x} ms`,
+    ret_que: "Qué se retrasa", ret_op_audio: "El audio (llega antes que la imagen)", ret_op_imagen: "La imagen (el audio llega después)",
+    ret_del_audio: "Retraso del audio", ret_de_imagen: "Retraso de la imagen",
     copia: "El vídeo se copia sin recodificar.", sale_por: "Sale por", anadir_salida: "+ Añadir salida…",
     sin_salidas: "Aún no sale a ningún sitio.", borrar_ruta: "Borrar ruta", lectores: (n) => `${n} leyendo`,
     entradas: "Entradas", rutas: "Rutas", salidas_t: "Salidas", anadir: "Añadir",
@@ -3335,6 +3337,8 @@ const RT = {
     audio_otro: "The audio comes from another input and usually arrives before the picture: the delay evens it out.",
     audio_otro_red: "The audio comes from another input. To the right the audio is delayed (if it arrives before the picture); to the left, the picture (if the audio arrives later, for instance because it goes through another device first).",
     ret_audio: (x) => `audio +${x} ms`, ret_imagen: (x) => `picture +${x} ms`,
+    ret_que: "What gets delayed", ret_op_audio: "The audio (it arrives before the picture)", ret_op_imagen: "The picture (the audio arrives later)",
+    ret_del_audio: "Audio delay", ret_de_imagen: "Picture delay",
     copia: "The video is copied without re-encoding.", sale_por: "Goes out to", anadir_salida: "+ Add output…",
     sin_salidas: "It does not go out anywhere yet.", borrar_ruta: "Delete route", lectores: (n) => `${n} watching`,
     entradas: "Inputs", rutas: "Routes", salidas_t: "Outputs", anadir: "Add",
@@ -3905,11 +3909,22 @@ function rtCampo(id, etq, ...hijos) { return rel("div", null, rel("label", { for
 // El retraso de una ruta: en positivo se retrasa el audio; en negativo, la imagen
 // (solo si llega por la red: es la única que se puede retener sin recodificar).
 function rtRetMin(r) { const v = rtEnt(r.video); return v && v.tipo === "ingesta" ? -2000 : 0; }
-function rtRetTxt(x) { return x < 0 ? rt("ret_imagen")(-x) : `${x} ms`; }
+function rtRetTxt(x) { return x < 0 ? rt("ret_imagen")(-x) : x > 0 ? rt("ret_audio")(x) : "0 ms"; }
 function rtRetraso(id, r) {
-  const min = rtRetMin(r);
-  const fmt = (x) => x < 0 ? rt("ret_imagen")(-x) : x > 0 && min < 0 ? rt("ret_audio")(x) : `${x} ms`;
-  return rtDeslizador(id, rt("retraso"), min, 1000, 10, r.retraso, fmt, (x) => { r.retraso = x; rtVivo(r); });
+  const ms = (x) => `${x} ms`;
+  // solo el audio se puede retrasar: un deslizador que lo dice
+  if (rtRetMin(r) === 0) return rtDeslizador(id, rt("ret_del_audio"), 0, 1000, 10, Math.max(0, r.retraso), ms, (x) => { r.retraso = x; rtVivo(r); });
+  // los dos sentidos: primero se elige qué espera, y el deslizador lleva su nombre
+  const imagen = r.retraso < 0;
+  const que = rel("select", { id: id + "-que", onchange: (ev) => {
+    const mag = Math.abs(r.retraso);
+    r.retraso = ev.target.value === "imagen" ? -Math.min(2000, mag) : Math.min(1000, mag);
+    rtVivo(r); rtPintar();
+  } }, rel("option", { value: "audio", text: rt("ret_op_audio"), selected: !imagen }),
+    rel("option", { value: "imagen", text: rt("ret_op_imagen"), selected: imagen }));
+  return rel("div", { style: "display:contents" }, rtCampo(id + "-que", rt("ret_que"), que),
+    rtDeslizador(id, rt(imagen ? "ret_de_imagen" : "ret_del_audio"), 0, imagen ? 2000 : 1000, 10, Math.abs(r.retraso), ms,
+      (x) => { r.retraso = imagen ? -x : x; rtVivo(r); }));
 }
 function rtDeslizador(id, etq, min, max, paso, valor, fmt, alCambiar) {
   const o = rel("output", { text: fmt(valor) });
