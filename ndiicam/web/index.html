@@ -1115,6 +1115,9 @@ const T = {
     rec_download: "Descargar", rec_delete: "Borrar", rec_confirm: (n) => `¿Borrar ${n}?`,
     ses_grabando: "Grabando", ses_cortada: "Cortada", ses_protegida: "Protegida", ses_trozos: (n) => n === 1 ? "1 trozo" : `${n} trozos`,
     ses_ver: "Reproducir", ses_descargar: "Descargar entera", ses_preparar: "Preparar descarga", ses_preparando: "Preparando…", ses_error_union: "No se pudo unir",
+    ses_compartir: "Compartir", ses_copiar_enlace: "Copiar enlace", ses_copiado: "Enlace copiado", ses_dejar: "Dejar de compartir",
+    ses_compartida: "Compartida", ses_ligera: "Preparando copia ligera…", ses_compartir_unir: "Para compartir, primero «Preparar descarga».",
+    ses_dejar_confirm: (n) => `¿Dejar de compartir ${n}? El enlace dejará de funcionar.`, ses_copia_manual: "Copia el enlace:",
     ses_trozos_btn: "Trozos", ses_marcas: "Marcas", ses_marcas_txt: "Capítulos (txt)", ses_proteger: "Proteger", ses_desproteger: "Quitar protección",
     ses_borrar_confirm: (n) => `¿Borrar la sesión ${n} entera?`, ses_sueltos: "Ficheros sueltos (de antes)", ses_vacio: "Aún no hay grabaciones.",
     ses_nota_mkv: "MKV: el navegador no lo reproduce; descárgalo o graba en MP4.", ses_aviso_disco: (g) => `Quedan ${g} en el disco: la limpieza automática borrará pronto lo más viejo que no esté protegido.`,
@@ -1225,6 +1228,8 @@ const T = {
       gpu_activa: (d) => `${d.fuente}: salida GPU activa (${d.modo})`,
       gpu_fallo: (d) => `${d.fuente}: la salida GPU falló (${d.detalle}); el NDI sigue, se reintenta`,
       grabacion_borrada: (d) => `Grabación borrada: ${d.nombre}`,
+      grabacion_compartida: (d) => `Grabación compartida: ${d.nombre}`,
+      grabacion_sin_compartir: (d) => `Grabación ya no compartida: ${d.nombre}`,
       reposo_fallo: (d) => `La pantalla de ayuda del HDMI falló: ${d.detalle}`,
       ip_guardada: (d) => `IP del cable guardada (${d.metodo === "manual" ? "fija" : "DHCP"}) en «${d.perfil}»; se aplica al enchufarlo`,
       tally: (d) => `${d.fuente}: ${d.programa ? "en el aire (programa)" : d.previo ? "en previo" : "fuera del aire"}`,
@@ -1490,6 +1495,9 @@ const T = {
     rec_download: "Download", rec_delete: "Delete", rec_confirm: (n) => `Delete ${n}?`,
     ses_grabando: "Recording", ses_cortada: "Cut off", ses_protegida: "Protected", ses_trozos: (n) => n === 1 ? "1 part" : `${n} parts`,
     ses_ver: "Play", ses_descargar: "Download whole", ses_preparar: "Prepare download", ses_preparando: "Preparing…", ses_error_union: "Could not join",
+    ses_compartir: "Share", ses_copiar_enlace: "Copy link", ses_copiado: "Link copied", ses_dejar: "Stop sharing",
+    ses_compartida: "Shared", ses_ligera: "Preparing light copy…", ses_compartir_unir: "To share it, first “Prepare download”.",
+    ses_dejar_confirm: (n) => `Stop sharing ${n}? The link will stop working.`, ses_copia_manual: "Copy the link:",
     ses_trozos_btn: "Parts", ses_marcas: "Markers", ses_marcas_txt: "Chapters (txt)", ses_proteger: "Protect", ses_desproteger: "Unprotect",
     ses_borrar_confirm: (n) => `Delete the whole session ${n}?`, ses_sueltos: "Loose files (older)", ses_vacio: "No recordings yet.",
     ses_nota_mkv: "MKV: the browser cannot play it; download it or record as MP4.", ses_aviso_disco: (g) => `${g} left on disk: automatic cleanup will soon delete the oldest unprotected recordings.`,
@@ -1600,6 +1608,8 @@ const T = {
       gpu_activa: (d) => `${d.fuente}: GPU output active (${d.modo})`,
       gpu_fallo: (d) => `${d.fuente}: GPU output failed (${d.detalle}); NDI keeps going, retrying`,
       grabacion_borrada: (d) => `Recording deleted: ${d.nombre}`,
+      grabacion_compartida: (d) => `Recording shared: ${d.nombre}`,
+      grabacion_sin_compartir: (d) => `Recording no longer shared: ${d.nombre}`,
       reposo_fallo: (d) => `The HDMI help screen failed: ${d.detalle}`,
       ip_guardada: (d) => `Wired IP saved (${d.metodo === "manual" ? "static" : "DHCP"}) in «${d.perfil}»; applied when plugged in`,
       tally: (d) => `${d.fuente}: ${d.programa ? "on air (program)" : d.previo ? "on preview" : "off air"}`,
@@ -2170,6 +2180,10 @@ async function pintarGrabaciones(e) {
   grabUltima = Date.now();
   let g;
   try { g = await api("/api/grabaciones"); } catch (_) { return; }
+  // compartir con enlace: servicio opcional (NDIICAM_COMPARTIR); sin él, ni botón
+  let comp = { activo: false };
+  try { comp = await api("/api/grabaciones/compartir"); } catch (_) {}
+  const enlaces = comp.enlaces || {};
   const ses = g.sesiones || [], sueltos = g.sueltos || g.lista || [];
   const conRutas = ((ultimo || {}).config || {}).motor === "rutas";
   $("secGrab").classList.toggle("oculto", !conRutas && !graba && !ses.length && !sueltos.length);
@@ -2180,6 +2194,19 @@ async function pintarGrabaciones(e) {
   const dur = (seg) => { seg = Math.max(0, Math.round(seg || 0)); const h = Math.floor(seg / 3600), m = Math.floor(seg % 3600 / 60), s2 = seg % 60;
     return (h ? h + ":" : "") + String(m).padStart(h ? 2 : 1, "0") + ":" + String(s2).padStart(2, "0"); };
   const llamar = async (ruta, datos) => { try { await api(ruta, datos); } catch (err) { mensaje("msgGrab", err.message, "mal"); } pintarGrabaciones.forzar = true; pintarGrabaciones(ultimo); };
+  // sin HTTPS el navegador no deja usar el portapapeles: se muestra para copiarlo a mano
+  const copiarEnlace = async (url, boton) => {
+    try { await navigator.clipboard.writeText(url); if (boton) boton.textContent = t("ses_copiado"); mensaje("msgGrab", t("ses_copiado") + ": " + url, "ok"); }
+    catch (_) { prompt(t("ses_copia_manual"), url); }
+  };
+  const compartir = async (nombre) => {
+    try {
+      const r = await api("/api/grabaciones/compartir", { nombre, si: true });
+      const e = (r.enlaces || {})[nombre];
+      if (e) await copiarEnlace(e.url);
+    } catch (err) { mensaje("msgGrab", err.message, "mal"); }
+    pintarGrabaciones.forzar = true; pintarGrabaciones(ultimo);
+  };
   // sesiones: se comparan con lo pintado y solo se rehacen si cambian (ver rtFirma)
   const cont = $("grabSesiones");
   const lista = rel("div", null, ...ses.map((x) => {
@@ -2189,7 +2216,8 @@ async function pintarGrabaciones(e) {
     const fecha = new Date(x.inicio * 1000);
     const etqs = [x.grabando ? rel("span", { class: "etq rec", text: t("ses_grabando") }) : null,
       x.cortada ? rel("span", { class: "etq aviso", text: t("ses_cortada") }) : null,
-      x.protegida ? rel("span", { class: "etq ok", text: t("ses_protegida") }) : null];
+      x.protegida ? rel("span", { class: "etq ok", text: t("ses_protegida") }) : null,
+      enlaces[x.nombre] ? rel("span", { class: "etq ok", text: enlaces[x.nombre].ligera === "convirtiendo" ? t("ses_ligera") : t("ses_compartida") }) : null];
     const meta = `${fecha.toLocaleDateString(lang)} ${fecha.toLocaleTimeString(lang, { hour: "2-digit", minute: "2-digit" })} · ${dur(x.duracion)} · ${tamano(x.bytes)} · ${x.formato.toUpperCase()} · ${t("ses_trozos")(x.trozos.length)}` + (x.marcas.length ? ` · ${x.marcas.length} ${t("ses_marcas").toLowerCase()}` : "");
     const acciones = [];
     const puedeVer = x.formato === "mp4" && x.trozos.length;
@@ -2202,6 +2230,17 @@ async function pintarGrabaciones(e) {
     else if (!x.grabando) acciones.push(rel("button", { class: "boton principal", type: "button", text: (x.completa.estado === "error" ? t("ses_error_union") + " · " : "") + t("ses_preparar"), onclick: () => llamar("/api/grabaciones/unir", { nombre: x.nombre }) }));
     if (x.trozos.length > 1) acciones.push(rel("button", { class: "boton", type: "button", text: t("ses_trozos_btn"), onclick: (ev) => ev.target.closest(".sesion").classList.toggle("abierta") }));
     if (x.marcas.length) acciones.push(rel("a", { class: "boton", href: `/grabaciones/${encodeURIComponent(x.nombre)}/marcas.txt`, download: `${x.nombre}-marcas.txt`, text: t("ses_marcas_txt") }));
+    if (comp.activo && !comp.error && !x.grabando) {
+      const en = enlaces[x.nombre];
+      if (en) {
+        acciones.push(rel("button", { class: "boton principal", type: "button", text: t("ses_copiar_enlace"), onclick: (ev) => copiarEnlace(en.url, ev.target) }));
+        acciones.push(rel("button", { class: "boton", type: "button", text: t("ses_dejar"), onclick: () => { if (confirm(t("ses_dejar_confirm")(x.ruta_nombre || x.nombre))) llamar("/api/grabaciones/compartir", { nombre: x.nombre, si: false }); } }));
+      } else if (x.completa.estado === "lista") {
+        acciones.push(rel("button", { class: "boton", type: "button", text: t("ses_compartir"), onclick: () => compartir(x.nombre) }));
+      } else {
+        acciones.push(rel("button", { class: "boton", type: "button", text: t("ses_compartir"), disabled: true, title: t("ses_compartir_unir") }));
+      }
+    }
     acciones.push(rel("button", { class: "boton", type: "button", text: x.protegida ? t("ses_desproteger") : t("ses_proteger"), onclick: () => llamar("/api/grabaciones/proteger", { nombre: x.nombre, si: !x.protegida }) }));
     if (!x.grabando) acciones.push(rel("button", { class: "boton peligro", type: "button", text: t("rec_delete"), onclick: () => { if (confirm(t("ses_borrar_confirm")(x.nombre))) llamar("/api/grabaciones/borrar", { nombre: x.nombre }); } }));
     const trozos = rel("div", { class: "trozos" }, ...x.trozos.map((tz) => rel("div", null,
@@ -3199,7 +3238,8 @@ const RT = {
       sin_monitor: "No hay ningún monitor conectado.", url_rtmp_invalida: "La URL RTMP no es válida.",
       fuente_no_esta: "Esa fuente NDI no está en la red ahora mismo.",
       ruta_invalida: "Esa ruta ya no existe.", sesion_grabando: "Esa sesión se está grabando: para antes la ruta.",
-      union_fallida: "No se pudo preparar la descarga.", sin_grabacion: "Esa ruta no tiene salida de grabación.", sin_sesion: "No hay ninguna grabación en marcha.",
+      union_fallida: "No se pudo preparar la descarga.", compartir_caido: "El servicio de compartir no responde.",
+      compartir_no_unida: "Para compartir, primero «Preparar descarga».", sin_grabacion: "Esa ruta no tiene salida de grabación.", sin_sesion: "No hay ninguna grabación en marcha.",
       usb_invalido: "Esa memoria USB ya no está.", copia_en_curso: "Ya hay una copia en marcha.", usb_fallo: "No se pudo con la memoria USB (¿formato?).",
       sin_gpu: "Este equipo no puede codificar H.264 para esta salida (sin GPU útil).",
       camara_ocupada: "Esa cámara ya la usa otra ruta: una cámara solo puede ir en una.",
@@ -3275,7 +3315,8 @@ const RT = {
       sin_monitor: "No monitor is connected.", url_rtmp_invalida: "The RTMP URL is not valid.",
       fuente_no_esta: "That NDI source is not on the network right now.",
       ruta_invalida: "That route no longer exists.", sesion_grabando: "That session is being recorded: stop the route first.",
-      union_fallida: "Could not prepare the download.", sin_grabacion: "That route has no recording output.", sin_sesion: "No recording is running.",
+      union_fallida: "Could not prepare the download.", compartir_caido: "The sharing service is not responding.",
+      compartir_no_unida: "To share it, first “Prepare download”.", sin_grabacion: "That route has no recording output.", sin_sesion: "No recording is running.",
       usb_invalido: "That USB drive is gone.", copia_en_curso: "A copy is already running.", usb_fallo: "The USB drive failed (format?).",
       sin_gpu: "This device cannot encode H.264 for this output (no usable GPU).",
       camara_ocupada: "Another route already uses that camera: a camera can only be in one.",

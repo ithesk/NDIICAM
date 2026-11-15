@@ -16,6 +16,8 @@ import threading
 import time
 from http.cookies import CookieError, SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+import urllib.error
+import urllib.request
 from urllib.parse import parse_qs, urlparse
 
 import nucleo
@@ -44,6 +46,24 @@ RECUPERACION_AP = 600           # s tras levantar la WiFi de configuración sin 
 _AUTH_CACHE = {}                # (ip, sha256(clave)) -> hasta cuándo vale, para Basic Auth
 _auth_lock = threading.Lock()
 
+
+
+# Servicio opcional para compartir grabaciones con un enlace público (va aparte:
+# NDIICAM no publica nada en internet por sí mismo). Si NDIICAM_COMPARTIR apunta a
+# él (p. ej. http://127.0.0.1:8090), el panel muestra «Compartir» en cada sesión
+# unida y le reenvía las órdenes. Contrato: GET /api/enlaces → {"enlaces":
+# {sesion: {"url", "ligera"}}}; POST /api/compartir y /api/dejar con
+# {"grabacion": sesion} → lo mismo.
+COMPARTIR = os.environ.get("NDIICAM_COMPARTIR", "").rstrip("/")
+
+
+def compartir_llamar(ruta, datos=None):
+    peticion = urllib.request.Request(
+        COMPARTIR + ruta, method="POST" if datos is not None else "GET",
+        data=json.dumps(datos).encode() if datos is not None else None,
+        headers={"Content-Type": "application/json"})
+    with urllib.request.urlopen(peticion, timeout=5) as r:
+        return json.load(r)
 
 class Pagina:
     """index.html listo para servir: comprimido, con ETag y con los hashes de
@@ -377,6 +397,14 @@ class Panel(BaseHTTPRequestHandler):
             self.wfile.write(cuerpo)
         elif url.path == "/api/grabaciones":
             self._json(grabaciones())
+        elif url.path == "/api/grabaciones/compartir":
+            if not COMPARTIR:
+                self._json({"activo": False})
+            else:
+                try:
+                    self._json({"activo": True, **compartir_llamar("/api/enlaces")})
+                except (OSError, ValueError):
+                    self._json({"activo": True, "error": "compartir_caido", "enlaces": {}})
         elif url.path == "/api/registro":
             self._registro(parse_qs(url.query))
         elif url.path == "/api/registro/arranques":
@@ -567,6 +595,21 @@ class Panel(BaseHTTPRequestHandler):
                 return self._error("no_encontrado", 404)
             evento("grabacion_borrada", nombre=nombre)
             return self._json({"ok": True})
+        if ruta == "/api/grabaciones/compartir":
+            nombre = str(d.get("nombre", ""))
+            if not COMPARTIR:
+                return self._error("no_encontrado", 404)
+            if not grab_mod.SESION_RE.match(nombre) or not os.path.isdir(os.path.join(GRABACIONES, nombre)):
+                return self._error("no_encontrado", 404)
+            try:
+                r = compartir_llamar("/api/compartir" if d.get("si", True) else "/api/dejar",
+                                     {"grabacion": nombre})
+            except urllib.error.HTTPError as err:
+                return self._error("compartir_no_unida" if err.code == 404 else "compartir_caido", 502)
+            except (OSError, ValueError):
+                return self._error("compartir_caido", 502)
+            evento("grabacion_compartida" if d.get("si", True) else "grabacion_sin_compartir", nombre=nombre)
+            return self._json({"activo": True, **r})
         if ruta in ("/api/grabaciones/proteger", "/api/grabaciones/unir"):
             nombre = str(d.get("nombre", ""))
             if not grab_mod.SESION_RE.match(nombre) or not os.path.isdir(os.path.join(GRABACIONES, nombre)):
