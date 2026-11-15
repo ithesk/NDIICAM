@@ -120,6 +120,18 @@ class Validacion(unittest.TestCase):
         limpias, _, _ = plan([ruta(ganancia="6.7", retraso="250")])
         self.assertEqual((limpias[0]["ganancia"], limpias[0]["retraso"]), (6, 250))
 
+    def test_retraso_de_imagen_solo_con_una_emision_de_la_red(self):
+        # negativo = la imagen espera al audio: solo la que llega por la red (no se recodifica)
+        limpias, _, p = plan([ruta(retraso=-1350)])
+        self.assertEqual(limpias[0]["retraso"], -1350)
+        self.assertEqual(p["procesos"][0]["audio"]["retraso"], -1350)
+        limpias, _, _ = plan([ruta(retraso=-9000)])
+        self.assertEqual(limpias[0]["retraso"], -rutas.RETRASO_IMAGEN_MAX)
+        limpias, _, _ = plan([ruta(retraso=5000)])
+        self.assertEqual(limpias[0]["retraso"], rutas.RETRASO_MAX)
+        limpias, _, _ = plan([ruta(video="pocket", retraso=-300, salidas=[{"tipo": "ndi", "nombre": "P"}])])
+        self.assertEqual(limpias[0]["retraso"], 0)
+
     def test_desde_modos_con_dos_camaras_del_mismo_nombre(self):
         cams = {"c1": {"id": "c1", "nombre": "Cam"}, "c2": {"id": "c2", "nombre": "Cam"}}
         aj = {"activa": True, "ndi_nombre": "Cam", "audio": "off", "gpu_salida": "srt", "gpu_extra": ["grabar"]}
@@ -342,6 +354,11 @@ class Motor(BaseMotor):
         procs = self.paso([{**r, "retraso": 480, "mudo": True}])
         self.assertIs(procs["prog:r1"].proc, prog)
         self.assertEqual(prog.ordenes(), [{"retraso_audio": 480, "mudo": True}])
+        # el audio llega después que la imagen: se retrasa la imagen, también en marcha
+        procs = self.paso([{**r, "retraso": -1350, "mudo": True}])
+        self.assertIs(procs["prog:r1"].proc, prog)
+        self.assertEqual(prog.ordenes()[-1], {"retraso_audio": 0, "retraso_video": 1350})
+        self.assertEqual((procs["prog:r1"].obj["retraso_audio"], procs["prog:r1"].obj["retraso_video"]), (0, 1350))
         # cambiar el audio (la consola por el del ATEM) sí reinicia
         procs = self.paso([{**r, "audio": "atem"}])
         self.assertTrue(prog.terminado)
@@ -458,6 +475,19 @@ class Procesos(unittest.TestCase):
         r.muestras = [(30.0, 3.0)]
         r.corregir()
         self.assertAlmostEqual(r.offset, 3.0)           # un salto de más de un segundo, de golpe
+
+    def test_reloj_retrasa_la_imagen(self):
+        pad = types.SimpleNamespace(offsets=[], set_offset=lambda ns: pad.offsets.append(ns))
+        r = programa.Reloj(None, pad, 1350)
+        self.assertEqual(pad.offsets, [])               # aún no hay imagen que colocar
+        r._fijar(0.7)
+        self.assertEqual(pad.offsets[-1], 2050000000)   # el reloj del ATEM + lo pedido
+        r.retrasar(200)                                 # en marcha
+        self.assertEqual((pad.offsets[-1], round(r.offset, 3)), (900000000, 0.7))
+        r.retrasar(99999)
+        self.assertEqual(pad.offsets[-1], 700000000 + programa.RETRASO_IMAGEN_MAX * 1000000)
+        r.retrasar(None)
+        self.assertEqual(pad.offsets[-1], 700000000)
 
     def test_liberar_disco_borra_tambien_los_mkv(self):
         d = tempfile.mkdtemp()

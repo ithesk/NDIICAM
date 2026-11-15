@@ -3254,6 +3254,8 @@ const RT = {
     calibrar: "Calibrar con palmadas", palmadas: "Da 3 palmadas secas delante de la cámara…",
     medido: (ms) => `Medido: el audio va ${ms} ms por delante.`, aplicar: (ms) => `Aplicar ${ms} ms`,
     audio_otro: "El audio viene de otra entrada y suele llegar antes que la imagen: el retraso lo iguala.",
+    audio_otro_red: "El audio viene de otra entrada. Hacia la derecha se retrasa el audio (si llega antes que la imagen); hacia la izquierda, la imagen (si el audio llega después, por ejemplo porque pasa antes por otro equipo).",
+    ret_audio: (x) => `audio +${x} ms`, ret_imagen: (x) => `imagen +${x} ms`,
     copia: "El vídeo se copia sin recodificar.", sale_por: "Sale por", anadir_salida: "+ Añadir salida…",
     sin_salidas: "Aún no sale a ningún sitio.", borrar_ruta: "Borrar ruta", lectores: (n) => `${n} leyendo`,
     entradas: "Entradas", rutas: "Rutas", salidas_t: "Salidas", anadir: "Añadir",
@@ -3331,6 +3333,8 @@ const RT = {
     calibrar: "Calibrate with claps", palmadas: "Clap 3 times sharply in front of the camera…",
     medido: (ms) => `Measured: audio is ${ms} ms ahead.`, aplicar: (ms) => `Apply ${ms} ms`,
     audio_otro: "The audio comes from another input and usually arrives before the picture: the delay evens it out.",
+    audio_otro_red: "The audio comes from another input. To the right the audio is delayed (if it arrives before the picture); to the left, the picture (if the audio arrives later, for instance because it goes through another device first).",
+    ret_audio: (x) => `audio +${x} ms`, ret_imagen: (x) => `picture +${x} ms`,
     copia: "The video is copied without re-encoding.", sale_por: "Goes out to", anadir_salida: "+ Add output…",
     sin_salidas: "It does not go out anywhere yet.", borrar_ruta: "Delete route", lectores: (n) => `${n} watching`,
     entradas: "Inputs", rutas: "Routes", salidas_t: "Outputs", anadir: "Add",
@@ -3703,7 +3707,7 @@ function rtCrearNodo(n) {
   } else if (n.clase === "ruta") {
     const r = n.r, e = rtEstado(r.id);
     cuerpo.append(rtPuerto(n.id, "v", rt("imagen"), "ent", titulo), rtPuerto(n.id, "a", rt("audio"), "ent", titulo));
-    cuerpo.append(rel("small", { text: r.audio ? `${r.ganancia > 0 ? "+" : ""}${r.ganancia} dB · ${rt("retraso").toLowerCase()} ${r.retraso} ms${r.mudo ? " · " + rt("silenciar").toLowerCase() : ""}` : rt("sin_audio") }));
+    cuerpo.append(rel("small", { text: r.audio ? `${r.ganancia > 0 ? "+" : ""}${r.ganancia} dB · ${rt("retraso").toLowerCase()} ${rtRetTxt(r.retraso)}${r.mudo ? " · " + rt("silenciar").toLowerCase() : ""}` : rt("sin_audio") }));
     if (r.audio) { const vu = rel("div", { class: "rt-vu" }, rel("i")); rtVu(vu.firstChild, e); cuerpo.append(vu); }
     const etqs = rel("div", { style: "display:flex;gap:6px;flex-wrap:wrap;align-items:center" },
       rel("span", { class: "etq " + ({ en_marcha: "ok", error: "mal", esperando: "aviso" }[e.estado] || ""), text: rt("est")[e.estado] || "—" }),
@@ -3898,6 +3902,15 @@ function rtCerrarHoja() { rtHoja = false; rtSel = null; rtCableSel = null; rtMul
 function rtBarraHoja(t) { return rel("div", { class: "rt-cerrar" }, rel("b", { text: t }),
   rel("button", { class: "boton", type: "button", text: rt("cerrar"), onclick: rtCerrarHoja })); }
 function rtCampo(id, etq, ...hijos) { return rel("div", null, rel("label", { for: id, text: etq }), ...hijos); }
+// El retraso de una ruta: en positivo se retrasa el audio; en negativo, la imagen
+// (solo si llega por la red: es la única que se puede retener sin recodificar).
+function rtRetMin(r) { const v = rtEnt(r.video); return v && v.tipo === "ingesta" ? -2000 : 0; }
+function rtRetTxt(x) { return x < 0 ? rt("ret_imagen")(-x) : `${x} ms`; }
+function rtRetraso(id, r) {
+  const min = rtRetMin(r);
+  const fmt = (x) => x < 0 ? rt("ret_imagen")(-x) : x > 0 && min < 0 ? rt("ret_audio")(x) : `${x} ms`;
+  return rtDeslizador(id, rt("retraso"), min, 1000, 10, r.retraso, fmt, (x) => { r.retraso = x; rtVivo(r); });
+}
 function rtDeslizador(id, etq, min, max, paso, valor, fmt, alCambiar) {
   const o = rel("output", { text: fmt(valor) });
   return rtCampo(id, etq, rel("div", { class: "rt-desliza" },
@@ -3917,12 +3930,12 @@ function rtAjustesRuta(r) {
     const vu = rel("div", { class: "rt-vu", id: "rtVuInsp" }, rel("i")); rtVu(vu.firstChild, e);
     t.push(vu,
       rtDeslizador("rtGan", rt("ganancia"), -24, 12, 1, r.ganancia, (x) => `${x > 0 ? "+" : ""}${x} dB`, (x) => { r.ganancia = x; rtVivo(r); }),
-      rtDeslizador("rtRet", rt("retraso"), 0, 1000, 10, r.retraso, (x) => `${x} ms`, (x) => { r.retraso = x; rtVivo(r); }),
+      rtRetraso("rtRet", r),
       rel("label", { class: "conmutador" }, rel("input", { type: "checkbox", id: "rtMudo", checked: !!r.mudo,
         onchange: (ev) => { r.mudo = ev.target.checked; rtVivo(r); } }), rel("span", { text: rt("silenciar") })),
       rel("div", { class: "nota", text: rt("vivo_nota") }));
     if (v && a && a.id !== v.id) {
-      t.push(rel("div", { class: "nota", text: rt("audio_otro") }));
+      t.push(rel("div", { class: "nota", text: rt(v.tipo === "ingesta" ? "audio_otro_red" : "audio_otro") }));
       if (v.tipo === "usb_cam") {
         const cal = e.calibracion || {};
         const res = rel("div", { class: "nota" });
@@ -4159,7 +4172,7 @@ function rtPintarLista() {
       rel("option", { value: "", text: rt("sin_audio") }), ...ents.filter(daAudio).map((x) => rel("option", { value: x.id, text: x.nombre, selected: x.id === r.audio })));
     const audio = r.audio ? rel("div", { class: "rt-bloque" }, (() => { const vu = rel("div", { class: "rt-vu" }, rel("i")); rtVu(vu.firstChild, e); return vu; })(),
       rtDeslizador("lg-" + r.id, rt("ganancia"), -24, 12, 1, r.ganancia, (x) => `${x > 0 ? "+" : ""}${x} dB`, (x) => { r.ganancia = x; rtVivo(r); }),
-      rtDeslizador("lr-" + r.id, rt("retraso"), 0, 1000, 10, r.retraso, (x) => `${x} ms`, (x) => { r.retraso = x; rtVivo(r); }),
+      rtRetraso("lr-" + r.id, r),
       rel("label", { class: "conmutador" }, rel("input", { type: "checkbox", checked: !!r.mudo, onchange: (ev) => { r.mudo = ev.target.checked; rtVivo(r); } }),
         rel("span", { text: rt("silenciar") }))) : null;
     const chips = r.salidas.map((s) => rel("div", { class: "rt-chip" }, rtIcono(s.tipo),

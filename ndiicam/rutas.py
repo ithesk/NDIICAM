@@ -23,7 +23,11 @@ TIPOS_SALIDA = ("ndi", "hdmi", "obs", "srt", "rtmp", "grabar")
 DE_RED = ("obs", "srt", "rtmp", "grabar")
 LIMITE_LITE = 1         # rutas a la vez en un equipo Lite
 GANANCIA = (-24, 12)    # dB
-RETRASO_MAX = 1000      # ms
+RETRASO_MAX = 1000      # ms que se puede retrasar el audio
+# ms que se puede retrasar la IMAGEN (retraso negativo): para un audio que llega
+# después que ella, p. ej. porque pasa antes por un equipo que lo procesa. Solo
+# con la imagen de una emisión de la red (programa.py), que no se recodifica.
+RETRASO_IMAGEN_MAX = 2000
 URL_RTMP = re.compile(r"^rtmps?://[^\s\"'<>]{3,500}$")
 
 
@@ -45,6 +49,12 @@ def da_audio(e):
     if e["tipo"] == "usb_cam":
         return bool(e.get("audio_dev"))      # el micrófono de la cámara, si tiene
     return e["tipo"] in ("usb_audio", "ndi", "ingesta")
+
+
+def limite_retraso(v):
+    """(mínimo, máximo) del retraso de una ruta cuya imagen da la entrada v: en
+    positivo se retrasa el audio; en negativo, la imagen."""
+    return (-RETRASO_IMAGEN_MAX if v is not None and v["tipo"] == "ingesta" else 0, RETRASO_MAX)
 
 
 def entero(valor, defecto=0):
@@ -88,12 +98,14 @@ def validar(rutas, entradas):
         nr = {"id": rid, "nombre": str(r.get("nombre") or "Ruta")[:60],
               "video": str(r.get("video") or ""), "audio": str(r.get("audio") or ""),
               "ganancia": max(GANANCIA[0], min(GANANCIA[1], entero(r.get("ganancia")))),
-              "retraso": max(0, min(RETRASO_MAX, entero(r.get("retraso")))),
+              "retraso": entero(r.get("retraso")),
               "mudo": bool(r.get("mudo")), "activa": r.get("activa", True) is not False,
               "salidas": []}
         nr["camino"] = camino(r.get("camino") or nr["nombre"], caminos)
         caminos.add(nr["camino"])
         v = por_id.get(nr["video"])
+        minimo, maximo = limite_retraso(v)
+        nr["retraso"] = max(minimo, min(maximo, nr["retraso"]))
         if not v:
             err.append("sin_imagen" if not nr["video"] else "imagen_no_esta")
         elif not da_imagen(v):
@@ -271,7 +283,8 @@ def plan(rutas, entradas, potente, errores=None, pantallas=None, hora=None):
                  "dev": (a.get("audio_dev") if a and a["tipo"] == "usb_cam" else
                          a.get("dev") if a and a["tipo"] == "usb_audio" else None),
                  "ganancia": r["ganancia"], "mudo": r["mudo"],
-                 # el retraso es para alinear un audio que viene por otro camino
+                 # el retraso es para alinear un audio que viene por otro camino:
+                 # en positivo se retrasa él; en negativo, la imagen
                  "retraso": r["retraso"] if a is not None else 0}
         if a is not None and a["tipo"] in ("ndi", "ingesta") and not propio:
             # audio de otra fuente de red: sin soporte todavía (se usa el de la imagen)

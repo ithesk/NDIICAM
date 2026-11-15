@@ -687,7 +687,10 @@ class Panel(BaseHTTPRequestHandler):
                 if "ganancia" in d:
                     r["ganancia"] = max(rutas_mod.GANANCIA[0], min(rutas_mod.GANANCIA[1], int(d["ganancia"])))
                 if "retraso" in d:
-                    r["retraso"] = max(0, min(rutas_mod.RETRASO_MAX, int(d["retraso"])))
+                    # solo las entradas de red pueden ser una emisión (ingesta)
+                    v = next((e for e in cfg.get("entradas_red") or [] if e.get("id") == r.get("video")), None)
+                    minimo, maximo = rutas_mod.limite_retraso(v)
+                    r["retraso"] = max(minimo, min(maximo, int(d["retraso"])))
             except (TypeError, ValueError):
                 return self._error("valor_invalido")
             if "mudo" in d:

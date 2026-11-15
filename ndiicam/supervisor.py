@@ -601,7 +601,7 @@ class MotorRutas:
 
     # se cambian sin reiniciar: el audio en marcha, y la salida H.264 de una cámara
     # (fuente.py la monta y desmonta sin cortar el NDI)
-    VIVOS = ("retraso_audio", "ganancia", "mudo", "gpu")
+    VIVOS = ("retraso_audio", "retraso_video", "ganancia", "mudo", "gpu")
 
     def __init__(self, sup):
         self.sup = sup          # Fuentes: config, audio, objetivo() de las cámaras
@@ -775,7 +775,8 @@ class MotorRutas:
         local = PUERTO_RTMP_LOCAL
         a = pr.get("audio") or {}
         con_audio = a.get("de") is not None
-        vivos = {"retraso_audio": a.get("retraso", 0) if con_audio else 0,
+        retraso = a.get("retraso", 0) if con_audio else 0
+        vivos = {"retraso_audio": max(0, retraso),
                  "ganancia": a.get("ganancia", 0), "mudo": bool(a.get("mudo")) or not con_audio}
         # el monitor de esta ruta: el conector que le dio plan() (o el primero, si
         # el plan no distingue pantallas)
@@ -816,7 +817,9 @@ class MotorRutas:
             con = p.obj.get("con_audio", True) if corriendo else trae_audio(info)
             return {"nombre": pr["nombre_ruta"], "entrada": f"{local}/{pr['entrada']}",
                     "salida": f"{local}/{pr['publicar']}", "con_audio": con,
-                    "audio": a.get("dev") if a.get("de") == "aparte" else None, "grabar": None, **vivos}
+                    "audio": a.get("dev") if a.get("de") == "aparte" else None, "grabar": None,
+                    # retraso negativo: es la imagen la que espera al audio
+                    "retraso_video": max(0, -retraso), **vivos}
         if pr["clase"] == "receptor":
             if pr["origen"] == "rtmp":
                 if not corriendo and not PUENTE.ruta_lista(pr["fuente"]):

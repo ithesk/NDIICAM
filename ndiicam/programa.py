@@ -8,11 +8,14 @@
                           (RTMP local de la ruta 'programa'), audio (dispositivo
                           ALSA de la consola, o null para dejar el del ATEM),
                           con_audio (si lo que llega trae pista de audio),
-                          retraso_audio (ms) y grabar ({"dir"} o null)
+                          retraso_audio (ms), retraso_video (ms; solo con la
+                          consola) y grabar ({"dir"} o null)
 
 El vídeo no se recodifica: se copia tal cual. El audio de la consola se captura
 aquí, se retrasa (el ATEM tarda en codificar y mandar la imagen, así que la
-consola llega antes) y se codifica en AAC. Lo de dentro y lo de fuera tienen
+consola llega antes) y se codifica en AAC. Si es al revés (el audio pasa antes
+por un equipo que lo procesa y llega después que la imagen), lo que se retrasa
+es la imagen: retraso_video. Lo de dentro y lo de fuera tienen
 relojes distintos (el del ATEM y el del equipo): el vídeo se recoloca en el
 reloj del equipo según cuándo llega, y la deriva entre los dos (en horas, cientos
 de ms) se corrige poco a poco. Con grabar, una copia en MKV (vídeo sin tocar) en
@@ -32,6 +35,7 @@ from gi.repository import GLib, Gst  # noqa: E402
 import grabaciones  # noqa: E402
 from fuente import informar, leer_cfg, nivel_audio  # noqa: E402
 from nucleo import RETRASO_MAX_MS  # noqa: E402
+from rutas import RETRASO_IMAGEN_MAX  # noqa: E402
 
 CONTADORES = {"rx": 0, "aud": 0, "out": 0, "bytes": 0}
 NIVEL = {"db_peak": None, "db_rms": None}
@@ -46,7 +50,8 @@ def descripcion(cfg):
     """El pipeline. Las direcciones RTMP no van en el texto: se ponen con
     set_property. Lo que sale lleva siempre pista de audio (la consola, la del
     ATEM o silencio): quien lo lea no tiene que adivinar si vendrá."""
-    cola = "queue max-size-time=3000000000 max-size-buffers=0 max-size-bytes=0"
+    # las colas guardan la imagen mientras espera al audio (retraso_video) y un segundo más
+    cola = f"queue max-size-time={(RETRASO_IMAGEN_MAX + 1000) * 1000000} max-size-buffers=0 max-size-bytes=0"
     desc = ("rtmp2src name=src ! flvdemux name=d "
             f"d.video ! {cola} name=qv ! h264parse name=hv config-interval=-1"
             " ! identity name=reloj ! tee name=tv ")
@@ -88,12 +93,14 @@ class Reloj:
     """Recoloca el vídeo del ATEM en el reloj del equipo (solo con la consola:
     con el audio del ATEM los dos vienen ya en el mismo reloj)."""
 
-    def __init__(self, p, pad):
+    def __init__(self, p, pad, retraso_ms=0):
         self.p = p
         self.pad = pad              # src de 'reloj': su offset desplaza el vídeo
         self.muestras = []          # (llegada, llegada - pts)
         self.offset = None
         self.inicio = None          # llegada del primer fotograma
+        self.retraso = 0.0          # s que se retrasa la imagen a propósito
+        self.retrasar(retraso_ms)
 
     def sonda(self, pad, info):
         buf = info.get_buffer()
@@ -119,7 +126,13 @@ class Reloj:
 
     def _fijar(self, segundos):
         self.offset = segundos
-        self.pad.set_offset(int(segundos * 1e9))
+        self.pad.set_offset(round((segundos + self.retraso) * 1e9))
+
+    def retrasar(self, ms):
+        """Retrasa la imagen ms milisegundos respecto al audio; se puede cambiar en marcha."""
+        self.retraso = max(0, min(RETRASO_IMAGEN_MAX, int(ms or 0))) / 1000
+        if self.offset is not None:
+            self._fijar(self.offset)
 
     def corregir(self):
         """Cada segundo: el desfase objetivo es la llegada más temprana de la
@@ -171,7 +184,7 @@ def main():
     reloj = None
     if cfg.get("audio"):
         r = p.get_by_name("reloj")
-        reloj = Reloj(p, r.get_static_pad("src"))
+        reloj = Reloj(p, r.get_static_pad("src"), cfg.get("retraso_video"))
         r.get_static_pad("sink").add_probe(Gst.PadProbeType.BUFFER, reloj.sonda)
         GLib.timeout_add(1000, reloj.corregir)
 
@@ -210,7 +223,8 @@ def main():
     visto = {"rx": 0, "t": time.monotonic()}
 
     def tic():
-        extra = {"desfase_ms": round(reloj.offset * 1000)} if reloj and reloj.offset is not None else {}
+        extra = ({"desfase_ms": round(reloj.offset * 1000), "retraso_video": round(reloj.retraso * 1000)}
+                 if reloj and reloj.offset is not None else {})
         informar({**CONTADORES, **NIVEL, **extra, "t": time.monotonic()})
         # con el audio de la consola el pipeline no termina aunque el ATEM se vaya
         # (la consola sigue sonando): si deja de llegar vídeo, salir con error para
@@ -240,6 +254,8 @@ def main():
             # en marcha, sin cortar: se afina de oído
             retraso.get_static_pad("src").set_offset(
                 max(0, min(RETRASO_MAX_MS, int(d["retraso_audio"]))) * 1000000)
+        if "retraso_video" in d and reloj is not None:
+            reloj.retrasar(d["retraso_video"])
         return True
     GLib.io_add_watch(sys.stdin, GLib.IO_IN | GLib.IO_HUP, orden)
 
