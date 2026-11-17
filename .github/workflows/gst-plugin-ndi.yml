@@ -1,6 +1,9 @@
 # Compila el plugin NDI de GStreamer (gst-plugins-rs, MPL-2.0) y lo publica en
 # la release, para que el instalador no tenga que compilarlo en el equipo.
 # Se compila en Ubuntu 22.04: el binario sirve en 22.04, 24.04 y Debian 12+.
+# Dos arquitecturas, cada una en una máquina nativa de GitHub: x86_64 (PC Intel
+# o AMD) y aarch64 (placas ARM como la Radxa Cubie A7Z); compilar Rust en la
+# placa, con 1 GB de RAM, sería lentísimo.
 name: GStreamer NDI plugin
 
 on:
@@ -16,7 +19,15 @@ permissions:
 
 jobs:
   build:
-    runs-on: ubuntu-22.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86_64
+            runner: ubuntu-22.04
+          - arch: aarch64
+            runner: ubuntu-22.04-arm
+    runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v4
 
@@ -42,21 +53,21 @@ jobs:
           # modo de baja latencia del combinador (ver plugin/ndisinkcombiner-baja-latencia.patch)
           patch -p1 < ../plugin/ndisinkcombiner-baja-latencia.patch
           cargo build --release --locked -p gst-plugin-ndi
-          cp target/release/libgstndi.so ../libgstndi-x86_64.so
+          cp target/release/libgstndi.so ../libgstndi-${{ matrix.arch }}.so
           cd ..
-          sha256sum libgstndi-x86_64.so > libgstndi-x86_64.so.sha256
-          cat libgstndi-x86_64.so.sha256
+          sha256sum libgstndi-${{ matrix.arch }}.so > libgstndi-${{ matrix.arch }}.so.sha256
+          cat libgstndi-${{ matrix.arch }}.so.sha256
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: libgstndi-x86_64
-          path: libgstndi-x86_64.so*
+          name: libgstndi-${{ matrix.arch }}
+          path: libgstndi-${{ matrix.arch }}.so*
 
       - name: Attach to release
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            libgstndi-x86_64.so
-            libgstndi-x86_64.so.sha256
+            libgstndi-${{ matrix.arch }}.so
+            libgstndi-${{ matrix.arch }}.so.sha256
